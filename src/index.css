@@ -1,24 +1,27 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800;900&family=Vollkorn:ital,wght@0,400;0,600;1,400&display=swap');
 
 :root {
-  --bg: #090514;
-  --surface-1: #100a20;
-  --surface-2: #190f30;
-  --surface-3: #221442;
-  --border-neon: rgba(186, 104, 255, 0.22);
-  --accent-pink: #ff2d78;
-  --accent-purple: #b14cff;
-  --accent-violet: #8b5cf6;
-  --accent-cyan: #38bdf8;
-  --accent-gold: #fbbf24;
-  --neon-glow: 0 0 28px rgba(177, 76, 255, 0.45);
-  --pink-glow: 0 0 28px rgba(255, 45, 120, 0.45);
+  --bg: #050307;
+  --s1: #0c0812;
+  --s2: #140e1d;
+  --s3: #1d1529;
+  --line: rgba(199, 125, 255, .16);
+  --lila: #d49cff;
+  --neon: #b14cff;
+  --soft: #e3c8ff;
+  --text: #f5eeff;
+  --muted: #cbbee2;
+  --ok: #5ee6a8;
+  --warn: #ffd27a;
+  --bad: #ffa3b8;
+  --glow: 0 0 24px rgba(177, 76, 255, .55);
 }
 
 body {
   background-color: var(--bg);
-  color: #f8f6fc;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  color: var(--text);
+  font-family: 'Montserrat', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
 }
@@ -41,23 +44,23 @@ body {
 
 /* Glassmorphism helpers */
 .glass-panel {
-  background: rgba(22, 14, 42, 0.65);
+  background: rgba(20, 14, 29, 0.7);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-neon);
+  border: 1px solid var(--line);
 }
 
 .glass-card {
-  background: rgba(16, 10, 32, 0.75);
+  background: var(--s2);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(199, 125, 255, 0.18);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.45);
 }
 
 .neon-border {
   border: 1px solid rgba(199, 125, 255, 0.35);
-  box-shadow: 0 0 16px rgba(177, 76, 255, 0.25);
+  box-shadow: var(--glow);
 }
 
 /* Waveform pulse animation */

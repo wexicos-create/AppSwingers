@@ -2,6 +2,7 @@ export type ProfileKind = 'Pareja' | 'Dama' | 'Caballero' | 'Individual';
 export type VerifyStatus = 'sin iniciar' | 'en revisión' | 'verificado' | 'rechazado';
 export type AccountStatus = 'activo' | 'suspendido' | 'eliminado';
 export type SwipeAction = 'like' | 'pass' | 'dislike' | 'superlike';
+export type AppRegion = 'MX' | 'US';
 
 export interface VoiceNote {
   duration: string;
@@ -93,6 +94,28 @@ export interface Proposal {
   mine?: boolean;
 }
 
+export interface CollaborationProposal {
+  id: string;
+  title: string;
+  eventType: 'Swinger' | 'GangBang' | 'Trío MHM' | 'Fiesta Privada VIP';
+  organizerType: 'Mujer' | 'Pareja';
+  organizerName: string;
+  region: AppRegion;
+  feeAmount: number; // $350 MXN or $80 USD
+  city: string; // e.g. San Luis Potosí, CDMX, Texas, etc.
+  consentRules: string;
+  attendeeRatio: string;
+  capacity: number;
+  healthProtocols: string;
+  admissionFilter: string;
+  ineFrontUrl?: string;
+  ineBackUrl?: string;
+  selfieUrl?: string;
+  status: 'en revisión' | 'aprobada' | 'rechazada';
+  paid: boolean;
+  createdAt: number;
+}
+
 export interface Creator {
   name: string;
   handle: string;
@@ -122,7 +145,8 @@ export interface ChatMessage {
   ts: number;
   t?: string;
   img?: string;
-  voice?: boolean;
+  voiceUrl?: string;
+  voiceDuration?: string;
 }
 
 export interface ReportItem {
@@ -147,10 +171,35 @@ export interface SystemAnnouncement {
 
 export interface PaymentItem {
   id: string;
-  kind: 'premium' | 'suscripcion' | 'directo' | 'evento';
+  kind: 'premium' | 'suscripcion' | 'directo' | 'evento' | 'propuesta_colaboracion';
   ref: string;
   label: string;
   amount: number;
   status: 'pendiente' | 'confirmado' | 'rechazado';
   ts: number;
 }
+
+export type SubscriptionTier = 'free' | 'silver' | 'gold';
+
+export interface StoryPost {
+  id: string;
+  title: string;
+  author: string;
+  category: 'historia' | 'consejo' | 'donde_buscar' | 'faq';
+  body: string;
+  likes: number;
+  date: string;
+  region: AppRegion;
+  sensualConsentTag?: boolean;
+}
+
+export interface ForumPost {
+  id: string;
+  title: string;
+  author: string;
+  postsCount: number;
+  lastActive: string;
+  requiresMatchOrPhone: boolean;
+  messages: { id: string; author: string; text: string; time: string }[];
+}
+

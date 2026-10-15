@@ -139,17 +139,17 @@ export const MatchModal: React.FC<MatchModalProps> = ({
           <div className="w-full flex flex-col gap-2.5 mt-6">
             <button
               onClick={() => onStartChat(matchProfile)}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-[0.98] transition flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-[0.98] transition flex items-center justify-center gap-2 animate-pulse"
             >
               <MessageSquare className="w-4 h-4" />
-              Hai Hello
+              💬 Chatear ahora con {matchProfile.name.split(' ')[0]}
             </button>
 
             <button
               onClick={onClose}
               className="w-full py-3 px-6 rounded-2xl bg-white/10 hover:bg-white/15 text-white/80 font-medium text-xs transition active:scale-[0.98]"
             >
-              Swiping Now
+              Seguir descubriendo perfiles
             </button>
           </div>
         </motion.div>

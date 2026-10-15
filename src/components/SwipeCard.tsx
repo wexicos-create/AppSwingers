@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'motion/react';
 import { Profile, SwipeAction } from '../types';
-import { MapPin, Sparkles, CheckCircle2, Info, ChevronLeft, ChevronRight, Play, Pause, Volume2 } from 'lucide-react';
+import { MapPin, Sparkles, CheckCircle2, Info, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface SwipeCardProps {
   profile: Profile;
@@ -17,7 +17,6 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   onOpenDetails,
 }) => {
   const [photoIndex, setPhotoIndex] = useState(0);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
   // Motion drag values
   const x = useMotionValue(0);
@@ -57,11 +56,6 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     if (photoIndex > 0) {
       setPhotoIndex(prev => prev - 1);
     }
-  };
-
-  const toggleVoiceNote = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsPlayingAudio(prev => !prev);
   };
 
   const displayAge = profile.ages || (profile.age ? String(profile.age) : '');
@@ -181,54 +175,12 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       {/* Bottom Profile Details Container */}
       <div className="absolute bottom-0 inset-x-0 p-5 pt-8 z-20 flex flex-col gap-2.5 bg-gradient-to-t from-black via-black/90 to-transparent">
         
-        {/* Voice Note Audio Pill (From Reference Image 2!) */}
-        {profile.voiceNote && (
-          <div 
-            onClick={toggleVoiceNote}
-            className="w-full py-2.5 px-3.5 rounded-2xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/30 backdrop-blur-md flex items-center gap-3 transition-colors cursor-pointer shadow-lg"
-          >
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500 flex items-center justify-center text-white shadow-md shrink-0">
-              {isPlayingAudio ? <Pause className="w-4 h-4 fill-white" /> : <Play className="w-4 h-4 fill-white ml-0.5" />}
-            </div>
-
-            {/* Audio Waveform visualization */}
-            <div className="flex-1 flex items-center gap-1 h-5 overflow-hidden">
-              <span className={`w-1 rounded-full bg-purple-400 ${isPlayingAudio ? 'animate-wave-1' : 'h-2'}`} />
-              <span className={`w-1 rounded-full bg-pink-400 ${isPlayingAudio ? 'animate-wave-2' : 'h-3'}`} />
-              <span className={`w-1 rounded-full bg-purple-300 ${isPlayingAudio ? 'animate-wave-3' : 'h-4'}`} />
-              <span className={`w-1 rounded-full bg-pink-300 ${isPlayingAudio ? 'animate-wave-4' : 'h-2'}`} />
-              <span className={`w-1 rounded-full bg-purple-400 ${isPlayingAudio ? 'animate-wave-5' : 'h-4'}`} />
-              <span className={`w-1 rounded-full bg-pink-400 ${isPlayingAudio ? 'animate-wave-1' : 'h-3'}`} />
-              <span className={`w-1 rounded-full bg-purple-300 ${isPlayingAudio ? 'animate-wave-2' : 'h-5'}`} />
-              <span className={`w-1 rounded-full bg-pink-300 ${isPlayingAudio ? 'animate-wave-3' : 'h-2'}`} />
-              <span className={`w-1 rounded-full bg-purple-400 ${isPlayingAudio ? 'animate-wave-4' : 'h-4'}`} />
-              <span className={`w-1 rounded-full bg-pink-400 ${isPlayingAudio ? 'animate-wave-5' : 'h-3'}`} />
-              <span className={`w-1 rounded-full bg-purple-300 ${isPlayingAudio ? 'animate-wave-1' : 'h-2'}`} />
-              <span className={`w-1 rounded-full bg-pink-300 ${isPlayingAudio ? 'animate-wave-2' : 'h-4'}`} />
-            </div>
-
-            <span className="text-[11px] font-mono font-medium text-purple-200 shrink-0">
-              {profile.voiceNote.duration}
-            </span>
-          </div>
-        )}
-
-        {/* Reflection Quote Box (From Reference Image 2!) */}
-        {profile.voiceNote?.reflectionQuote && (
-          <div className="px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-[11px] text-purple-200/90 italic leading-snug">
-            <span className="font-semibold text-pink-400 not-italic block mb-0.5 text-[10px] uppercase tracking-wider">
-              {profile.voiceNote.reflectionPrompt}
-            </span>
-            &ldquo;{profile.voiceNote.reflectionQuote}&rdquo;
-          </div>
-        )}
-
         {/* Tag chips */}
         <div className="flex flex-wrap gap-1.5">
-          {profile.tags.slice(0, 3).map((tag, idx) => (
+          {profile.tags.slice(0, 4).map((tag, idx) => (
             <span
               key={idx}
-              className="px-2.5 py-0.5 rounded-full bg-purple-900/50 backdrop-blur-md border border-purple-400/20 text-[11px] font-semibold text-purple-200"
+              className="px-2.5 py-0.5 rounded-full bg-purple-900/60 backdrop-blur-md border border-purple-400/30 text-[11px] font-semibold text-purple-200 shadow-sm"
             >
               {tag}
             </span>
@@ -261,11 +213,11 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         </div>
 
         {/* Distance & Kind */}
-        <div className="flex items-center gap-1.5 text-xs text-purple-200/80">
+        <div className="flex items-center gap-1.5 text-xs text-purple-200/90 font-medium">
           <MapPin className="w-3.5 h-3.5 text-pink-400" />
           <span>{profile.distance || `~${profile.km} km`}</span>
           <span className="text-white/40">•</span>
-          <span>{profile.kind}</span>
+          <span className="font-bold text-pink-300">{profile.kind}</span>
           {profile.occupation && (
             <>
               <span className="text-white/40">•</span>
@@ -275,7 +227,7 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         </div>
 
         {/* Bio summary */}
-        {!profile.voiceNote && (
+        {profile.bio && (
           <p className="text-xs text-white/90 line-clamp-2 leading-relaxed font-normal">
             {profile.bio}
           </p>

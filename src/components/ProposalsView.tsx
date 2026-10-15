@@ -43,7 +43,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
   return (
     <div className="w-full max-w-md mx-auto p-4 pb-24 text-white overflow-y-auto">
       {/* Top Header */}
-      <div className="flex items-end justify-between mb-5">
+      <div className="flex items-end justify-between mb-4">
         <div>
           <h2 className="text-2xl font-black bg-gradient-to-r from-purple-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
             Propuestas
@@ -57,6 +57,36 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
           <Plus className="w-4 h-4" />
           Publicar
         </button>
+      </div>
+
+      {/* Special Collaboration Banner for Swinger / GangBang */}
+      <div
+        onClick={() => {
+          if ((window as any).__openCollaborationModal) {
+            (window as any).__openCollaborationModal();
+          }
+        }}
+        className="p-3.5 mb-4 rounded-3xl bg-gradient-to-r from-pink-950/70 via-purple-950/80 to-indigo-950/70 border border-pink-500/40 shadow-lg cursor-pointer hover:border-pink-400 transition group flex items-center justify-between"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-pink-600 to-purple-600 flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform">
+            <Sparkles className="w-5 h-5 text-amber-300" />
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-black text-white">Colaboración Swinger / GangBang</span>
+              <span className="px-2 py-0.5 rounded-full bg-pink-500/30 border border-pink-400/40 text-[9px] font-bold text-pink-300 uppercase">
+                Mujeres / Parejas
+              </span>
+            </div>
+            <p className="text-[11px] text-purple-200/80 mt-0.5">
+              Envía tu propuesta de evento estructurada para revisión oficial.
+            </p>
+          </div>
+        </div>
+        <span className="text-xs font-bold text-pink-400 group-hover:translate-x-1 transition ml-2">
+          &rarr;
+        </span>
       </div>
 
       {/* Proposals List */}
