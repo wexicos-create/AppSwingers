@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "User profile data",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "bio": { "type": "string" },
+        "age": { "type": "number" },
+        "location": { "type": "string" },
+        "tags": { "type": "array" }
+      },
+      "required": ["uid", "email"]
+    },
+    "swipe": {
+      "title": "Swipe",
+      "description": "A swipe action recording like, pass, or superlike",
+      "type": "object",
+      "properties": {
+        "fromUserId": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "swipeType": { "type": "string", "enum": ["like", "dislike", "superlike"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["fromUserId", "toUserId", "swipeType", "timestamp"]
+    },
+    "match": {
+      "title": "Match",
+      "description": "A mutual connection between two users",
+      "type": "object",
+      "properties": {
+        "userIds": { "type": "array" },
+        "matchedAt": { "type": "string", "format": "date-time" },
+        "lastMessage": { "type": "string" }
+      },
+      "required": ["userIds", "matchedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "user",
+      "description": "User profile collection"
+    },
+    "/users/{userId}/swipes/{swipeId}": {
+      "schema": "swipe",
+      "description": "Swipes made by a user"
+    },
+    "/users/{userId}/matches/{matchId}": {
+      "schema": "match",
+      "description": "User matches collection"
+    }
+  }
+}

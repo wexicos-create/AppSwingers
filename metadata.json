@@ -1,0 +1,6 @@
+{
+  "name": "Aura Match - Modern Dating & Connections",
+  "description": "Discover connections with sleek card-based swiping powered by Framer Motion, Google authentication, and Firebase Firestore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
