@@ -29,33 +29,28 @@ export function MonetizationExtrasModal({
   const currencyCode = isMx ? 'MXN' : 'USD';
 
   // Pricing calculation with 16% tax (IVA)
-  const silverBase = isMx ? 408 : 100;
+  const silverBase = isMx ? 350 : 0;
   const silverTax = Math.round(silverBase * 0.16 * 100) / 100;
   const silverTotal = Math.round((silverBase + silverTax) * 100) / 100;
 
-  const goldBase = isMx ? 800 : 180;
+  const goldBase = isMx ? 500 : 0;
   const goldTax = Math.round(goldBase * 0.16 * 100) / 100;
   const goldTotal = Math.round((goldBase + goldTax) * 100) / 100;
 
-  const sponsorBase = isMx ? 1500 : 800;
+  const sponsorBase = isMx ? 1500 : 0;
   const sponsorTax = Math.round(sponsorBase * 0.16 * 100) / 100;
   const sponsorTotal = Math.round((sponsorBase + sponsorTax) * 100) / 100;
 
   const handleCheckout = (tier: SubscriptionTier | 'sponsored') => {
-    if (tier === 'sponsored') {
-      setSuccessMsg(isEs ? '¡Solicitud de patrocinio enviada! El equipo comercial se pondrá en contacto.' : 'Sponsored request sent! Our commercial team will contact you.');
-      setTimeout(() => {
-        setSuccessMsg(null);
-        onClose();
-      }, 3000);
+    if (tier === 'free') {
+      onSelectTier('free');
+      setSuccessMsg(isEs ? 'Se seleccionó el acceso gratuito.' : 'Free access selected.');
       return;
     }
-    onSelectTier(tier);
-    setSuccessMsg(isEs ? `¡Suscripción ${tier.toUpperCase()} activada con éxito!` : `${tier.toUpperCase()} subscription successfully activated!`);
-    setTimeout(() => {
-      setSuccessMsg(null);
-      onClose();
-    }, 2500);
+    // Do not activate paid tiers or claim that a request was sent without a verified backend.
+    setSuccessMsg(isEs
+      ? 'Membresías y patrocinios de pago están temporalmente deshabilitados. No se realizó ningún cobro ni se activó un plan.'
+      : 'Paid memberships and sponsorships are temporarily disabled. No charge was made and no plan was activated.');
   };
 
   return (
@@ -78,7 +73,7 @@ export function MonetizationExtrasModal({
           </h2>
           <p className="text-sm text-white/70 mt-1">
             {isEs 
-              ? `Moneda e impuestos aplicados según tu región (${region === 'MX' ? 'México + 16% IVA' : 'USA + 16% Tax'}).` 
+              ? `Moneda e impuestos aplicados según tu región (${region === 'MX' ? 'México + 16% IVA' : 'Tax configuration pending'}).` 
               : 'Currency and taxes applied according to your region.'}
           </p>
         </div>
