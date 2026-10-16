@@ -230,26 +230,108 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* MEMBERSHIP PREMIUM CARD ($400 MXN / 15 días) */}
-      <div className="p-5 rounded-3xl bg-neutral-900/70 border border-purple-500/25 mb-5 space-y-3">
-        <div className="flex items-center justify-between">
+      {/* PLANES & MEMBRESÍAS: GRATUITO Y PREMIUM */}
+      <div className="space-y-3.5 mb-6">
+        <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Crown className="w-5 h-5 text-amber-400" />
-            <h3 className="text-sm font-bold text-white">Membresía Premium</h3>
+            <h3 className="text-sm font-black text-white uppercase tracking-wider">
+              Planes de Acceso & Membresías
+            </h3>
           </div>
-          <span className="text-xs font-mono font-bold text-pink-400">$400 MXN / 15 días</span>
+          <span className="text-[10px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+            Transparencia Total
+          </span>
         </div>
 
-        <p className="text-xs text-white/70 leading-relaxed font-normal">
-          Filtros avanzados por gustos pasionales, modo incógnito, ocultar distancia y prioridad en eventos privados. Conocer gente y chatear siempre es gratis.
-        </p>
+        <div className="grid grid-cols-1 gap-3.5">
+          {/* PLAN 1: PLAN ESTÁNDAR GRATUITO (ACTIVO) */}
+          <div className="p-4 rounded-3xl bg-neutral-900/80 border-2 border-emerald-500/50 shadow-xl relative overflow-hidden">
+            <div className="flex items-center justify-between mb-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-500/40">
+                Plan Actual · Activo
+              </span>
+              <span className="text-sm font-mono font-black text-emerald-400">$0 Gratis</span>
+            </div>
 
-        <button
-          onClick={() => setPremiumModalOpen(true)}
-          className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 active:scale-95 transition"
-        >
-          Ver Beneficios & Contratar
-        </button>
+            <h4 className="text-base font-black text-white">Plan Estándar Gratuito</h4>
+            <p className="text-[11px] text-white/70 leading-snug mt-1">
+              Conocer gente, descubrir perfiles, enviar likes diarios, hacer match mutuo y chatear siempre es 100% gratuito en AppSwinger.
+            </p>
+
+            <ul className="space-y-1.5 pt-3 mt-3 text-[11px] text-neutral-300 border-t border-white/10">
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Swipes y descubrimiento en tu radio de distancia</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Chat y mensajería privada 100% ilimitada con tus matches</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Control de privacidad de ubicación en tiempo real (On/Off)</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Acceso a cartelera de eventos y propuestas abiertas</span>
+              </li>
+            </ul>
+
+            <div className="mt-4 pt-2">
+              <div className="w-full py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-center text-xs font-bold flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Plan Básico Activo (Sin costo ni cobros recurrentes)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* PLAN 2: MEMBRESÍA VIP ULTRA PLUS (OPCIONAL) */}
+          <div className="p-4 rounded-3xl bg-gradient-to-b from-[#1b0f34] via-[#140a28] to-[#0d051c] border-2 border-purple-500/40 shadow-xl relative overflow-hidden">
+            <div className="flex items-center justify-between mb-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-white text-[10px] font-black uppercase tracking-wider shadow-sm">
+                Opcional VIP
+              </span>
+              <span className="text-sm font-mono font-black text-pink-300">$400 MXN / $25 USD</span>
+            </div>
+
+            <h4 className="text-base font-black text-white flex items-center gap-1.5">
+              <span>Membresía VIP Ultra Plus</span>
+              <Crown className="w-4 h-4 text-amber-400" />
+            </h4>
+            <p className="text-[11px] text-purple-200/80 leading-snug mt-1">
+              Para parejas y personas que desean acelerar sus conexiones con herramientas avanzadas de discreción y prioridad exclusiva.
+            </p>
+
+            <ul className="space-y-1.5 pt-3 mt-3 text-[11px] text-neutral-300 border-t border-white/10">
+              <li className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
+                <span>Likes y rebobinados ilimitados sin esperas</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
+                <span>Filtro por gustos pasionales específicos (Tríos, Hotwife, Fiestas)</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
+                <span>Modo incógnito para navegar perfiles sin dejar rastro</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
+                <span>Prioridad en solicitudes de villas y fiestas privadas</span>
+              </li>
+            </ul>
+
+            <div className="mt-4 pt-2">
+              <button
+                onClick={() => setPremiumModalOpen(true)}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 hover:brightness-110 active:scale-95 transition"
+              >
+                Ver Beneficios & Contratar VIP
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* PRIVACIDAD & SEGURIDAD */}

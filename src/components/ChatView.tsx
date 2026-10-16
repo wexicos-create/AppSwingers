@@ -19,7 +19,8 @@ import {
   X,
   AlertTriangle,
   Lock,
-  ThumbsUp
+  ThumbsUp,
+  MapPin
 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -58,23 +59,65 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingTimerRef = useRef<any>(null);
 
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({
-    'p-emma': [
-      { id: 'e1', me: false, ts: Date.now() - 3600000, t: 'What does peace look like to you?' },
-      { id: 'e2', me: true, ts: Date.now() - 3400000, t: 'For me, strolling at sunrise with a cup of coffee is so peaceful.' },
-      { id: 'e3', me: false, ts: Date.now() - 3200000, t: 'Ugh, yes. Mine is jazz + pancakes + no talking.' },
-      { id: 'e4', me: false, ts: Date.now() - 3000000, voiceUrl: 'audio-note-1', voiceDuration: '00:18', t: 'Nota de voz (00:18)' },
-      { id: 'e5', me: true, ts: Date.now() - 2800000, t: 'Totally stealing that. Sounds weirdly healing.' },
-    ],
-    'p-ava': [
-      { id: 'm1', me: false, ts: Date.now() - 7200000, t: '¡Hola! Me encantó la energía de tu perfil ✨' },
-      { id: 'm2', me: true, ts: Date.now() - 7100000, t: '¡Hola Ava! ¿De verdad tan fan del matcha ceremonial?' },
-      { id: 'm3', me: false, ts: Date.now() - 7000000, t: '¡Culpable! 🍵 ¿Y tú qué prefieres antes de una fiesta?' }
-    ],
-    'p1': [
-      { id: 'p1_1', me: false, ts: Date.now() - 14400000, t: 'Hola, vimos que están en la misma zona. ¿Van a la Noche de Antifaz?' }
-    ]
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
+    try {
+      const saved = localStorage.getItem('appswinguer_chat_messages');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('appswinguer_chat_messages', JSON.stringify(chatMessages));
+    } catch (e) {
+      console.warn('LocalStorage save note:', e);
+    }
+  }, [chatMessages]);
+
+  // Real-Time Location Sharing State per Chat (Strict Privacy by Default)
+  const [liveLocationChats, setLiveLocationChats] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('appswinguer_live_locations');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('appswinguer_live_locations', JSON.stringify(liveLocationChats));
+    } catch (e) {
+      console.warn('LocalStorage save note:', e);
+    }
+  }, [liveLocationChats]);
+
+  const toggleLiveLocation = (chatKey: string, partnerName: string) => {
+    const isCurrentlyShared = !!liveLocationChats[chatKey];
+    const willShare = !isCurrentlyShared;
+    setLiveLocationChats(prev => ({ ...prev, [chatKey]: willShare }));
+
+    const statusMsg: ChatMessage = {
+      id: `loc_${Date.now()}`,
+      me: true,
+      ts: Date.now(),
+      t: willShare
+        ? `📍 Has activado la función de compartir ubicación en tiempo real con ${partnerName}. Ambos perfiles pueden ver coordenadas dinámicas de encuentro.`
+        : `🔒 Has apagado la ubicación en tiempo real. Tu posición física exacta ahora está completamente protegida y oculta.`,
+    };
+
+    setChatMessages(prev => ({
+      ...prev,
+      [chatKey]: [...(prev[chatKey] || []), statusMsg]
+    }));
+
+    showToast(willShare 
+      ? `Ubicación en tiempo real: ACTIVADA (Compartiendo con ${partnerName})` 
+      : `Ubicación en tiempo real: APAGADA (Modo Privado Seguro)`
+    );
+  };
 
   // Automatically select chat if initialChatUserId is provided (from Match modal or matches list)
   useEffect(() => {
@@ -290,7 +333,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   <span className="text-xs font-normal text-white/50">{activeChat.profile.ages || activeChat.profile.age}</span>
                 </h3>
                 <span className="text-[10px] text-purple-300 font-medium">
-                  {activeChat.profile.online ? 'En línea ahora' : 'San Luis Potosí &bull; Activo'}
+                  {activeChat.profile.online ? 'En línea ahora' : 'Recientemente activo'} &bull; {activeChat.profile.distance || `${activeChat.profile.km} km`}
                 </span>
               </div>
             </div>
@@ -316,6 +359,45 @@ export const ChatView: React.FC<ChatViewProps> = ({
               <span>Bloquear</span>
             </button>
           </div>
+        </div>
+
+        {/* Live Location Privacy Switch Bar with ON/OFF Control */}
+        <div className="px-3.5 py-2.5 bg-gradient-to-r from-purple-950/70 via-neutral-900/90 to-purple-950/70 border-b border-purple-500/25 flex items-center justify-between gap-3 text-xs shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className={`p-1.5 rounded-lg border ${
+              liveLocationChats[chatKey] 
+                ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-400' 
+                : 'bg-purple-950/40 border-purple-500/30 text-purple-400'
+            }`}>
+              <MapPin className={`w-3.5 h-3.5 ${liveLocationChats[chatKey] ? 'animate-bounce text-emerald-400' : 'text-purple-300'}`} />
+            </div>
+            <div className="truncate">
+              <span className="font-bold text-white text-[11px] block leading-tight truncate">
+                {liveLocationChats[chatKey] ? 'Ubicación en Tiempo Real: ACTIVA' : 'Ubicación en Tiempo Real: PROTEGIDA'}
+              </span>
+              <span className="text-[10px] text-purple-300/80 block leading-tight truncate">
+                {liveLocationChats[chatKey] 
+                  ? `Compartiendo punto dinámico con ${activeChat.profile.name}` 
+                  : `Solo distancia estimada en Match (${activeChat.profile.distance || `${activeChat.profile.km} km`})`}
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive On/Off Switch Button */}
+          <button
+            type="button"
+            onClick={() => toggleLiveLocation(chatKey, activeChat.profile.name)}
+            className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 shrink-0 border shadow-sm active:scale-95 ${
+              liveLocationChats[chatKey]
+                ? 'bg-emerald-500 text-neutral-950 border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.4)] hover:bg-emerald-400'
+                : 'bg-neutral-800 hover:bg-neutral-700 text-purple-200 border-neutral-600'
+            }`}
+            title="Presiona para activar o apagar compartir ubicación en tiempo real"
+            aria-label="Interruptor de ubicación en tiempo real"
+          >
+            <span className={`w-2 h-2 rounded-full ${liveLocationChats[chatKey] ? 'bg-neutral-950 animate-pulse' : 'bg-rose-500'}`} />
+            <span>{liveLocationChats[chatKey] ? 'ON (Activa)' : 'OFF (Apagada)'}</span>
+          </button>
         </div>
 
         {/* Message Thread Stream */}

@@ -66,7 +66,7 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
             <div className="flex items-center justify-between text-sm text-purple-200/80">
               <div className="flex items-center gap-1.5 font-medium">
                 <MapPin className="w-4 h-4 text-pink-400" />
-                <span>{profile.location || profile.distance || `~${profile.km} km`}</span>
+                <span>{profile.distance || `~${profile.km} km`}</span>
                 <span className="text-white/40">•</span>
                 <span className="text-pink-300 font-bold">{profile.kind}</span>
               </div>

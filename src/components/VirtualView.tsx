@@ -150,7 +150,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-4 pb-24 text-white overflow-y-auto">
+    <div className="w-full max-w-md mx-auto p-4 pb-28 text-white overflow-y-auto">
       
       {/* Top Header with 2 Distinct Buttons for Women/Couples vs Men */}
       <div className="flex flex-col gap-3 mb-4">

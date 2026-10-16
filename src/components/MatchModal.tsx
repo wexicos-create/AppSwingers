@@ -9,6 +9,7 @@ interface MatchModalProps {
   matchProfile: Profile | null;
   currentUserPhoto?: string;
   currentUserName?: string;
+  isEs?: boolean;
   onClose: () => void;
   onStartChat: (profile: Profile) => void;
 }
@@ -18,6 +19,7 @@ export const MatchModal: React.FC<MatchModalProps> = ({
   matchProfile,
   currentUserPhoto = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
   currentUserName = 'Tú',
+  isEs = true,
   onClose,
   onStartChat,
 }) => {
@@ -128,10 +130,12 @@ export const MatchModal: React.FC<MatchModalProps> = ({
             className="mt-5 mb-2"
           >
             <h3 className="font-serif italic text-3xl font-bold bg-gradient-to-r from-pink-300 via-purple-200 to-indigo-200 bg-clip-text text-transparent">
-              It&apos;s a Match
+              {isEs ? '¡Es un Match Pasional!' : "It's a Match!"}
             </h3>
             <p className="text-xs text-purple-200/90 mt-2 max-w-xs leading-relaxed font-normal">
-              Adventurous, creative, and always chasing sunsets. Let&apos;s turn coffee dates into something more.
+              {isEs
+                ? 'Química mutua y coincidencia de fantasías. Da el primer paso con respeto y acuerdos claros.'
+                : 'Mutual chemistry and shared lifestyle vibes. Take the first step with clear communication.'}
             </p>
           </motion.div>
 
@@ -142,14 +146,14 @@ export const MatchModal: React.FC<MatchModalProps> = ({
               className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-[0.98] transition flex items-center justify-center gap-2 animate-pulse"
             >
               <MessageSquare className="w-4 h-4" />
-              💬 Chatear ahora con {matchProfile.name.split(' ')[0]}
+              {isEs ? `💬 Chatear ahora con ${matchProfile.name.split(' ')[0]}` : `💬 Chat now with ${matchProfile.name.split(' ')[0]}`}
             </button>
 
             <button
               onClick={onClose}
               className="w-full py-3 px-6 rounded-2xl bg-white/10 hover:bg-white/15 text-white/80 font-medium text-xs transition active:scale-[0.98]"
             >
-              Seguir descubriendo perfiles
+              {isEs ? 'Seguir descubriendo perfiles' : 'Keep discovering profiles'}
             </button>
           </div>
         </motion.div>

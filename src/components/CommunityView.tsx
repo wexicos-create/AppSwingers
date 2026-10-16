@@ -124,7 +124,7 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4 py-6 flex flex-col gap-6 pb-24">
+    <div className="w-full max-w-4xl mx-auto px-4 py-6 flex flex-col gap-6 pb-28">
       {/* Moderation Banner */}
       <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-200 text-xs sm:text-sm">
         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />

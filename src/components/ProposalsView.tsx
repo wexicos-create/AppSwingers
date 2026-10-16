@@ -41,7 +41,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
   };
 
   return (
-    <div className="w-full max-w-md mx-auto p-4 pb-24 text-white overflow-y-auto">
+    <div className="w-full max-w-md mx-auto p-4 pb-28 text-white overflow-y-auto">
       {/* Top Header */}
       <div className="flex items-end justify-between mb-4">
         <div>

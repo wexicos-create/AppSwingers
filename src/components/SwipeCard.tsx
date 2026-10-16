@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, useMotionValue, useTransform } from 'motion/react';
 import { Profile, SwipeAction } from '../types';
-import { MapPin, Sparkles, CheckCircle2, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { MapPin, Sparkles, CheckCircle2, Info, ChevronLeft, ChevronRight, Share2, Check } from 'lucide-react';
 
 interface SwipeCardProps {
   profile: Profile;
@@ -17,6 +17,46 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
   onOpenDetails,
 }) => {
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [copiedShare, setCopiedShare] = useState(false);
+
+  const displayAge = profile.ages || (profile.age ? String(profile.age) : '');
+
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const shareUrl = `${window.location.origin}/#profile-${profile.id}`;
+    const shareData = {
+      title: `${profile.name} • AppSwinguer Ultra`,
+      text: `Conoce el perfil de ${profile.name} (${profile.kind}${displayAge ? `, ${displayAge}` : ''}) en AppSwinguer Ultra.`,
+      url: shareUrl,
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    // Fallback to clipboard
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = shareUrl;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedShare(true);
+      setTimeout(() => setCopiedShare(false), 2000);
+    } catch (clipErr) {
+      console.warn('Clipboard fallback failed:', clipErr);
+    }
+  };
 
   // Motion drag values
   const x = useMotionValue(0);
@@ -58,8 +98,6 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
     }
   };
 
-  const displayAge = profile.ages || (profile.age ? String(profile.age) : '');
-
   return (
     <motion.div
       style={{
@@ -68,11 +106,11 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         rotate: isFront ? rotate : 0,
         scale: isFront ? scale : 0.96,
       }}
-      drag={isFront ? true : false}
-      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+      drag={isFront ? 'x' : false}
+      dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.8}
       onDragEnd={isFront ? handleDragEnd : undefined}
-      className={`absolute inset-0 w-full h-full rounded-[36px] overflow-hidden select-none cursor-grab active:cursor-grabbing border border-purple-500/25 shadow-2xl bg-neutral-950 ${
+      className={`swipe-card absolute inset-0 w-full h-full rounded-[36px] overflow-hidden select-none cursor-grab active:cursor-grabbing border border-purple-500/25 shadow-2xl bg-neutral-950 touch-pan-y ${
         isFront ? 'z-20' : 'z-10 pointer-events-none'
       }`}
     >
@@ -173,14 +211,14 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       </div>
 
       {/* Bottom Profile Details Container */}
-      <div className="absolute bottom-0 inset-x-0 p-5 pt-8 z-20 flex flex-col gap-2.5 bg-gradient-to-t from-black via-black/90 to-transparent">
+      <div className="absolute bottom-0 inset-x-0 p-4 pt-6 z-20 flex flex-col gap-2 bg-gradient-to-t from-black via-black/90 to-transparent">
         
         {/* Tag chips */}
         <div className="flex flex-wrap gap-1.5">
-          {profile.tags.slice(0, 4).map((tag, idx) => (
+          {profile.tags.slice(0, 3).map((tag, idx) => (
             <span
               key={idx}
-              className="px-2.5 py-0.5 rounded-full bg-purple-900/60 backdrop-blur-md border border-purple-400/30 text-[11px] font-semibold text-purple-200 shadow-sm"
+              className="px-2 py-0.5 rounded-full bg-purple-900/60 backdrop-blur-md border border-purple-400/30 text-[10px] font-semibold text-purple-200 shadow-sm"
             >
               {tag}
             </span>
@@ -199,17 +237,38 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
             )}
           </div>
 
-          {/* Details Modal Trigger */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenDetails(profile);
-            }}
-            className="p-2.5 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md text-white transition active:scale-90"
-            aria-label="Ver detalles"
-          >
-            <Info className="w-5 h-5" />
-          </button>
+          {/* Actions: Share via Web Share API & Details Info */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleShare}
+              className={`p-2.5 rounded-full backdrop-blur-md transition active:scale-90 flex items-center justify-center ${
+                copiedShare
+                  ? 'bg-emerald-500/80 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-400/50'
+                  : 'bg-white/15 hover:bg-white/25 text-white'
+              }`}
+              title={copiedShare ? '¡Enlace copiado!' : 'Compartir perfil'}
+              aria-label="Compartir perfil"
+            >
+              {copiedShare ? (
+                <Check className="w-5 h-5 text-emerald-100" />
+              ) : (
+                <Share2 className="w-5 h-5" />
+              )}
+            </button>
+
+            {/* Details Modal Trigger */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenDetails(profile);
+              }}
+              className="p-2.5 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md text-white transition active:scale-90"
+              aria-label="Ver detalles"
+              title="Ver detalles"
+            >
+              <Info className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Distance & Kind */}

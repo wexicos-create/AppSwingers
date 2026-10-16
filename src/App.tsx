@@ -49,6 +49,7 @@ import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
+import { PushLookupModal } from './components/PushLookupModal';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -65,7 +66,9 @@ import {
   SlidersHorizontal,
   Zap,
   Users,
-  BookOpen
+  BookOpen,
+  Bell,
+  Loader2
 } from 'lucide-react';
 
 export default function App() {
@@ -76,6 +79,8 @@ export default function App() {
   const [region, setRegion] = useState<AppRegion>('MX');
   const [lang, setLang] = useState<Language>('es');
   const [locationGranted, setLocationGranted] = useState(false);
+  const [locationBannerDismissed, setLocationBannerDismissed] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const isEs = lang === 'es';
   const dict = DICTIONARY[lang] || DICTIONARY.es;
 
@@ -109,30 +114,20 @@ export default function App() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
-  // Events & Ticketing
+  // Events & Ticketing (Pristine clean launch en 0)
   const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
-  const [reservations, setReservations] = useState<Reservation[]>([
-    {
-      id: 'res_init',
-      eventId: 'e1',
-      tier: 'pareja',
-      folio: 'F-892',
-      code: 'AS-POL-782',
-      ts: Date.now() - 86400000,
-      status: 'pagado',
-    }
-  ]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals
   const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
 
-  // Virtual & Creators
+  // Virtual & Creators (Pristine clean launch en 0)
   const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
-  const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>(['@lunaroja']);
-  const [liveAccessIds, setLiveAccessIds] = useState<string[]>(['l1']);
+  const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
+  const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
   const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
 
   // Moderation & Reports
@@ -151,26 +146,11 @@ export default function App() {
   const [activeAnnouncement, setActiveAnnouncement] = useState<SystemAnnouncement | null>(announcements[0]);
 
   // Club de Experiencias (10 stamps punch card)
-  const [attendStamps, setAttendStamps] = useState(7);
+  const [attendStamps, setAttendStamps] = useState(0);
   const [redeemedClubFolio, setRedeemedClubFolio] = useState<string | null>(null);
 
-  // Matches & Chat
-  const [matches, setMatches] = useState<MatchItem[]>([
-    {
-      id: 'm-1',
-      profile: INITIAL_PROFILES[0], // Emma
-      matchedAt: new Date(Date.now() - 3600000).toISOString(),
-      lastMessage: isEs ? 'Totalmente de acuerdo. Las reglas claras hacen todo más divertido.' : 'Totally stealing that. Sounds healing.',
-      unreadCount: 1,
-    },
-    {
-      id: 'm-2',
-      profile: INITIAL_PROFILES[2], // Ava Williams
-      matchedAt: new Date(Date.now() - 7200000).toISOString(),
-      lastMessage: isEs ? '¡Culpable! 🍵 ¿Y tú qué prefieres antes de una fiesta?' : 'Guilty as charged! What do you prefer?',
-      unreadCount: 0,
-    }
-  ]);
+  // Matches & Chat (Pristine clean launch en 0)
+  const [matches, setMatches] = useState<MatchItem[]>([]);
 
   // Modals & Drawers state
   const [matchModalProfile, setMatchModalProfile] = useState<Profile | null>(null);
@@ -180,6 +160,8 @@ export default function App() {
   const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
+  const [pushLookupOpen, setPushLookupOpen] = useState(false);
+  const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
 
@@ -198,30 +180,65 @@ export default function App() {
   }, []);
 
   // Location request to determine exact KM distances and country
-  const requestLocationAccess = () => {
+  const requestLocationAccess = (isManualClick: boolean = false) => {
+    setIsLocating(true);
     if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          setIsLocating(false);
           setLocationGranted(true);
+          setLocationBannerDismissed(true);
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
           // Mexico geographical bounds: lat 14 to 33, lng -119 to -85
           if (lat >= 14 && lat <= 33 && lng >= -119 && lng <= -85) {
             setRegion('MX');
-            setLang('es');
             setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
           } else {
             setRegion('US');
-            setLang('en');
             setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
+          }
+          if (isManualClick) {
+            setPushToast({
+              title: isEs ? '¡GPS Conectado!' : 'GPS Connected!',
+              body: isEs 
+                ? 'Coordenadas GPS obtenidas. Cálculo de distancias en KM activo.' 
+                : 'GPS coordinates acquired. Real-time KM distance active.'
+            });
           }
         },
         (err) => {
+          setIsLocating(false);
           console.warn('Geolocation note:', err);
-          setLocationGranted(false);
+          if (isManualClick) {
+            setLocationGranted(true);
+            setLocationBannerDismissed(true);
+            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
+            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
+            setPushToast({
+              title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
+              body: isEs 
+                ? `Ubicación configurada en ${cityName}. Cálculo en KM activado.` 
+                : `Location configured in ${cityName}. Distance calculations active.`
+            });
+          } else {
+            setLocationGranted(false);
+          }
         },
-        { enableHighAccuracy: false, timeout: 8000 }
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
       );
+    } else {
+      setIsLocating(false);
+      if (isManualClick) {
+        setLocationGranted(true);
+        setLocationBannerDismissed(true);
+        const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
+        setUserProfile(prev => ({ ...prev, locationCity: cityName }));
+        setPushToast({
+          title: isEs ? 'Ubicación Activada' : 'Location Activated',
+          body: isEs ? `Ubicación configurada en ${cityName}.` : `Location set in ${cityName}.`
+        });
+      }
     }
   };
 
@@ -287,8 +304,11 @@ export default function App() {
     }
   };
 
-  // Distance filtered profiles
-  const visibleProfiles = profiles.filter(p => p.km <= maxDistance);
+  // Regional & Distance filtered profiles (México vs USA)
+  const visibleProfiles = profiles.filter(p => {
+    const profileCountry = p.country || 'MX';
+    return profileCountry === region && p.km <= maxDistance;
+  });
   const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
 
   const handleSwipe = async (action: SwipeAction) => {
@@ -495,44 +515,81 @@ export default function App() {
         {/* Top Bar Header */}
         <header className="px-4 py-3 flex items-center justify-between border-b border-purple-500/20 bg-[#08050c]/90 backdrop-blur-xl sticky top-0 z-40 shrink-0">
           
-          {/* Brand Wordmark */}
-          <div 
-            onClick={() => setActiveTab('match')}
-            className="flex items-center gap-1.5 cursor-pointer group"
-          >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(255,45,120,0.5)] group-hover:scale-105 transition-transform">
+          {/* Brand Wordmark with Country Switcher in place of ULTRA */}
+          <div className="flex items-center gap-1.5">
+            <div 
+              onClick={() => setActiveTab('match')}
+              className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(255,45,120,0.5)] cursor-pointer hover:scale-105 transition-transform"
+              title={isEs ? 'Ir a Match' : 'Go to Match'}
+            >
               <Flame className="w-5 h-5 fill-white" />
             </div>
-            <div className="leading-none">
-              <span className="font-black text-sm tracking-wider uppercase text-white font-mono">
+            <div className="leading-none flex items-center gap-1">
+              <span 
+                onClick={() => setActiveTab('match')}
+                className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
+              >
                 APPSWINGUER
               </span>
-              <span className="px-1.5 py-0.2 rounded bg-purple-900/80 text-[9px] font-black tracking-widest uppercase text-pink-300 ml-1 border border-pink-400/40">
-                ULTRA
-              </span>
+              {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
+              <div className="flex items-center gap-1 ml-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const nextReg = region === 'MX' ? 'US' : 'MX';
+                    setRegion(nextReg);
+                    setCurrentIndex(0);
+                    setPushToast({
+                      title: nextReg === 'MX' ? '🇲🇽 Región: México' : '🇺🇸 Region: United States',
+                      body: nextReg === 'MX' 
+                        ? 'Catálogo regional de México activado (distancias en KM).' 
+                        : 'US lifestyle catalog activated (distances in MI).'
+                    });
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-purple-900/90 hover:bg-pink-900/90 text-[10px] font-black tracking-wider uppercase text-pink-300 border border-pink-400/50 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
+                  title={isEs ? 'Cambiar región: México / Estados Unidos' : 'Switch region: Mexico / United States'}
+                  aria-label="Selector de país o región"
+                >
+                  <span>{region === 'MX' ? '🇲🇽 MX' : '🇺🇸 US'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const nextLang = lang === 'es' ? 'en' : 'es';
+                    setLang(nextLang);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-purple-950 text-[10px] font-black tracking-wider uppercase text-purple-200 border border-purple-500/30 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
+                  title={isEs ? 'Cambiar idioma: Español / English' : 'Switch language: Spanish / English'}
+                  aria-label="Selector de idioma"
+                >
+                  <Globe className="w-2.5 h-2.5 text-pink-400" />
+                  <span>{lang.toUpperCase()}</span>
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Right Controls */}
           <div className="flex items-center gap-1.5">
             
-            {/* Location & Language Toggle (San Luis Potosí, México vs USA) */}
+            {/* Push Notification Lookup Button */}
             <button
-              onClick={() => {
-                const nextReg = region === 'MX' ? 'US' : 'MX';
-                const nextLang = nextReg === 'MX' ? 'es' : 'en';
-                setRegion(nextReg);
-                setLang(nextLang);
-              }}
-              className="px-2.5 py-1 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 text-[11px] font-bold text-white flex items-center gap-1 shadow-md active:scale-95 transition"
-              title={isEs ? 'Cambiar a English (USA)' : 'Cambiar a Español (México - San Luis Potosí)'}
+              type="button"
+              onClick={() => setPushLookupOpen(true)}
+              className="relative p-2 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/30 text-white transition active:scale-95 flex items-center justify-center"
+              title={isEs ? 'Lookup de Notificaciones Push & Diagnóstico' : 'Push Notification Lookup & Alert System'}
+              aria-label="Push notifications lookup"
             >
-              <Globe className="w-3.5 h-3.5 text-pink-400" />
-              <span>{region === 'MX' ? '🇲🇽 ES' : '🇺🇸 EN'}</span>
+              <Bell className="w-4 h-4 text-pink-400" />
+              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-purple-950 animate-pulse" />
             </button>
 
             {/* User Profile / Registration Pill */}
             <button
+              type="button"
               onClick={() => setRegistrationModalOpen(true)}
               className="px-2.5 py-1 rounded-xl bg-neutral-900/80 hover:bg-purple-950 border border-purple-500/30 text-[11px] font-bold text-purple-200 flex items-center gap-1 transition truncate max-w-[105px]"
               title={isEs ? 'Editar perfil, pareja o individual, y gustos' : 'Edit profile & fantasies'}
@@ -543,6 +600,7 @@ export default function App() {
 
             {/* Messages Drawer Trigger */}
             <button
+              type="button"
               onClick={() => {
                 setActiveChatUserId(null);
                 setChatDrawerOpen(true);
@@ -560,57 +618,89 @@ export default function App() {
           </div>
         </header>
 
-        {/* Location GPS Permission Reminder Banner */}
-        {!locationGranted && (
-          <div className="mx-3.5 mt-2.5 p-2.5 rounded-2xl bg-purple-950/70 border border-purple-500/30 flex items-center justify-between gap-2 text-xs">
-            <div className="flex items-center gap-2">
-              <Navigation className="w-4 h-4 text-pink-400 shrink-0" />
-              <span className="text-[11px] text-purple-200">
+        {/* Location GPS Permission Reminder Banner - Compact */}
+        {!locationGranted && !locationBannerDismissed && (
+          <div className="mx-3 mt-1.5 px-3 py-1.5 rounded-xl bg-purple-950/80 border border-purple-500/30 flex items-center justify-between gap-2 text-xs shadow-md shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Navigation className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+              <span className="text-[10px] text-purple-200 truncate">
                 {isEs 
-                  ? 'Activa tu GPS para calcular KM de distancia exactos en San Luis Potosí / México.' 
-                  : 'Enable GPS location for accurate KM distance calculations in your area.'}
+                  ? 'Activa GPS para calcular KM exactos' 
+                  : 'Enable GPS for accurate KM calculations'}
               </span>
             </div>
-            <button
-              onClick={requestLocationAccess}
-              className="px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-[10px] font-bold text-white shrink-0 active:scale-95 transition"
-            >
-              {isEs ? 'Activar' : 'Enable'}
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                disabled={isLocating}
+                onClick={() => requestLocationAccess(true)}
+                className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-[10px] font-bold text-white shrink-0 active:scale-95 transition flex items-center gap-1 shadow-sm disabled:opacity-60"
+              >
+                {isLocating ? (
+                  <>
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    <span>{isEs ? '...' : '...'}</span>
+                  </>
+                ) : (
+                  <span>{isEs ? 'Activar' : 'Enable'}</span>
+                )}
+              </button>
+              <button
+                onClick={() => setLocationBannerDismissed(true)}
+                className="p-1 rounded-lg text-purple-300 hover:text-white transition"
+                title={isEs ? 'Cerrar' : 'Dismiss'}
+                aria-label={isEs ? 'Cerrar' : 'Dismiss'}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
           </div>
         )}
 
-        {/* System Announcement Banner */}
+        {/* System Announcement Banner - Compact */}
         {activeAnnouncement && (
-          <div className="mx-3.5 mt-2.5 p-3 rounded-2xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-xs shadow-lg flex items-start gap-2.5 relative">
-            <Sparkles className="w-4 h-4 text-pink-400 shrink-0 mt-0.5 animate-pulse" />
-            <div className="flex-1 pr-6">
-              <strong className="text-white block font-bold text-xs">{activeAnnouncement.title}</strong>
-              <p className="text-purple-200/90 text-[11px] mt-0.5 leading-snug">{activeAnnouncement.body}</p>
+          <div className="mx-3 mt-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-xs shadow-md flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Sparkles className="w-3.5 h-3.5 text-pink-400 shrink-0 animate-pulse" />
+              <div className="truncate">
+                <span className="text-white font-bold text-[10px] mr-1.5">{activeAnnouncement.title}</span>
+                <span className="text-purple-200/80 text-[10px] hidden sm:inline">{activeAnnouncement.body}</span>
+              </div>
             </div>
             <button
               onClick={() => setActiveAnnouncement(null)}
-              className="absolute top-2.5 right-2.5 text-white/50 hover:text-white p-1"
+              className="text-white/60 hover:text-white p-0.5 shrink-0"
               aria-label="Cerrar anuncio"
             >
-              <X className="w-4 h-4" />
+              <X className="w-3 h-3" />
             </button>
           </div>
         )}
 
         {/* Tab Content Display */}
-        <main className="flex-1 flex flex-col relative overflow-hidden">
+        <main className={`flex-1 flex flex-col relative ${activeTab === 'match' ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'}`}>
           
           {/* TAB 1: MATCH / DISCOVER DECK */}
           {activeTab === 'match' && (
-            <div className="flex-1 flex flex-col justify-between p-4 pb-20">
+            <div className="flex-1 flex flex-col justify-between px-3 pt-1.5 pb-20 h-full min-h-0 overflow-hidden select-none">
               
-              {/* Distance adjustment chip bar */}
-              <div className="flex items-center justify-between mb-2 px-1">
-                <span className="text-xs text-purple-200/80 font-medium flex items-center gap-1.5">
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-pink-400" />
-                  <span>{isEs ? 'Radio:' : 'Radius:'} <strong>{maxDistance} km</strong></span>
-                </span>
+              {/* Distance adjustment & Extras bar */}
+              <div className="flex items-center justify-between mb-1 px-1 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-purple-200/90 font-medium flex items-center gap-1">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-pink-400" />
+                    <span>{isEs ? 'Radio:' : 'Radius:'} <strong className="text-white">{maxDistance} km</strong></span>
+                  </span>
+
+                  {/* Extras Modal button safely placed here */}
+                  <button
+                    onClick={() => setExtrasModalOpen(true)}
+                    className="px-2 py-0.5 rounded-full bg-purple-900/60 hover:bg-purple-800 border border-purple-400/40 text-[10px] font-bold text-pink-300 flex items-center gap-1 active:scale-95 transition shadow-sm"
+                    title="Ver Extras y Beneficios VIP"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-300" />
+                    <span>＋ Extras VIP</span>
+                  </button>
+                </div>
 
                 <button
                   onClick={() => setRegistrationModalOpen(true)}
@@ -621,8 +711,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Card Deck Viewport */}
-              <div className="relative w-full aspect-[3/4.4] max-h-[570px] my-auto">
+              {/* Card Deck Viewport - Flexible so ActionButtons are 100% visible and unclipped */}
+              <div className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto">
                 {currentProfile ? (
                   <>
                     {currentIndex + 1 < visibleProfiles.length && (
@@ -644,29 +734,29 @@ export default function App() {
                     />
                   </>
                 ) : (
-                  <div className="absolute inset-0 rounded-[36px] bg-neutral-900/70 border border-purple-500/20 p-8 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-purple-600/30 to-pink-600/30 border border-purple-500/40 flex items-center justify-center mb-4">
-                      <Sparkles className="w-10 h-10 text-pink-400 animate-pulse" />
+                  <div className="absolute inset-0 rounded-[28px] bg-neutral-900/80 border border-purple-500/25 p-6 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600/30 to-pink-600/30 border border-purple-500/40 flex items-center justify-center mb-3">
+                      <Sparkles className="w-8 h-8 text-pink-400 animate-pulse" />
                     </div>
-                    <h3 className="text-xl font-bold text-white mb-2">
+                    <h3 className="text-lg font-bold text-white mb-1.5">
                       {isEs ? 'Has visto todos los perfiles en este radio' : 'No more profiles in this radius'}
                     </h3>
-                    <p className="text-xs text-purple-200/70 max-w-xs mb-6 leading-relaxed">
+                    <p className="text-xs text-purple-200/70 max-w-xs mb-4 leading-relaxed">
                       {isEs 
-                        ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en San Luis Potosí y México.` 
-                        : `Expand your ${maxDistance} km radius or explore private parties in the USA.`}
+                        ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en tu región.` 
+                        : `Expand your ${maxDistance} km radius or explore private parties.`}
                     </p>
                     <div className="flex gap-2">
                       <button
                         onClick={handleResetDeck}
-                        className="py-3 px-5 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-2 hover:brightness-110 active:scale-95 transition"
+                        className="py-2.5 px-4 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-2 hover:brightness-110 active:scale-95 transition"
                       >
-                        <RotateCcw className="w-4 h-4" />
+                        <RotateCcw className="w-3.5 h-3.5" />
                         {isEs ? 'Revisar de nuevo' : 'Review again'}
                       </button>
                       <button
                         onClick={() => setRegistrationModalOpen(true)}
-                        className="py-3 px-5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                        className="py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
                       >
                         {isEs ? 'Aumentar KM' : 'Expand KM'}
                       </button>
@@ -675,8 +765,8 @@ export default function App() {
                 )}
               </div>
 
-              {/* Floating Action Buttons */}
-              <div className="mt-2">
+              {/* Action Buttons: 100% Visible, Guaranteed Unclipped */}
+              <div className="shrink-0 pt-1 pb-1 z-30">
                 <ActionButtons
                   onSwipe={handleSwipe}
                   onRewind={handleRewind}
@@ -776,16 +866,6 @@ export default function App() {
             />
           )}
         </main>
-
-        {/* FLOATING EXTRAS BUTTON (Direct from attached script!) */}
-        <button
-          onClick={() => setExtrasModalOpen(true)}
-          id="asx-launch"
-          className="fixed right-3.5 bottom-20 z-40 px-3.5 py-2 rounded-full bg-[#211a2f] border border-[#9b6bff] text-white text-xs font-bold shadow-xl flex items-center gap-1.5 active:scale-95 transition hover:brightness-110"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#d9c2ff]" />
-          <span>＋ Extras</span>
-        </button>
 
         {/* Bottom Navigation Bar */}
         <nav className="fixed bottom-0 inset-x-0 max-w-[430px] mx-auto z-40 px-3 py-2 bg-[#08050c]/90 backdrop-blur-2xl border-t border-purple-500/20 flex items-center justify-around shadow-2xl">
@@ -915,7 +995,7 @@ export default function App() {
             setMaxDistance(data.maxKm);
             alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
           }}
-          onRequestLocation={requestLocationAccess}
+          onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
         />
 
@@ -948,6 +1028,7 @@ export default function App() {
           matchProfile={matchModalProfile}
           currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
           currentUserName={userProfile.alias}
+          isEs={isEs}
           onClose={() => setMatchModalProfile(null)}
           onStartChat={handleStartChatFromMatch}
         />
@@ -978,6 +1059,40 @@ export default function App() {
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}
           />
+        )}
+
+        {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
+        <PushLookupModal
+          isOpen={pushLookupOpen}
+          onClose={() => setPushLookupOpen(false)}
+          region={region}
+          isEs={isEs}
+          onSendTestNotification={(title, body) => {
+            setPushToast({ title, body });
+            setTimeout(() => setPushToast(null), 5500);
+          }}
+        />
+
+        {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
+        {pushToast && (
+          <div className="fixed top-4 inset-x-4 max-w-sm mx-auto z-[9999] p-3.5 rounded-2xl bg-[#17092c]/95 border border-pink-500/60 shadow-[0_0_35px_rgba(255,45,120,0.5)] backdrop-blur-2xl text-white flex items-start gap-3 animate-in slide-in-from-top-4 duration-300">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shrink-0 text-white shadow-md">
+              <Bell className="w-5 h-5 fill-white/20 animate-bounce" />
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
+                {region === 'MX' ? 'Notificación Push México (SLP)' : 'Push Notification USA'}
+              </span>
+              <h4 className="font-bold text-xs text-white truncate mt-0.5">{pushToast.title}</h4>
+              <p className="text-[11px] text-purple-200/90 leading-tight mt-0.5">{pushToast.body}</p>
+            </div>
+            <button
+              onClick={() => setPushToast(null)}
+              className="p-1 rounded-full text-white/50 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         )}
 
       </div>

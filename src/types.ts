@@ -19,6 +19,7 @@ export interface Profile {
   km: number;
   distance?: string;
   location?: string;
+  country?: AppRegion;
   likesYou?: boolean;
   verify: VerifyStatus;
   status: AccountStatus;
