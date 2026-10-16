@@ -121,7 +121,7 @@ export function MonetizationExtrasModal({
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="font-bold text-rose-400">{isEs ? 'Prime' : 'Prime'}</span>
-                <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">15 {isEs ? 'días' : 'days'}</span>
+                <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">1 {isEs ? 'mes' : 'month'}</span>
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{silverTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
               <div className="text-[11px] font-bold text-pink-300 mb-2">
