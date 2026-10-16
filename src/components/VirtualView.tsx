@@ -84,7 +84,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   const [myUploads, setMyUploads] = useState<Array<{ id: string; caption: string; price: number; url: string; date: string }>>([]);
 
   // Virtual card balance
-  const [virtualCardBalance] = useState(0);
+  const [virtualCardBalance, setVirtualCardBalance] = useState(0);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -350,7 +350,6 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                       <button
                         onClick={() => {
                           onBuyLiveAccess(l);
-                          setVirtualCardBalance(prev => prev + totalLivePrice);
                         }}
                         className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-xs shadow-md active:scale-95 transition"
                       >
@@ -667,8 +666,8 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
 
             <p className="text-[11px] text-purple-200/80 leading-relaxed">
               {isEs 
-                ? 'Este saldo se abona automáticamente por la venta de contenido exclusivo (PPV), suscripciones y por tu participación como asociado verificado en eventos presenciales.' 
-                : 'This balance is credited from content sales, subscriptions, and verified event hosting.'}
+                ? 'La cartera es solo una maqueta visual. No se han registrado ingresos ni hay retiros bancarios conectados.'
+                : 'This wallet is a visual prototype only. No earnings are recorded and bank withdrawals are not connected.'}
             </p>
 
             <button
@@ -678,13 +677,12 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                   alert(isEs ? 'Saldo insuficiente para retirar.' : 'Insufficient balance.');
                   return;
                 }
-                alert(isEs ? `¡Retiro de $${virtualCardBalance} ${currencyCode} solicitado a tu cuenta bancaria asociada!` : `Withdrawal requested!`);
-                setVirtualCardBalance(0);
+                alert(isEs ? 'Los retiros están deshabilitados: no hay fondos reales ni cuenta bancaria conectada.' : 'Withdrawals are disabled: there are no real funds or connected bank account.');
               }}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-lg active:scale-95 transition flex items-center justify-center gap-2"
             >
               <DollarSign className="w-4 h-4" />
-              <span>{isEs ? 'Retirar Dinero a Cuenta Bancaria' : 'Withdraw Funds to Bank Account'}</span>
+              <span>{isEs ? 'Retiros no disponibles' : 'Withdrawals unavailable'}</span>
             </button>
           </div>
         </div>
