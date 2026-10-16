@@ -163,10 +163,10 @@ export default function App() {
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>(import.meta.env.DEV ? [{
       id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
+      title: isEs ? 'Bienvenido a AppSwinger' : 'Welcome to AppSwinger',
       body: isEs 
-        ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
-        : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
+        ? 'Aviso de demostración. Los registros, eventos y verificaciones reales estarán disponibles después de validar el backend.'
+        : 'Demo notice. Real registration, events, and verification will be available after backend validation.',
       ts: Date.now(),
     }] : []);
   const [activeAnnouncement, setActiveAnnouncement] = useState<SystemAnnouncement | null>(announcements[0]);
