@@ -285,16 +285,22 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (!currentUser) return;
+      if (!currentUser) {
+        if (!import.meta.env.DEV) {
+          setProfiles([]);
+          setMatches([]);
+        }
+        return;
+      }
 
       // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
       void syncUserProfile(currentUser)
-        .then(async () => {
+        .then(async savedAlias => {
           const [remoteMatches, discoveredProfiles] = await Promise.all([
             fetchUserMatches(currentUser.id),
             fetchDiscoverableProfiles(),
           ]);
-          if (discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
+          if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
@@ -307,7 +313,7 @@ export default function App() {
             });
           }
           const metadata = currentUser.user_metadata ?? {};
-          const displayName = metadata.full_name || metadata.name;
+          const displayName = savedAlias || metadata.full_name || metadata.name;
           if (typeof displayName === 'string' && displayName.trim()) {
             setUserProfile(prev => ({ ...prev, alias: displayName.trim() }));
           }
