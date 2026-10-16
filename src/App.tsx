@@ -6,8 +6,9 @@ import {
   googleProvider, 
   syncUserProfile, 
   recordSwipe, 
-  recordMatch, 
-  fetchUserMatches, 
+    fetchUserMatches, 
+  fetchDiscoverableProfiles,
+  saveUserProfile,
   testConnection 
 } from './backend';
 import { 
@@ -290,6 +291,7 @@ export default function App() {
       void syncUserProfile(currentUser)
         .then(() => fetchUserMatches(currentUser.id))
         .then(remoteMatches => {
+          if (discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
@@ -347,7 +349,7 @@ export default function App() {
   // Regional & Distance filtered profiles (México vs USA)
   const visibleProfiles = profiles.filter(p => {
     const profileCountry = p.country || 'MX';
-    return profileCountry === region && p.km <= maxDistance;
+    return profileCountry === region && (p.distance === 'Distancia no disponible' || p.km <= maxDistance);
   });
   const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
 
@@ -355,19 +357,21 @@ export default function App() {
     if (!currentProfile) return;
 
     const target = currentProfile;
+    let confirmedMutualMatch = false;
     setSwipedHistory(prev => [...prev, { profile: target, action }]);
     setCurrentIndex(prev => prev + 1);
 
     if (user) {
       try {
-        await recordSwipe(user.id, target, action);
+        confirmedMutualMatch = await recordSwipe(user.id, target, action);
       } catch (err) {
         console.warn('Error recording swipe:', err);
       }
     }
 
     // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
+    const isRealDatabaseProfile = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target.id);
+    const isMatch = isRealDatabaseProfile ? confirmedMutualMatch : (import.meta.env.DEV && (action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90))));
 
     if (isMatch) {
       const newMatch: MatchItem = {
@@ -379,14 +383,6 @@ export default function App() {
       };
 
       setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.id, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
-        }
-      }
 
       setMatchModalProfile(target);
     }
@@ -1088,7 +1084,11 @@ export default function App() {
           lang={lang}
           region={region}
           initialData={userProfile}
-          onSave={(data) => {
+          onSave={async (data) => {
+            if (!user) {
+              throw new Error(isEs ? 'Inicia sesión antes de guardar tu perfil.' : 'Sign in before saving your profile.');
+            }
+            await saveUserProfile(user.id, data, region);
             setUserProfile({
               alias: data.alias,
               kind: data.kind,
@@ -1100,7 +1100,9 @@ export default function App() {
               locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
             });
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            alert(isEs
+              ? 'Perfil guardado en Supabase. Permanecerá privado hasta completar la verificación de edad, identidad y foto.'
+              : 'Profile saved to Supabase. It stays private until age, identity, and photo verification are complete.');
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
@@ -1133,7 +1135,7 @@ export default function App() {
         <MatchModal
           isOpen={!!matchModalProfile}
           matchProfile={matchModalProfile}
-          currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+          currentUserPhoto={user?.user_metadata?.avatar_url || user?.user_metadata?.picture || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
           currentUserName={userProfile.alias}
           isEs={isEs}
           onClose={() => setMatchModalProfile(null)}
