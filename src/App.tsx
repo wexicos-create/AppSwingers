@@ -1,15 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
-import { 
-  auth, 
-  googleProvider, 
-  syncUserProfile, 
-  recordSwipe, 
-    fetchUserMatches, 
+import {
+  syncUserProfile,
+  recordSwipe,
+  fetchUserMatches,
   fetchDiscoverableProfiles,
   saveUserProfile,
-  testConnection 
+  testConnection,
 } from './backend';
 import { 
   Profile, 
@@ -289,8 +287,11 @@ export default function App() {
 
       // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
       void syncUserProfile(currentUser)
-        .then(() => fetchUserMatches(currentUser.id))
-        .then(remoteMatches => {
+        .then(async () => {
+          const [remoteMatches, discoveredProfiles] = await Promise.all([
+            fetchUserMatches(currentUser.id),
+            fetchDiscoverableProfiles(),
+          ]);
           if (discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
