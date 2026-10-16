@@ -146,6 +146,49 @@ export async function recordSwipe(userId: string, targetProfile: Profile, swipeT
 }
 
 // Match cards require a privacy-filtered RPC and are intentionally not synthesized.
-export async function fetchUserMatches(_userId: string): Promise<MatchItem[]> {
-  return [];
+export async function fetchUserMatches(userId: string): Promise<MatchItem[]> {
+  if (!userId) return [];
+  const { data, error } = await supabase.rpc('my_verified_matches', { p_limit: 30 });
+  if (error) {
+    if (error.code !== '42501' && error.code !== 'PGRST202') {
+      console.warn('Supabase match list failed:', error.code);
+    }
+    return [];
+  }
+
+  const rows = (data ?? []) as Array<DiscoverableProfile & { match_id: string; matched_at: string }>;
+  return Promise.all(rows.map(async row => {
+    let photoUrl: string | undefined;
+    if (row.profile_photo_path) {
+      const { data: signed, error: photoError } = await supabase.storage
+        .from('profile-photos')
+        .createSignedUrl(row.profile_photo_path, 300);
+      if (!photoError) photoUrl = signed?.signedUrl;
+    }
+    const photos = photoUrl ? [photoUrl] : [];
+    const profile: Profile = {
+      id: row.profile_id,
+      name: row.display_name || 'Usuario AppSwinger',
+      kind: row.profile_kind,
+      age: row.age ?? undefined,
+      km: 0,
+      distance: 'Distancia no disponible',
+      country: row.country_code === 'US' ? 'US' : 'MX',
+      verify: 'verificado',
+      status: 'activo',
+      hue: 270,
+      tags: row.interests ?? [],
+      bio: row.bio ?? '',
+      photo: photoUrl,
+      photos,
+      joined: row.created_at,
+    };
+    return {
+      id: row.match_id,
+      profile,
+      matchedAt: row.matched_at,
+      lastMessage: 'Match mutuo confirmado',
+      unreadCount: 0,
+    };
+  }));
 }
