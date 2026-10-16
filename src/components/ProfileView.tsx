@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { Profile, SubscriptionTier, AppRegion, MatchItem } from '../types';
-import { fetchUserMatches } from '../firebase';
+import { fetchUserMatches } from '../backend';
 import { 
   LogOut, 
   LogIn, 
@@ -43,7 +43,7 @@ interface ProfileViewProps {
   onRedeemClubReward: () => void;
   maxDistance: number;
   onChangeMaxDistance: (val: number) => void;
-  isFirestoreConnected: boolean;
+  isBackendConnected: boolean;
   onOpenAdmin: () => void;
   onOpenLegal: () => void;
   onExportData: () => void;
@@ -68,7 +68,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onRedeemClubReward,
   maxDistance,
   onChangeMaxDistance,
-  isFirestoreConnected,
+  isBackendConnected,
   onOpenAdmin,
   onOpenLegal,
   onExportData,
@@ -87,16 +87,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [photosMatchOnly, setPhotosMatchOnly] = useState(true);
   const [hideDistance, setHideDistance] = useState(false);
   const [activePhotoSlot, setActivePhotoSlot] = useState<number | null>(null);
-  const [firestoreMatches, setFirestoreMatches] = useState<MatchItem[]>(matches);
+  const [remoteMatches, setFirestoreMatches] = useState<MatchItem[]>(matches);
 
   React.useEffect(() => {
     let isMounted = true;
     if (user) {
-      fetchUserMatches(user.uid).then(res => {
+      fetchUserMatches(user.id).then(res => {
         if (isMounted && res.length > 0) {
           setFirestoreMatches(res);
         }
-      }).catch(err => console.warn('Error fetching Firestore matches in ProfileView:', err));
+      }).catch(err => console.warn('Error fetching Supabase matches in ProfileView:', err));
     } else if (matches.length > 0) {
       setFirestoreMatches(matches);
     }
@@ -171,7 +171,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* Recently Active Matches Widget with Progress Bars (Firestore Timestamp Integration) */}
+      {/* Recently Active Matches Widget with Progress Bars (Supabase match activity) */}
       <div className="p-5 rounded-3xl bg-neutral-900/80 border border-purple-500/30 shadow-xl mb-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -183,22 +183,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 {isEs ? 'Actividad Reciente de Matches' : 'Recently Active Matches'}
               </h3>
               <p className="text-[10px] text-purple-200/70">
-                {isEs ? 'Última interacción registrada en Firestore' : 'Last interaction timestamp from Firestore'}
+                {isEs ? 'Última interacción sincronizada con Supabase' : 'Last interaction synced with Supabase'}
               </p>
             </div>
           </div>
           <span className="text-xs font-mono font-bold text-pink-300 px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/40">
-            {firestoreMatches.length} {isEs ? 'Activos' : 'Active'}
+            {remoteMatches.length} {isEs ? 'Activos' : 'Active'}
           </span>
         </div>
 
-        {firestoreMatches.length === 0 ? (
+        {remoteMatches.length === 0 ? (
           <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-center text-xs text-purple-200/60">
             {isEs ? 'Aún no tienes matches recientes. ¡Haz swipe para conectar!' : 'No recent matches yet. Swipe to connect!'}
           </div>
         ) : (
           <div className="space-y-3">
-            {firestoreMatches.map((m) => {
+            {remoteMatches.map((m) => {
               const matchTime = new Date(m.matchedAt).getTime();
               const now = Date.now();
               const diffHours = Math.max(0, (now - matchTime) / (1000 * 60 * 60));
