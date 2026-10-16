@@ -54,7 +54,7 @@ interface RegistrationModalProps {
   lang: 'es' | 'en';
   region: AppRegion;
   initialData?: Partial<UserProfileData>;
-  onSave: (data: UserProfileData) => void;
+  onSave: (data: UserProfileData) => void | Promise<void>;
   onRequestLocation: () => void;
   locationGranted?: boolean;
 }
@@ -89,6 +89,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     initialData?.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX')
   );
   const [acceptedConsent, setAcceptedConsent] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   if (!isOpen) return null;
 
@@ -110,11 +111,12 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     );
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!alias.trim()) return;
-
-    onSave({
+    if (!alias.trim() || saving) return;
+    setSaving(true);
+    try {
+      await onSave({
       alias: alias.trim(),
       kind,
       bio: bio.trim(),
@@ -123,8 +125,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       ages,
       maxKm,
       locationCity: city.trim(),
-    });
-    onClose();
+      });
+      onClose();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : (isEs ? 'No se pudo guardar el perfil.' : 'Could not save the profile.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -375,7 +382,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           <div className="pt-2">
             <button
               type="submit"
-              disabled={!alias.trim() || !acceptedConsent}
+              disabled={!alias.trim() || !acceptedConsent || saving}
               className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Sparkles className="w-4 h-4 text-amber-300" />
