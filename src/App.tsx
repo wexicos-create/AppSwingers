@@ -8,6 +8,7 @@ import {
   fetchDiscoverableProfiles,
   saveUserProfile,
   blockUser,
+  createSafetyReport,
   testConnection,
 } from './backend';
 import { 
@@ -1066,7 +1067,10 @@ export default function App() {
                   currentUserId={user?.id ?? null}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
+                  onOpenReport={async (t) => {
+                    if (!user) throw new Error(isEs ? 'Inicia sesión para reportar una cuenta.' : 'Sign in to report an account.');
+                    await createSafetyReport(user.id, t.id, t.reason, [t.reason, t.details].filter(Boolean).join('\n\n'));
+                  }}
                   onBlockUser={(id) => {
                     if (user) {
                       void blockUser(user.id, id).then(() => {
