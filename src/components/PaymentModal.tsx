@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppRegion, PaymentItem } from '../types';
-import { X, CreditCard, Lock, ShieldCheck, Sparkles, CheckCircle2, DollarSign, Smartphone } from 'lucide-react';
+import { X, CreditCard, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -24,14 +24,6 @@ export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPay
   const baseAmount = item.amount;
   const taxAmount = isMx ? Math.round(baseAmount * 0.16 * 100) / 100 : 0;
   const totalAmount = Math.round((baseAmount + taxAmount) * 100) / 100;
-
-  const handlePay = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Intentionally fail closed until a server-side payment provider and webhook are validated.
-    alert(isEs
-      ? 'Los cobros están deshabilitados durante la validación técnica. No se realizó ningún cargo ni se activó la membresía.'
-      : 'Payments are disabled during technical validation. No charge was made and no membership was activated.');
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
@@ -77,7 +69,7 @@ export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPay
             <button type="button" onClick={onClose} className="w-full py-3 rounded-xl bg-white/10 text-white font-semibold text-sm">
               {isEs ? 'Cerrar sin pagar' : 'Close without paying'}
             </button>
-          </div>   </form>
+          </div>
         )}
       </div>
     </div>
