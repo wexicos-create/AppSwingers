@@ -110,7 +110,7 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
 
   // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>(import.meta.env.DEV ? INITIAL_PROFILES : []);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
@@ -519,13 +519,15 @@ export default function App() {
 
   // Creator subscriptions
   const handleSubscribeCreator = (creator: Creator) => {
-    setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    alert(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
+    alert(isEs
+      ? `La suscripción a ${creator.name} no está disponible todavía: el checkout y la confirmación de pago no están conectados. No se concedió acceso.`
+      : `Subscriptions to ${creator.name} are not available yet: checkout and payment confirmation are not connected. No access was granted.`);
   };
 
   const handleBuyLiveAccess = (live: LiveStream) => {
-    setLiveAccessIds(prev => [...prev, live.id]);
-    alert(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
+    alert(isEs
+      ? `El acceso a “${live.title}” no está disponible hasta integrar y validar los cobros. No se concedió acceso.`
+      : `Access to “${live.title}” is unavailable until payments are integrated and validated. No access was granted.`);
   };
 
   // Club reward redemption
@@ -677,6 +679,14 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {import.meta.env.DEV && (
+          <div role="status" className="mx-2 mt-1 px-3 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-200 text-[10px] font-semibold">
+            {isEs
+              ? 'MODO DEMOSTRACIÓN: perfiles, eventos y creadoras de ejemplo son ficticios; no representan usuarios verificados.'
+              : 'DEMO MODE: sample profiles, events, and creators are fictional and are not verified users.'}
+          </div>
+        )}
 
         {/* Location GPS Permission Reminder Banner - Ultra-Compact */}
         {!locationGranted && !locationBannerDismissed && (
@@ -888,10 +898,14 @@ export default function App() {
               onRegisterCreator={(c) => {
                 setUserCreator(c);
                 setCreators(prev => [c, ...prev]);
-                alert(isEs ? "¡Perfil de creadora registrado! Ya puedes fijar precios y subir sets exclusivos." : "Creator profile registered!");
+                alert(isEs
+                  ? "Borrador de perfil creado solo en esta sesión. El registro y la publicación en servidor aún no están conectados."
+                  : "Creator profile draft created in this session only. Server registration and publishing are not connected yet.");
               }}
               onUploadMedia={(data) => {
-                alert(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
+                alert(isEs
+                  ? `El contenido “${data.caption}” no se ha subido: el almacenamiento privado y la cola de moderación aún no están conectados.`
+                  : `“${data.caption}” was not uploaded: private storage and the moderation queue are not connected yet.`);
               }}
             />
           )}
@@ -930,8 +944,15 @@ export default function App() {
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                if (tier === 'free') {
+                  setSubscriptionTier('free');
+                  alert(isEs ? 'Acceso gratuito seleccionado.' : 'Free access selected.');
+                  return;
+                }
+                setExtrasModalOpen(true);
+                alert(isEs
+                  ? 'Los planes de pago no se activan manualmente. Completa el pago cuando la integración validada esté disponible.'
+                  : 'Paid plans cannot be activated manually. Complete checkout once the validated payment integration is available.');
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
