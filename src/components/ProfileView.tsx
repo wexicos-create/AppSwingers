@@ -87,18 +87,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [photosMatchOnly, setPhotosMatchOnly] = useState(true);
   const [hideDistance, setHideDistance] = useState(false);
   const [activePhotoSlot, setActivePhotoSlot] = useState<number | null>(null);
-  const [remoteMatches, setFirestoreMatches] = useState<MatchItem[]>(matches);
+  const [remoteMatches, setRemoteMatches] = useState<MatchItem[]>(matches);
 
   React.useEffect(() => {
     let isMounted = true;
     if (user) {
       fetchUserMatches(user.id).then(res => {
         if (isMounted && res.length > 0) {
-          setFirestoreMatches(res);
+          setRemoteMatches(res);
         }
       }).catch(err => console.warn('Error fetching Supabase matches in ProfileView:', err));
     } else if (matches.length > 0) {
-      setFirestoreMatches(matches);
+      setRemoteMatches(matches);
     }
     return () => { isMounted = false; };
   }, [user, matches]);
@@ -135,10 +135,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="relative mb-3">
           <img
             src={
-              user?.photoURL ||
+              (user?.user_metadata?.avatar_url || user?.user_metadata?.picture) ||
               'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'
             }
-            alt={user?.displayName || 'Explorador'}
+            alt={(user?.user_metadata?.full_name || user?.user_metadata?.name) || 'Explorador'}
             className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/60 shadow-[0_0_25px_rgba(177,76,255,0.5)]"
           />
           <div className="absolute bottom-0 right-0 p-1.5 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 text-white shadow-lg">
@@ -147,7 +147,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
 
         <h3 className="text-xl font-bold text-white flex items-center gap-1.5">
-          {user?.displayName || 'Pareja / Explorador Liberal'}
+          {(user?.user_metadata?.full_name || user?.user_metadata?.name) || 'Pareja / Explorador Liberal'}
           <CheckCircle2 className="w-4 h-4 text-blue-400 fill-blue-400/20" />
         </h3>
         <p className="text-xs text-purple-200/70 mt-0.5">
