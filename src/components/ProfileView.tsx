@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { Profile } from '../types';
+import { Profile, SubscriptionTier, AppRegion, MatchItem } from '../types';
+import { fetchUserMatches } from '../firebase';
 import { 
   LogOut, 
   LogIn, 
@@ -22,7 +23,10 @@ import {
   FileText,
   SlidersHorizontal,
   Bell,
-  Smartphone
+  Smartphone,
+  Check,
+  Zap,
+  Clock
 } from 'lucide-react';
 
 interface ProfileViewProps {
@@ -44,6 +48,14 @@ interface ProfileViewProps {
   onOpenLegal: () => void;
   onExportData: () => void;
   onWipeData: () => void;
+  currentTier?: SubscriptionTier;
+  onSelectTier?: (tier: SubscriptionTier) => void;
+  weeklyApplicationsUsed?: number;
+  weeklyApplicationsLimit?: number;
+  region?: AppRegion;
+  isEs?: boolean;
+  onOpenExtrasModal?: () => void;
+  matches?: MatchItem[];
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -61,12 +73,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenLegal,
   onExportData,
   onWipeData,
+  currentTier = 'free',
+  onSelectTier,
+  weeklyApplicationsUsed = 0,
+  weeklyApplicationsLimit = 4,
+  region = 'MX',
+  isEs = true,
+  onOpenExtrasModal,
+  matches = [],
 }) => {
   const [premiumModalOpen, setPremiumModalOpen] = useState(false);
   const [discreetNotifs, setDiscreetNotifs] = useState(true);
   const [photosMatchOnly, setPhotosMatchOnly] = useState(true);
   const [hideDistance, setHideDistance] = useState(false);
   const [activePhotoSlot, setActivePhotoSlot] = useState<number | null>(null);
+  const [firestoreMatches, setFirestoreMatches] = useState<MatchItem[]>(matches);
+
+  React.useEffect(() => {
+    let isMounted = true;
+    if (user) {
+      fetchUserMatches(user.uid).then(res => {
+        if (isMounted && res.length > 0) {
+          setFirestoreMatches(res);
+        }
+      }).catch(err => console.warn('Error fetching Firestore matches in ProfileView:', err));
+    } else if (matches.length > 0) {
+      setFirestoreMatches(matches);
+    }
+    return () => { isMounted = false; };
+  }, [user, matches]);
 
   // 9 sample gallery slots
   const [gallery, setGallery] = useState([
@@ -134,6 +169,85 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <span className="text-[10px] text-white/50">Sellos Club</span>
           </div>
         </div>
+      </div>
+
+      {/* Recently Active Matches Widget with Progress Bars (Firestore Timestamp Integration) */}
+      <div className="p-5 rounded-3xl bg-neutral-900/80 border border-purple-500/30 shadow-xl mb-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-pink-600/20 border border-pink-500/30 flex items-center justify-center">
+              <Flame className="w-4 h-4 text-pink-400" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black uppercase tracking-wider text-white">
+                {isEs ? 'Actividad Reciente de Matches' : 'Recently Active Matches'}
+              </h3>
+              <p className="text-[10px] text-purple-200/70">
+                {isEs ? 'Última interacción registrada en Firestore' : 'Last interaction timestamp from Firestore'}
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-mono font-bold text-pink-300 px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/40">
+            {firestoreMatches.length} {isEs ? 'Activos' : 'Active'}
+          </span>
+        </div>
+
+        {firestoreMatches.length === 0 ? (
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-center text-xs text-purple-200/60">
+            {isEs ? 'Aún no tienes matches recientes. ¡Haz swipe para conectar!' : 'No recent matches yet. Swipe to connect!'}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {firestoreMatches.map((m) => {
+              const matchTime = new Date(m.matchedAt).getTime();
+              const now = Date.now();
+              const diffHours = Math.max(0, (now - matchTime) / (1000 * 60 * 60));
+              const progress = Math.max(15, Math.min(100, Math.round(100 * (1 - Math.min(diffHours, 168) / 168))));
+
+              return (
+                <div key={m.id} className="p-3 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="relative shrink-0">
+                        <img
+                          src={m.profile.photos[0] || m.profile.photo}
+                          alt={m.profile.name}
+                          className="w-10 h-10 rounded-full object-cover border border-purple-500/50"
+                        />
+                        {m.profile.online && (
+                          <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 border-2 border-black animate-pulse" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-xs font-bold text-white block truncate">{m.profile.name}</span>
+                        <span className="text-[10px] text-purple-300/80 block truncate">
+                          {m.lastMessage || (isEs ? 'Match mutuo establecido' : 'Mutual match established')}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-pink-400 shrink-0">
+                      {new Date(m.matchedAt).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+
+                  {/* Visual Progress Bar for Activity Freshness */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[9px] text-purple-200/60">
+                      <span>{isEs ? 'Nivel de Actividad' : 'Activity Level'}</span>
+                      <span className="font-mono text-emerald-400">{progress}%</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-neutral-900 overflow-hidden border border-white/10">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 via-pink-500 to-emerald-400 rounded-full transition-all duration-500"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* CLUB DE EXPERIENCIAS (10 Stamps Punch Card from script!) */}
@@ -230,104 +344,213 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* PLANES & MEMBRESÍAS: GRATUITO Y PREMIUM */}
+      {/* PLANES & MEMBRESÍAS: COMPARATIVA SIDE-BY-SIDE (GRATIS, PLUS, ULTRA) */}
       <div className="space-y-3.5 mb-6">
         <div className="flex items-center justify-between px-1">
           <div className="flex items-center gap-2">
             <Crown className="w-5 h-5 text-amber-400" />
             <h3 className="text-sm font-black text-white uppercase tracking-wider">
-              Planes de Acceso & Membresías
+              {isEs ? 'Planes de Acceso & Membresías' : 'Access Plans & Memberships'}
             </h3>
           </div>
           <span className="text-[10px] font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30">
-            Transparencia Total
+            {isEs ? 'Transparencia Total' : 'Total Transparency'}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 gap-3.5">
-          {/* PLAN 1: PLAN ESTÁNDAR GRATUITO (ACTIVO) */}
-          <div className="p-4 rounded-3xl bg-neutral-900/80 border-2 border-emerald-500/50 shadow-xl relative overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-500/40">
-                Plan Actual · Activo
+        {/* Weekly Quota Status Bar */}
+        <div className="p-3 rounded-2xl bg-gradient-to-r from-purple-950/70 via-pink-950/50 to-purple-950/70 border border-purple-500/30 flex items-center justify-between gap-2 shadow-sm">
+          <div className="flex items-center gap-2 min-w-0">
+            <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="truncate">
+              <span className="text-xs font-bold text-white block">
+                {isEs ? 'Cuota semanal de postulaciones' : 'Weekly postulation quota'}
               </span>
-              <span className="text-sm font-mono font-black text-emerald-400">$0 Gratis</span>
+              <span className="text-[10px] text-purple-200/80">
+                {weeklyApplicationsUsed} / {weeklyApplicationsLimit === Infinity ? (isEs ? 'Ilimitadas' : 'Unlimited') : `${weeklyApplicationsLimit} ${isEs ? 'usadas esta semana' : 'used this week'}`}
+              </span>
+            </div>
+          </div>
+          <span className="px-2.5 py-1 rounded-xl bg-purple-900/60 border border-purple-400/30 text-[10px] font-mono font-bold text-pink-300 shrink-0">
+            {currentTier.toUpperCase()}
+          </span>
+        </div>
+
+        {/* Side-by-side comparison cards: horizontal snap on mobile, 3-column on larger screens */}
+        <div className="flex sm:grid sm:grid-cols-3 gap-3 overflow-x-auto pb-2 snap-x snap-mandatory no-scrollbar">
+          
+          {/* CARD 1: PLAN GRATIS (4 POSTULACIONES / SEMANA) */}
+          <div className={`min-w-[240px] sm:min-w-0 flex-1 snap-center p-4 rounded-3xl border flex flex-col justify-between transition-all shadow-xl ${
+            currentTier === 'free'
+              ? 'bg-gradient-to-b from-neutral-900 via-neutral-950 to-black border-2 border-emerald-500/60 shadow-emerald-950/20'
+              : 'bg-neutral-900/60 border-white/10 opacity-90 hover:opacity-100'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                  currentTier === 'free' 
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
+                    : 'bg-white/10 text-white/70'
+                }`}>
+                  {currentTier === 'free' ? (isEs ? 'Plan Activo' : 'Active Plan') : (isEs ? 'Básico' : 'Basic')}
+                </span>
+                <span className="text-sm font-mono font-black text-emerald-400">$0 Gratis</span>
+              </div>
+
+              <h4 className="text-base font-black text-white">
+                {isEs ? 'Plan Gratis' : 'Free Plan'}
+              </h4>
+              <p className="text-[11px] text-emerald-300/90 font-semibold mt-0.5">
+                {isEs ? 'Máximo 4 postulaciones a la semana' : 'Max 4 applications per week'}
+              </p>
+
+              <ul className="space-y-1.5 pt-2.5 mt-2.5 text-[10px] text-neutral-300 border-t border-white/10">
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{isEs ? '4 postulaciones a eventos/semana' : '4 event applications/week'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{isEs ? 'Swipes & Match mutuo en tu radio' : 'Swipes & mutual matches'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{isEs ? 'Chat ilimitado con tus matches' : 'Unlimited chat with matches'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>{isEs ? 'Privacidad de ubicación (On/Off)' : 'Location privacy toggle'}</span>
+                </li>
+              </ul>
             </div>
 
-            <h4 className="text-base font-black text-white">Plan Estándar Gratuito</h4>
-            <p className="text-[11px] text-white/70 leading-snug mt-1">
-              Conocer gente, descubrir perfiles, enviar likes diarios, hacer match mutuo y chatear siempre es 100% gratuito en AppSwinger.
-            </p>
-
-            <ul className="space-y-1.5 pt-3 mt-3 text-[11px] text-neutral-300 border-t border-white/10">
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Swipes y descubrimiento en tu radio de distancia</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Chat y mensajería privada 100% ilimitada con tus matches</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Control de privacidad de ubicación en tiempo real (On/Off)</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span>Acceso a cartelera de eventos y propuestas abiertas</span>
-              </li>
-            </ul>
-
-            <div className="mt-4 pt-2">
-              <div className="w-full py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-center text-xs font-bold flex items-center justify-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Plan Básico Activo (Sin costo ni cobros recurrentes)</span>
-              </div>
+            <div className="mt-4 pt-1">
+              <button
+                disabled={currentTier === 'free'}
+                onClick={() => onSelectTier?.('free')}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                  currentTier === 'free'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default'
+                    : 'bg-white/10 hover:bg-white/20 text-white active:scale-95'
+                }`}
+              >
+                {currentTier === 'free' ? '✓ Plan Activo' : (isEs ? 'Seleccionar' : 'Select')}
+              </button>
             </div>
           </div>
 
-          {/* PLAN 2: MEMBRESÍA VIP ULTRA PLUS (OPCIONAL) */}
-          <div className="p-4 rounded-3xl bg-gradient-to-b from-[#1b0f34] via-[#140a28] to-[#0d051c] border-2 border-purple-500/40 shadow-xl relative overflow-hidden">
-            <div className="flex items-center justify-between mb-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-gradient-to-r from-pink-500 to-purple-600 text-white text-[10px] font-black uppercase tracking-wider shadow-sm">
-                Opcional VIP
-              </span>
-              <span className="text-sm font-mono font-black text-pink-300">$400 MXN / $25 USD</span>
+          {/* CARD 2: SIGUIENTE PLAN - VIP PLUS (15 POSTULACIONES / SEMANA) */}
+          <div className={`min-w-[240px] sm:min-w-0 flex-1 snap-center p-4 rounded-3xl border flex flex-col justify-between transition-all shadow-xl ${
+            currentTier === 'plus' || currentTier === 'silver'
+              ? 'bg-gradient-to-b from-purple-950/80 via-[#150a26] to-black border-2 border-purple-400/80 shadow-purple-900/30'
+              : 'bg-neutral-900/70 border-purple-500/30 hover:border-purple-400'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-[9px] font-black uppercase tracking-wider shadow-sm">
+                  {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? 'Plan Activo' : 'Active Plan') : (isEs ? 'Siguiente Plan' : 'Next Tier')}
+                </span>
+                <span className="text-sm font-mono font-black text-pink-300">
+                  {region === 'MX' ? '$199 MXN' : '$12 USD'}
+                </span>
+              </div>
+
+              <h4 className="text-base font-black text-white flex items-center gap-1">
+                <span>VIP Plus</span>
+                <Sparkles className="w-3.5 h-3.5 text-pink-400" />
+              </h4>
+              <p className="text-[11px] text-pink-300 font-semibold mt-0.5">
+                {isEs ? '15 postulaciones a la semana' : '15 applications per week'}
+              </p>
+
+              <ul className="space-y-1.5 pt-2.5 mt-2.5 text-[10px] text-neutral-300 border-t border-white/10">
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                  <span>{isEs ? '15 postulaciones a eventos/semana' : '15 event applications/week'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                  <span>{isEs ? 'Filtros pasionales avanzados' : 'Advanced passion filters'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                  <span>{isEs ? 'Prioridad en solicitudes' : 'Priority in proposals'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                  <span>{isEs ? 'Sin límites diarios de swipes' : 'No daily swipe caps'}</span>
+                </li>
+              </ul>
             </div>
 
-            <h4 className="text-base font-black text-white flex items-center gap-1.5">
-              <span>Membresía VIP Ultra Plus</span>
-              <Crown className="w-4 h-4 text-amber-400" />
-            </h4>
-            <p className="text-[11px] text-purple-200/80 leading-snug mt-1">
-              Para parejas y personas que desean acelerar sus conexiones con herramientas avanzadas de discreción y prioridad exclusiva.
-            </p>
-
-            <ul className="space-y-1.5 pt-3 mt-3 text-[11px] text-neutral-300 border-t border-white/10">
-              <li className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
-                <span>Likes y rebobinados ilimitados sin esperas</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
-                <span>Filtro por gustos pasionales específicos (Tríos, Hotwife, Fiestas)</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
-                <span>Modo incógnito para navegar perfiles sin dejar rastro</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
-                <span>Prioridad en solicitudes de villas y fiestas privadas</span>
-              </li>
-            </ul>
-
-            <div className="mt-4 pt-2">
+            <div className="mt-4 pt-1">
               <button
-                onClick={() => setPremiumModalOpen(true)}
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 hover:brightness-110 active:scale-95 transition"
+                onClick={() => onSelectTier ? onSelectTier('plus') : onOpenExtrasModal?.()}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                  currentTier === 'plus' || currentTier === 'silver'
+                    ? 'bg-purple-500/20 text-purple-300 border border-purple-400/50 cursor-default'
+                    : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md active:scale-95 hover:brightness-110'
+                }`}
               >
-                Ver Beneficios & Contratar VIP
+                {currentTier === 'plus' || currentTier === 'silver' ? '✓ Plan Activo' : (isEs ? 'Obtener VIP Plus' : 'Get VIP Plus')}
+              </button>
+            </div>
+          </div>
+
+          {/* CARD 3: ULTRA PLAN (POSTULACIONES ILIMITADAS) */}
+          <div className={`min-w-[240px] sm:min-w-0 flex-1 snap-center p-4 rounded-3xl border flex flex-col justify-between transition-all shadow-xl ${
+            currentTier === 'ultra' || currentTier === 'gold'
+              ? 'bg-gradient-to-b from-[#240e3f] via-[#160829] to-black border-2 border-amber-400 shadow-amber-900/30'
+              : 'bg-gradient-to-b from-[#1b0f34]/80 to-[#0e051b] border border-amber-400/40 hover:border-amber-300'
+          }`}>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-pink-500 text-black text-[9px] font-black uppercase tracking-wider shadow-sm">
+                  {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? 'Plan Activo' : 'Active Plan') : 'Ultra VIP'}
+                </span>
+                <span className="text-sm font-mono font-black text-amber-300">
+                  {region === 'MX' ? '$400 MXN' : '$25 USD'}
+                </span>
+              </div>
+
+              <h4 className="text-base font-black text-white flex items-center gap-1">
+                <span>Ultra Plan</span>
+                <Crown className="w-3.5 h-3.5 text-amber-400" />
+              </h4>
+              <p className="text-[11px] text-amber-300 font-semibold mt-0.5">
+                {isEs ? 'Postulaciones ILIMITADAS' : 'UNLIMITED applications'}
+              </p>
+
+              <ul className="space-y-1.5 pt-2.5 mt-2.5 text-[10px] text-neutral-300 border-t border-white/10">
+                <li className="flex items-center gap-1.5">
+                  <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>{isEs ? 'Postulaciones ilimitadas 24/7' : 'Unlimited applications 24/7'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>{isEs ? 'Modo incógnito & Ver quién te dio like' : 'Incognito mode & See who liked'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>{isEs ? 'Prioridad en villas privadas' : 'VIP villa priority'}</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>{isEs ? 'Super Likes y rebobinados libres' : 'Unlimited Super Likes & Rewind'}</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="mt-4 pt-1">
+              <button
+                onClick={() => onSelectTier ? onSelectTier('ultra') : onOpenExtrasModal?.()}
+                className={`w-full py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                  currentTier === 'ultra' || currentTier === 'gold'
+                    ? 'bg-amber-400/20 text-amber-300 border border-amber-400/50 cursor-default'
+                    : 'bg-gradient-to-r from-amber-400 via-pink-500 to-purple-600 text-black font-black shadow-lg shadow-amber-500/20 active:scale-95 hover:brightness-110'
+                }`}
+              >
+                {currentTier === 'ultra' || currentTier === 'gold' ? '✓ Plan Activo' : (isEs ? 'Activar Ultra Plan' : 'Activate Ultra Plan')}
               </button>
             </div>
           </div>
@@ -499,12 +722,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </button>
               <button
                 onClick={() => {
-                  alert("Membresía Premium activada en modo demostración.");
+                  if (onSelectTier) {
+                    onSelectTier('ultra');
+                  } else {
+                    onOpenExtrasModal?.();
+                  }
                   setPremiumModalOpen(false);
                 }}
-                className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold shadow-lg"
+                className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-amber-400 via-pink-500 to-purple-600 text-black font-black text-xs shadow-lg"
               >
-                Contratar
+                Contratar Ultra
               </button>
             </div>
           </div>

@@ -96,14 +96,18 @@ export function MonetizationExtrasModal({
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-white">Free</span>
+                <span className="font-bold text-white">{isEs ? 'Plan Gratis' : 'Free Plan'}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-white/10 text-white/70">{isEs ? 'Básico' : 'Basic'}</span>
               </div>
-              <div className="text-2xl font-black text-white mb-3">0 {currencyCode}</div>
+              <div className="text-2xl font-black text-white mb-1">0 {currencyCode}</div>
+              <div className="text-[11px] font-bold text-emerald-400 mb-3">
+                {isEs ? 'Máximo 4 postulaciones/semana' : 'Max 4 applications/week'}
+              </div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Perfil básico' : 'Basic profile'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Destacado en Match' : 'Match spotlight'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Postularse a eventos' : 'Event proposals'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? '4 postulaciones a eventos/semana' : '4 event applications/week'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Perfil básico verificado' : 'Basic verified profile'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Swipes & Match mutuo en tu radio' : 'Match & Swipes in radius'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Chat y privacidad de ubicación' : 'Chat & location privacy'}</li>
               </ul>
             </div>
             <button
@@ -111,59 +115,65 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('free')}
               className="w-full py-2.5 rounded-xl bg-white/10 text-white font-semibold text-xs disabled:opacity-50"
             >
-              {currentTier === 'free' ? (isEs ? 'Plan Actual' : 'Current Plan') : 'Free'}
+              {currentTier === 'free' ? (isEs ? '✓ Plan Actual' : '✓ Current Plan') : (isEs ? 'Elegir Gratis' : 'Choose Free')}
             </button>
           </div>
 
-          {/* Silver Plan */}
+          {/* Plus / Silver Plan */}
           <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition ${
-            currentTier === 'silver' ? 'bg-rose-950/40 border-rose-500/60 shadow-lg shadow-rose-600/30' : 'bg-black/40 border-white/10'
+            currentTier === 'plus' || currentTier === 'silver' ? 'bg-rose-950/40 border-rose-500/60 shadow-lg shadow-rose-600/30' : 'bg-black/40 border-white/10'
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-rose-400">Silver</span>
+                <span className="font-bold text-rose-400">{isEs ? 'Siguiente Plan (VIP Plus)' : 'VIP Plus Tier'}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">15 {isEs ? 'días' : 'days'}</span>
               </div>
-              <div className="text-2xl font-black text-white mb-1">{currencySymbol}{silverTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
+              <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{silverTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
+              <div className="text-[11px] font-bold text-pink-300 mb-2">
+                {isEs ? '15 postulaciones a la semana' : '15 applications per week'}
+              </div>
               <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${silverBase} + 16% IVA (${silverTax})` : `Base: ${silverBase} + 16% Tax (${silverTax})`}</div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? '50 swipes diarios' : '50 daily swipes'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Filtros avanzados' : 'Advanced filters'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Sin publicidad' : 'Ad-free'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Chat ilimitado' : 'Unlimited chat'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? '15 postulaciones a la semana' : '15 applications per week'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? '50 swipes prioritarios diarios' : '50 priority swipes'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Filtros pasionales avanzados' : 'Advanced passion filters'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-rose-400" /> {isEs ? 'Prioridad en solicitudes' : 'Priority in proposals'}</li>
               </ul>
             </div>
             <button
-              onClick={() => handleCheckout('silver')}
+              onClick={() => handleCheckout('plus')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-semibold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'silver' ? (isEs ? 'Plan Activo' : 'Active Plan') : (isEs ? 'Obtener Silver' : 'Get Silver')}
+              {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Obtener VIP Plus (15/sem)' : 'Get VIP Plus (15/wk)')}
             </button>
           </div>
 
-          {/* Gold Plan */}
+          {/* Ultra / Gold Plan */}
           <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition ${
-            currentTier === 'gold' ? 'bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-600/30' : 'bg-black/40 border-amber-500/30'
+            currentTier === 'ultra' || currentTier === 'gold' ? 'bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-600/30' : 'bg-black/40 border-amber-500/30'
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-amber-400 flex items-center gap-1"><Crown className="w-4 h-4" /> Gold</span>
+                <span className="font-bold text-amber-400 flex items-center gap-1"><Crown className="w-4 h-4" /> Ultra VIP</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">1 {isEs ? 'mes' : 'month'}</span>
               </div>
-              <div className="text-2xl font-black text-white mb-1">{currencySymbol}{goldTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
+              <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{goldTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
+              <div className="text-[11px] font-bold text-amber-300 mb-2">
+                {isEs ? 'Postulaciones ILIMITADAS' : 'UNLIMITED applications'}
+              </div>
               <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${goldBase} + 16% IVA (${goldTax})` : `Base: ${goldBase} + 16% Tax (${goldTax})`}</div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Swipes ilimitados' : 'Unlimited swipes'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Ver quién te dio like' : 'See who liked you'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Prioridad en eventos' : 'Event priority'}</li>
-                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Foros exclusivos' : 'Exclusive forums'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Postulaciones ilimitadas 24/7' : 'Unlimited applications 24/7'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Swipes & Super Likes ilimitados' : 'Unlimited swipes & Super Likes'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Modo incógnito & Ver quién te dio like' : 'Incognito & See who liked'}</li>
+                <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-amber-400" /> {isEs ? 'Acceso VIP a villas privadas' : 'VIP villa priority'}</li>
               </ul>
             </div>
             <button
-              onClick={() => handleCheckout('gold')}
-              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-white font-semibold text-xs shadow-lg shadow-amber-600/30 hover:opacity-95 transition"
+              onClick={() => handleCheckout('ultra')}
+              className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-black font-black text-xs shadow-lg shadow-amber-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'gold' ? (isEs ? 'Plan Activo' : 'Active Plan') : (isEs ? 'Obtener Gold' : 'Get Gold')}
+              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Activar Ultra (Ilimitadas)' : 'Activate Ultra (Unlimited)')}
             </button>
           </div>
         </div>

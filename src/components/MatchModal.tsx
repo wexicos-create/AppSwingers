@@ -99,7 +99,7 @@ export const MatchModal: React.FC<MatchModalProps> = ({
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ delay: 0.3, type: 'spring', stiffness: 400 }}
-              className="absolute z-30 flex flex-col items-center justify-center w-13 h-13 rounded-full bg-[#120524] border-2 border-purple-400 text-white shadow-[0_0_15px_rgba(177,76,255,0.8)]"
+              className="absolute z-30 flex flex-col items-center justify-center w-[52px] h-[52px] rounded-full bg-[#120524] border-2 border-purple-400 text-white shadow-[0_0_15px_rgba(177,76,255,0.8)]"
             >
               <span className="text-pink-400 font-black text-[13px] leading-none">
                 {matchProfile.matchPercentage || 100}%

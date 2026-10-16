@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Proposal } from '../types';
-import { Plus, Bookmark, Flag, Check, Clock, Sparkles } from 'lucide-react';
+import { Proposal, SubscriptionTier } from '../types';
+import { Plus, Bookmark, Flag, Check, Clock, Sparkles, Zap, ChevronRight } from 'lucide-react';
 
 interface ProposalsViewProps {
   proposals: Proposal[];
@@ -10,6 +10,11 @@ interface ProposalsViewProps {
   onToggleSave: (id: string) => void;
   onCreateProposal: (newProp: { title: string; cat: string; body: string; limited: boolean }) => void;
   onOpenReport: (target: { type: 'propuesta'; id: string; name: string }) => void;
+  subscriptionTier?: SubscriptionTier;
+  weeklyApplicationsUsed?: number;
+  weeklyApplicationsLimit?: number;
+  onUpgradePlan?: () => void;
+  isEs?: boolean;
 }
 
 export const ProposalsView: React.FC<ProposalsViewProps> = ({
@@ -20,6 +25,11 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
   onToggleSave,
   onCreateProposal,
   onOpenReport,
+  subscriptionTier = 'free',
+  weeklyApplicationsUsed = 0,
+  weeklyApplicationsLimit = 4,
+  onUpgradePlan,
+  isEs = true,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -89,12 +99,49 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
         </span>
       </div>
 
+      {/* Weekly Quota Card */}
+      <div className="p-3.5 mb-4 rounded-3xl bg-neutral-900/80 border border-purple-500/30 shadow-lg flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-purple-600/20 border border-purple-500/30 flex items-center justify-center shrink-0">
+            <Zap className="w-4 h-4 text-amber-400" />
+          </div>
+          <div className="truncate">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold text-white">
+                {isEs ? 'Cuota de Postulaciones Semanales' : 'Weekly Applications Quota'}
+              </span>
+              <span className="px-2 py-0.5 rounded-full bg-purple-900/60 text-pink-300 text-[9px] font-mono font-bold uppercase">
+                {subscriptionTier === 'free' ? 'Plan Gratis' : subscriptionTier === 'plus' || subscriptionTier === 'silver' ? 'VIP Plus' : 'VIP Ultra'}
+              </span>
+            </div>
+            <p className="text-[10px] text-purple-200/80 mt-0.5">
+              {weeklyApplicationsLimit === Infinity
+                ? (isEs ? 'Tienes postulaciones ILIMITADAS en tu Ultra Plan ✨' : 'You have UNLIMITED applications ✨')
+                : (isEs 
+                    ? `${weeklyApplicationsUsed} de ${weeklyApplicationsLimit} usadas esta semana (${weeklyApplicationsLimit === 4 ? 'Plan Gratis: máx 4' : 'VIP Plus: máx 15'})` 
+                    : `${weeklyApplicationsUsed} of ${weeklyApplicationsLimit} used this week`)}
+            </p>
+          </div>
+        </div>
+
+        {weeklyApplicationsLimit !== Infinity && onUpgradePlan && (
+          <button
+            onClick={onUpgradePlan}
+            className="px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-[10px] shrink-0 active:scale-95 transition shadow-sm hover:brightness-110 flex items-center gap-1"
+          >
+            <span>{isEs ? 'Aumentar' : 'Upgrade'}</span>
+            <ChevronRight className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
       {/* Proposals List */}
       <div className="space-y-3.5">
         {proposals.map((item) => {
           const isApplied = appliedIds.includes(item.id);
           const isSaved = savedIds.includes(item.id);
           const isExpanded = expandedId === item.id;
+          const isAtLimit = !isApplied && weeklyApplicationsUsed >= weeklyApplicationsLimit;
 
           return (
             <div
@@ -130,21 +177,34 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
                   </span>
                 ) : (
                   <button
-                    onClick={() => onApply(item)}
+                    onClick={() => {
+                      if (isAtLimit && onUpgradePlan) {
+                        onUpgradePlan();
+                      } else {
+                        onApply(item);
+                      }
+                    }}
                     disabled={isApplied}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                       isApplied
-                        ? 'bg-purple-900/50 text-purple-200 border border-purple-500/30'
+                        ? 'bg-purple-900/50 text-purple-200 border border-purple-500/30 cursor-default'
+                        : isAtLimit
+                        ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 active:scale-95'
                         : 'bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-md active:scale-95'
                     }`}
                   >
                     {isApplied ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        Postulado
+                        {isEs ? 'Postulado' : 'Applied'}
+                      </>
+                    ) : isAtLimit ? (
+                      <>
+                        <Zap className="w-3.5 h-3.5 text-amber-400" />
+                        {isEs ? 'Límite alcanzado · Subir Plan' : 'Limit reached · Upgrade'}
                       </>
                     ) : (
-                      'Postularme'
+                      isEs ? 'Postularme' : 'Apply'
                     )}
                   </button>
                 )}
@@ -153,7 +213,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
                   onClick={() => setExpandedId(isExpanded ? null : item.id)}
                   className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white/80 transition"
                 >
-                  {isExpanded ? 'Menos' : 'Detalles'}
+                  {isExpanded ? (isEs ? 'Menos' : 'Less') : (isEs ? 'Detalles' : 'Details')}
                 </button>
 
                 <button

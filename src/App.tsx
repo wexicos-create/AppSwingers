@@ -118,10 +118,38 @@ export default function App() {
   const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
-  // Proposals
+  // Proposals & Weekly Postulation Quotas
   const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
+  const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
+    try {
+      const saved = localStorage.getItem('appswinguer_proposal_applications');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('appswinguer_proposal_applications', JSON.stringify(proposalApplications));
+    } catch (e) {
+      console.warn('Error saving proposal applications:', e);
+    }
+  }, [proposalApplications]);
+
+  // Weekly postulation limits helper: Free (4/sem), Siguiente plan (15/sem), Ultra plan (Ilimitadas)
+  const getWeeklyLimit = (tier: SubscriptionTier): number => {
+    if (tier === 'ultra' || tier === 'gold') return Infinity;
+    if (tier === 'plus' || tier === 'silver') return 15;
+    return 4; // Plan gratis máximo 4 postulaciones a la semana
+  };
+
+  const getWeeklyApplicationsCount = (): number => {
+    const oneWeekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    return proposalApplications.filter(a => a.ts >= oneWeekAgo).length;
+  };
 
   // Virtual & Creators (Pristine clean launch en 0)
   const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
@@ -405,10 +433,42 @@ export default function App() {
     setReservations(prev => prev.map(r => r.id === reservationId ? { ...r, status: 'cancelado' } : r));
   };
 
-  // Proposal handlers
+  // Proposal handlers with strict weekly quota enforcement
   const handleApplyProposal = (proposal: Proposal) => {
+    const weeklyLimit = getWeeklyLimit(subscriptionTier);
+    const usedThisWeek = getWeeklyApplicationsCount();
+
+    if (usedThisWeek >= weeklyLimit) {
+      const planName = subscriptionTier === 'free' 
+        ? (isEs ? 'Plan Gratis (máx. 4 por semana)' : 'Free Plan (max 4/week)')
+        : (isEs ? 'Plan VIP Plus (máx. 15 por semana)' : 'VIP Plus Plan (max 15/week)');
+      
+      const nextPlanOffer = subscriptionTier === 'free'
+        ? (isEs ? 'Siguiente plan (15 postulaciones/semana) o Ultra Plan (Ilimitadas)' : 'Next plan (15/week) or Ultra Plan (Unlimited)')
+        : (isEs ? 'Ultra Plan (Postulaciones Ilimitadas)' : 'Ultra Plan (Unlimited postulations)');
+
+      const alertMsg = isEs
+        ? `Has alcanzado el límite semanal de ${weeklyLimit} postulaciones de tu ${planName}.\n\nPara continuar postulándote a fiestas y propuestas exclusivas, sube a: ${nextPlanOffer}.`
+        : `You reached the weekly limit of ${weeklyLimit} applications of your ${planName}.\n\nUpgrade to ${nextPlanOffer} to post unlimited requests.`;
+      
+      alert(alertMsg);
+      setExtrasModalOpen(true);
+      return;
+    }
+
+    const newRecord = {
+      id: `app_${Date.now()}`,
+      proposalId: proposal.id,
+      ts: Date.now(),
+    };
+    setProposalApplications(prev => [newRecord, ...prev]);
     setAppliedProposalIds(prev => [...prev, proposal.id]);
-    alert(isEs ? `Postulación enviada a "${proposal.title}". Tu identidad se mantiene confidencial.` : `Application sent to "${proposal.title}". Confidentiality preserved.`);
+
+    const remaining = weeklyLimit === Infinity ? (isEs ? 'Ilimitadas' : 'Unlimited') : (weeklyLimit - (usedThisWeek + 1));
+    const msg = isEs
+      ? `¡Postulación enviada con éxito a "${proposal.title}"!\nTu identidad se mantiene confidencial.\n\nPostulaciones restantes esta semana: ${remaining}.`
+      : `Application sent successfully to "${proposal.title}"!\nConfidentiality preserved.\n\nRemaining applications this week: ${remaining}.`;
+    alert(msg);
   };
 
   const handleToggleSaveProposal = (proposalId: string) => {
@@ -618,12 +678,12 @@ export default function App() {
           </div>
         </header>
 
-        {/* Location GPS Permission Reminder Banner - Compact */}
+        {/* Location GPS Permission Reminder Banner - Ultra-Compact */}
         {!locationGranted && !locationBannerDismissed && (
-          <div className="mx-3 mt-1.5 px-3 py-1.5 rounded-xl bg-purple-950/80 border border-purple-500/30 flex items-center justify-between gap-2 text-xs shadow-md shrink-0">
+          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-purple-950/90 border border-purple-500/30 flex items-center justify-between gap-2 text-[10px] shadow-sm shrink-0 z-30">
             <div className="flex items-center gap-1.5 min-w-0">
-              <Navigation className="w-3.5 h-3.5 text-pink-400 shrink-0" />
-              <span className="text-[10px] text-purple-200 truncate">
+              <Navigation className="w-3 h-3 text-pink-400 shrink-0" />
+              <span className="text-purple-200 truncate">
                 {isEs 
                   ? 'Activa GPS para calcular KM exactos' 
                   : 'Enable GPS for accurate KM calculations'}
@@ -638,7 +698,7 @@ export default function App() {
                 {isLocating ? (
                   <>
                     <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                    <span>{isEs ? '...' : '...'}</span>
+                    <span>...</span>
                   </>
                 ) : (
                   <span>{isEs ? 'Activar' : 'Enable'}</span>
@@ -646,7 +706,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setLocationBannerDismissed(true)}
-                className="p-1 rounded-lg text-purple-300 hover:text-white transition"
+                className="p-0.5 rounded text-purple-300 hover:text-white transition"
                 title={isEs ? 'Cerrar' : 'Dismiss'}
                 aria-label={isEs ? 'Cerrar' : 'Dismiss'}
               >
@@ -656,14 +716,14 @@ export default function App() {
           </div>
         )}
 
-        {/* System Announcement Banner - Compact */}
+        {/* System Announcement Banner - Ultra-Compact */}
         {activeAnnouncement && (
-          <div className="mx-3 mt-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-xs shadow-md flex items-center justify-between gap-2 shrink-0">
+          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-[10px] shadow-sm flex items-center justify-between gap-2 shrink-0 z-30">
             <div className="flex items-center gap-1.5 min-w-0">
-              <Sparkles className="w-3.5 h-3.5 text-pink-400 shrink-0 animate-pulse" />
+              <Sparkles className="w-3 h-3 text-pink-400 shrink-0 animate-pulse" />
               <div className="truncate">
-                <span className="text-white font-bold text-[10px] mr-1.5">{activeAnnouncement.title}</span>
-                <span className="text-purple-200/80 text-[10px] hidden sm:inline">{activeAnnouncement.body}</span>
+                <span className="text-white font-bold mr-1.5">{activeAnnouncement.title}</span>
+                <span className="text-purple-200/80 hidden sm:inline">{activeAnnouncement.body}</span>
               </div>
             </div>
             <button
@@ -677,14 +737,14 @@ export default function App() {
         )}
 
         {/* Tab Content Display */}
-        <main className={`flex-1 flex flex-col relative ${activeTab === 'match' ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'}`}>
+        <main className={`flex-1 flex flex-col relative min-h-0 ${activeTab === 'match' ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'}`}>
           
           {/* TAB 1: MATCH / DISCOVER DECK */}
           {activeTab === 'match' && (
-            <div className="flex-1 flex flex-col justify-between px-3 pt-1.5 pb-20 h-full min-h-0 overflow-hidden select-none">
+            <div className="flex-1 flex flex-col justify-between px-3 pt-1 pb-[62px] h-full min-h-0 select-none overflow-hidden">
               
               {/* Distance adjustment & Extras bar */}
-              <div className="flex items-center justify-between mb-1 px-1 shrink-0">
+              <div className="flex items-center justify-between py-1 px-1 shrink-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] text-purple-200/90 font-medium flex items-center gap-1">
                     <SlidersHorizontal className="w-3.5 h-3.5 text-pink-400" />
@@ -711,8 +771,8 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Card Deck Viewport - Flexible so ActionButtons are 100% visible and unclipped */}
-              <div className="relative w-full flex-1 min-h-[300px] max-h-[500px] my-auto">
+              {/* Card Deck Viewport - Flexible adapting to screen height with 100% visible buttons */}
+              <div className="relative w-full flex-1 min-h-0 my-0.5 overflow-hidden">
                 {currentProfile ? (
                   <>
                     {currentIndex + 1 < visibleProfiles.length && (
@@ -734,14 +794,14 @@ export default function App() {
                     />
                   </>
                 ) : (
-                  <div className="absolute inset-0 rounded-[28px] bg-neutral-900/80 border border-purple-500/25 p-6 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
-                    <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-purple-600/30 to-pink-600/30 border border-purple-500/40 flex items-center justify-center mb-3">
-                      <Sparkles className="w-8 h-8 text-pink-400 animate-pulse" />
+                  <div className="absolute inset-0 rounded-[28px] bg-neutral-900/80 border border-purple-500/25 p-5 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600/30 to-pink-600/30 border border-purple-500/40 flex items-center justify-center mb-2.5">
+                      <Sparkles className="w-7 h-7 text-pink-400 animate-pulse" />
                     </div>
-                    <h3 className="text-lg font-bold text-white mb-1.5">
+                    <h3 className="text-base font-bold text-white mb-1">
                       {isEs ? 'Has visto todos los perfiles en este radio' : 'No more profiles in this radius'}
                     </h3>
-                    <p className="text-xs text-purple-200/70 max-w-xs mb-4 leading-relaxed">
+                    <p className="text-[11px] text-purple-200/70 max-w-xs mb-3 leading-relaxed">
                       {isEs 
                         ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en tu región.` 
                         : `Expand your ${maxDistance} km radius or explore private parties.`}
@@ -749,14 +809,14 @@ export default function App() {
                     <div className="flex gap-2">
                       <button
                         onClick={handleResetDeck}
-                        className="py-2.5 px-4 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-2 hover:brightness-110 active:scale-95 transition"
+                        className="py-2 px-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         {isEs ? 'Revisar de nuevo' : 'Review again'}
                       </button>
                       <button
                         onClick={() => setRegistrationModalOpen(true)}
-                        className="py-2.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                        className="py-2 px-3.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
                       >
                         {isEs ? 'Aumentar KM' : 'Expand KM'}
                       </button>
@@ -765,8 +825,8 @@ export default function App() {
                 )}
               </div>
 
-              {/* Action Buttons: 100% Visible, Guaranteed Unclipped */}
-              <div className="shrink-0 pt-1 pb-1 z-30">
+              {/* Action Buttons: 100% Visible, Guaranteed Unclipped above bottom nav */}
+              <div className="shrink-0 pt-0.5 pb-1 z-30">
                 <ActionButtons
                   onSwipe={handleSwipe}
                   onRewind={handleRewind}
@@ -792,6 +852,11 @@ export default function App() {
               onToggleSave={handleToggleSaveProposal}
               onCreateProposal={handleCreateProposal}
               onOpenReport={(target) => alert(isEs ? `Reporte recibido para "${target.name}".` : `Report registered.`)}
+              subscriptionTier={subscriptionTier}
+              weeklyApplicationsUsed={getWeeklyApplicationsCount()}
+              weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
+              onUpgradePlan={() => setExtrasModalOpen(true)}
+              isEs={isEs}
             />
           )}
 
@@ -863,6 +928,17 @@ export default function App() {
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
               onWipeData={handleWipeData}
+              currentTier={subscriptionTier}
+              onSelectTier={(tier) => {
+                setSubscriptionTier(tier);
+                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+              }}
+              weeklyApplicationsUsed={getWeeklyApplicationsCount()}
+              weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
+              region={region}
+              isEs={isEs}
+              onOpenExtrasModal={() => setExtrasModalOpen(true)}
+              matches={matches}
             />
           )}
         </main>

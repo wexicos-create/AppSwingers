@@ -180,7 +180,7 @@ export interface PaymentItem {
   ts: number;
 }
 
-export type SubscriptionTier = 'free' | 'silver' | 'gold';
+export type SubscriptionTier = 'free' | 'plus' | 'ultra' | 'silver' | 'gold';
 
 export interface StoryPost {
   id: string;

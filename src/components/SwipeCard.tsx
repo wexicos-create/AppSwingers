@@ -211,10 +211,10 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
       </div>
 
       {/* Bottom Profile Details Container */}
-      <div className="absolute bottom-0 inset-x-0 p-4 pt-6 z-20 flex flex-col gap-2 bg-gradient-to-t from-black via-black/90 to-transparent">
+      <div className="absolute bottom-0 inset-x-0 p-3.5 sm:p-4 pt-6 z-20 flex flex-col gap-1.5 sm:gap-2 bg-gradient-to-t from-black via-black/90 to-transparent pointer-events-auto">
         
         {/* Tag chips */}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1 sm:gap-1.5">
           {profile.tags.slice(0, 3).map((tag, idx) => (
             <span
               key={idx}
@@ -227,13 +227,13 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
 
         {/* Name, Age and Verification */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-black text-white tracking-tight drop-shadow">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight drop-shadow truncate">
               {profile.name}{displayAge ? `, ` : ''}
               {displayAge && <span className="font-light text-white/90">{displayAge}</span>}
             </h2>
             {profile.verify === 'verificado' && (
-              <CheckCircle2 className="w-5 h-5 text-blue-400 fill-blue-400/20 drop-shadow" />
+              <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400 fill-blue-400/20 drop-shadow shrink-0" />
             )}
           </div>
 

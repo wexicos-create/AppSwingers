@@ -32,7 +32,7 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
           className="relative w-full max-w-md max-h-[90vh] overflow-y-auto rounded-t-[36px] sm:rounded-[36px] bg-[#140e24] border border-purple-500/30 text-white shadow-2xl p-0 scrollbar-none"
         >
           {/* Header image carousel / hero */}
-          <div className="relative h-96 w-full">
+          <div className="relative h-72 sm:h-96 w-full">
             <img
               src={profile.photos[0] || profile.photo || ''}
               alt={profile.name}
