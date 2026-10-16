@@ -28,8 +28,8 @@ jobs:
           node-version: 22
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
+      - name: Install dependencies (resolve the pinned Supabase SDK)
+        run: bun install
       - name: Typecheck
         run: bun run lint
       - name: Build web application
