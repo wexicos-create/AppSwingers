@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { getIdTokenResult } from 'firebase/auth';
-import { auth } from '../firebase';
+import { supabase } from '../supabase';
 import { 
   X, 
   ShieldAlert, 
@@ -50,7 +49,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   const handleLogin = async () => {
     setError(null);
-    const currentUser = auth.currentUser;
+    const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      setError(isEs ? 'No fue posible validar la sesión.' : 'Could not validate the session.');
+      return;
+    }
     if (!currentUser) {
       setError(isEs
         ? 'Primero inicia sesión en la aplicación con la cuenta autorizada.'
@@ -58,11 +61,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
       return;
     }
     try {
-      const token = await getIdTokenResult(currentUser, true);
-      if (token.claims.admin !== true) {
+      const { data: role, error: roleError } = await supabase
+        .from('admin_roles')
+        .select('role')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();
+      if (roleError || !role || !['admin', 'moderator', 'support'].includes(role.role)) {
         setError(isEs
-          ? 'Esta cuenta no tiene permisos administrativos. Un administrador del proyecto debe asignar el rol en Firebase Admin SDK.'
-          : 'This account has no admin privileges. A project administrator must grant the role using Firebase Admin SDK.');
+          ? 'Esta cuenta no tiene un rol administrativo autorizado en Supabase.'
+          : 'This account has no authorized administrative role in Supabase.');
         return;
       }
       setIsLoggedIn(true);
@@ -77,8 +84,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     setNewPass('');
     setNewPin('');
     alert(isEs
-      ? 'Las contraseñas no se guardan en el navegador. Administra las credenciales y los roles desde Firebase Authentication / Admin SDK.'
-      : 'Passwords are not stored in the browser. Manage credentials and roles through Firebase Authentication / Admin SDK.');
+      ? 'Las contraseñas no se guardan en el navegador. Administra las credenciales y los roles desde Supabase Auth y el panel administrativo seguro.'
+      : 'Passwords are not stored in the browser. Manage credentials and roles through Supabase Auth y el panel administrativo seguro.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -136,7 +143,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-white/75 leading-relaxed">
               {isEs
                 ? 'El acceso administrativo se valida mediante Firebase Authentication y una custom claim administrada desde el servidor. No se usan contraseñas predeterminadas ni PIN almacenados en este dispositivo.'
-                : 'Admin access is verified through Firebase Authentication and a server-managed custom claim. No default passwords or locally stored PINs are used.'}
+                : 'Admin access is verified through Supabase Auth and server-managed database roles. No default passwords or locally stored PINs are used.'}
             </div>
             <div className="text-center text-xs text-white/60">
               {auth.currentUser?.email || (isEs ? 'No hay sesión iniciada' : 'No signed-in session')}
