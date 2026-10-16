@@ -947,7 +947,7 @@ export default function App() {
                 setMaxDistance(val);
                 setUserProfile(prev => ({ ...prev, maxKm: val }));
               }}
-              isFirestoreConnected={isBackendConnected}
+              isBackendConnected={isBackendConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
