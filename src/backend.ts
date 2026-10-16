@@ -297,3 +297,28 @@ export async function blockUser(userId: string, blockedUserId: string): Promise<
     throw new Error('No se pudo bloquear la cuenta.');
   }
 }
+
+export async function createSafetyReport(
+  reporterUserId: string,
+  reportedUserId: string,
+  category: string,
+  description: string,
+): Promise<void> {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidPattern.test(reporterUserId) || !uuidPattern.test(reportedUserId) || reporterUserId === reportedUserId) {
+    throw new Error('El reporte requiere dos cuentas reales válidas.');
+  }
+  const safeCategory = category.trim().slice(0, 100) || 'Otro';
+  const safeDescription = description.trim().slice(0, 4000) || 'Reporte enviado desde el chat.';
+  const { error } = await supabase.from('safety_reports').insert({
+    reporter_user_id: reporterUserId,
+    reported_user_id: reportedUserId,
+    category: safeCategory,
+    description: safeDescription,
+    status: 'open',
+  });
+  if (error) {
+    console.warn('Supabase safety report failed:', error.code);
+    throw new Error('No se pudo enviar el reporte. Inténtalo de nuevo.');
+  }
+}
