@@ -59,14 +59,9 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
+      // Avoid logging email addresses and provider identifiers in production console output.
       emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData?.map(provider => ({
-        providerId: provider.providerId,
-        email: provider.email,
-      })) || []
+      isAnonymous: auth.currentUser?.isAnonymous
     },
     operationType,
     path
@@ -94,13 +89,14 @@ export async function syncUserProfile(user: User, customFields?: Partial<Profile
   const userRef = doc(db, 'users', user.uid);
   try {
     const baseData = {
+      ...customFields,
+      // Authoritative identity fields must override any caller-provided profile fields.
       uid: user.uid,
       email: user.email || '',
       displayName: user.displayName || 'Anonymous Explorer',
-      photoURL: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+      photoURL: user.photoURL || '',
       lastSeen: new Date().toISOString(),
       updatedAt: serverTimestamp(),
-      ...customFields
     };
 
     await setDoc(userRef, baseData, { merge: true });
