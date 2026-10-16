@@ -31,7 +31,7 @@ interface ChatViewProps {
   currentUserId?: string | null;
   initialChatUserId?: string | null;
   onOpenProfile: (profile: Profile) => void;
-  onOpenReport?: (target: { type: 'usuario'; id: string; name: string }) => void;
+  onOpenReport?: (target: { type: 'usuario'; id: string; name: string; reason: string; details: string }) => void | Promise<void>;
   onBlockUser?: (userId: string) => void;
   onBackToApp?: () => void;
 }
@@ -403,15 +403,21 @@ export const ChatView: React.FC<ChatViewProps> = ({
     triggerBotReply(chatKey);
   };
 
-  const handleConfirmReport = () => {
+  const handleConfirmReport = async () => {
     if (!activeChat) return;
-    onOpenReport?.({
-      type: 'usuario',
-      id: activeChat.profile.id,
-      name: activeChat.profile.name,
-    });
-    setReportModalOpen(false);
-    showToast(`Reporte enviado contra ${activeChat.profile.name}. El equipo de moderación revisará la cuenta en menos de 2 horas.`);
+    try {
+      await onOpenReport?.({
+        type: 'usuario',
+        id: activeChat.profile.id,
+        name: activeChat.profile.name,
+        reason: reportReason,
+        details: reportDetails,
+      });
+      setReportModalOpen(false);
+      showToast('Reporte enviado al sistema de seguridad.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo enviar el reporte.');
+    }
   };
 
   const handleConfirmBlock = () => {
