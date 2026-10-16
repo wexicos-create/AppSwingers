@@ -110,7 +110,7 @@ export async function fetchDiscoverableProfiles(limit = 30): Promise<Profile[]> 
       bio: row.bio ?? '',
       photo: photoUrl,
       photos,
-      joined: row.created_at,
+      joined: row.matched_at,
     } satisfies Profile;
   }));
 }
