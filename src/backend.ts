@@ -22,8 +22,8 @@ export async function testConnection(): Promise<boolean> {
   return true;
 }
 
-export async function syncUserProfile(user: User): Promise<void> {
-  if (!user?.id) return;
+export async function syncUserProfile(user: User): Promise<string | null> {
+  if (!user?.id) return null;
   const metadata = user.user_metadata ?? {};
   const displayName =
     (typeof metadata.full_name === 'string' && metadata.full_name.trim()) ||
@@ -39,6 +39,13 @@ export async function syncUserProfile(user: User): Promise<void> {
     console.warn('Supabase profile sync failed:', error.code);
     throw new Error('No fue posible preparar el perfil de AppSwinger.');
   }
+  const { data: savedProfile, error: readError } = await supabase
+    .from('profiles')
+    .select('display_name')
+    .eq('id', user.id)
+    .maybeSingle();
+  if (readError) console.warn('Supabase profile read failed:', readError.code);
+  return savedProfile?.display_name ?? displayName;
 }
 
 export async function saveUserProfile(userId: string, data: ProfileEditorData, region: AppRegion): Promise<void> {
@@ -110,7 +117,7 @@ export async function fetchDiscoverableProfiles(limit = 30): Promise<Profile[]> 
       bio: row.bio ?? '',
       photo: photoUrl,
       photos,
-      joined: row.matched_at,
+      joined: row.created_at,
     } satisfies Profile;
   }));
 }
@@ -181,7 +188,7 @@ export async function fetchUserMatches(userId: string): Promise<MatchItem[]> {
       bio: row.bio ?? '',
       photo: photoUrl,
       photos,
-      joined: row.created_at,
+      joined: row.matched_at,
     };
     return {
       id: row.match_id,
