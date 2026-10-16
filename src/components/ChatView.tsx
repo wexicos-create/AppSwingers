@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MatchItem, Profile, ChatMessage } from '../types';
+import { fetchChatMessages, getOrCreateConversation, sendChatMessage } from '../backend';
 import { INITIAL_PROFILES } from '../data/mockProfiles';
 import { 
   Search, 
@@ -27,6 +28,7 @@ import {
 
 interface ChatViewProps {
   matches: MatchItem[];
+  currentUserId?: string | null;
   initialChatUserId?: string | null;
   onOpenProfile: (profile: Profile) => void;
   onOpenReport?: (target: { type: 'usuario'; id: string; name: string }) => void;
@@ -36,6 +38,7 @@ interface ChatViewProps {
 
 export const ChatView: React.FC<ChatViewProps> = ({
   matches,
+  currentUserId = null,
   initialChatUserId,
   onOpenProfile,
   onOpenReport,
@@ -43,6 +46,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onBackToApp,
 }) => {
   const [activeChat, setActiveChat] = useState<MatchItem | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
@@ -63,6 +67,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const recordingTimerRef = useRef<any>(null);
 
   const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
+    if (!import.meta.env.DEV) return {};
     try {
       const saved = localStorage.getItem('appswinguer_chat_messages');
       return saved ? JSON.parse(saved) : {};
@@ -72,6 +77,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   });
 
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     try {
       localStorage.setItem('appswinguer_chat_messages', JSON.stringify(chatMessages));
     } catch (e) {
@@ -98,6 +104,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [liveLocationChats]);
 
   const toggleLiveLocation = (chatKey: string, partnerName: string) => {
+    if (currentUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chatKey)) {
+      showToast('La ubicación en tiempo real todavía no está conectada al backend. No se compartió ninguna coordenada.');
+      return;
+    }
     const isCurrentlyShared = !!liveLocationChats[chatKey];
     const willShare = !isCurrentlyShared;
     setLiveLocationChats(prev => ({ ...prev, [chatKey]: willShare }));
@@ -145,11 +155,42 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [initialChatUserId, matches]);
 
   useEffect(() => {
+    if (!currentUserId || !activeChat ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(activeChat.profile.id)) {
+      setActiveConversationId(null);
+      return;
+    }
+
+    let cancelled = false;
+    let conversationId: string | null = null;
+    const chatKey = activeChat.profile.id;
+    const loadMessages = async () => {
+      try {
+        if (!conversationId) conversationId = await getOrCreateConversation(currentUserId, activeChat.profile.id);
+        if (cancelled || !conversationId) return;
+        setActiveConversationId(conversationId);
+        const messages = await fetchChatMessages(currentUserId, conversationId);
+        if (!cancelled) setChatMessages(prev => ({ ...prev, [chatKey]: messages }));
+      } catch (error) {
+        if (!cancelled) showToast(error instanceof Error ? error.message : 'No fue posible cargar el chat.');
+      }
+    };
+
+    void loadMessages();
+    const interval = setInterval(() => { void loadMessages(); }, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentUserId, activeChat?.profile.id]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, activeChat]);
 
   // 3-second polling interval simulating recibir.php / backend sync
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     const pollInterval = setInterval(() => {
       try {
         const stored = localStorage.getItem('appswinguer_chat_messages');
@@ -239,6 +280,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const stopAndSendVoiceRecording = () => {
     if (!activeChat) return;
     clearInterval(recordingTimerRef.current);
+    if (currentUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(activeChat.profile.id)) {
+      setIsRecordingVoice(false);
+      showToast('Las notas de voz todavía no están habilitadas para conversaciones reales. Usa mensajes de texto.');
+      return;
+    }
     setIsRecordingVoice(false);
 
     const seconds = recordingSeconds || 4;
@@ -272,6 +318,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeChat) return;
+    if (currentUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(activeChat.profile.id)) {
+      showToast('Los adjuntos todavía no están habilitados para conversaciones reales. No se subió ningún archivo.');
+      e.target.value = '';
+      return;
+    }
 
     const chatKey = activeChat.profile.id;
     const reader = new FileReader();
@@ -317,22 +368,37 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }, 1200);
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !activeChat) return;
 
     const chatKey = activeChat.profile.id;
-    const newMessage: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      t: inputText.trim(),
-    };
+    const messageText = inputText.trim();
+    const isRealProfile = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(chatKey);
 
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newMessage]
-    }));
+    if (isRealProfile) {
+      if (!currentUserId) {
+        showToast('Inicia sesión para enviar mensajes.');
+        return;
+      }
+      try {
+        const conversationId = activeConversationId || await getOrCreateConversation(currentUserId, chatKey);
+        setActiveConversationId(conversationId);
+        const savedMessage = await sendChatMessage(currentUserId, conversationId, messageText);
+        setChatMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), savedMessage] }));
+        setInputText('');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'No se pudo enviar el mensaje.');
+      }
+      return;
+    }
+
+    if (!import.meta.env.DEV) {
+      showToast('El chat real requiere una cuenta verificada y una conversación autorizada.');
+      return;
+    }
+    const newMessage: ChatMessage = { id: `msg_${Date.now()}`, me: true, ts: Date.now(), t: messageText };
+    setChatMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), newMessage] }));
     setInputText('');
     triggerBotReply(chatKey);
   };
