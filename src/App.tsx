@@ -7,6 +7,7 @@ import {
   fetchUserMatches,
   fetchDiscoverableProfiles,
   saveUserProfile,
+  blockUser,
   testConnection,
 } from './backend';
 import { 
@@ -1062,13 +1063,18 @@ export default function App() {
               <div className="flex-1 overflow-hidden">
                 <ChatView
                   matches={matches}
+                  currentUserId={user?.id ?? null}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
                   onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
                   onBlockUser={(id) => {
-                    setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
+                    if (user) {
+                      void blockUser(user.id, id).then(() => {
+                        setMatches(prev => prev.filter(m => m.profile.id !== id));
+                        if (activeChatUserId === id) setActiveChatUserId(null);
+                      }).catch(error => alert(error instanceof Error ? error.message : 'No se pudo bloquear la cuenta.'));
+                    } else {
+                      alert(isEs ? 'Inicia sesión para bloquear esta cuenta.' : 'Sign in to block this account.');
                     }
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
