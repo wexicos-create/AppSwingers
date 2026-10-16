@@ -51,8 +51,8 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   const isMx = region === 'MX';
   const currencySymbol = isMx ? '$' : '$';
   const currencyCode = isMx ? 'MXN' : 'USD';
-  const taxLabel = isMx ? 'IVA (16% ley mexicana)' : 'Tax (Max 20% US)';
-  const taxRate = isMx ? 0.16 : 0.20;
+  const taxLabel = isMx ? 'IVA (16% México)' : (isEs ? 'Impuestos por configurar' : 'Tax setup pending');
+  const taxRate = isMx ? 0.16 : 0;
 
   const [activeTab, setActiveTab] = useState<'creadoras' | 'vivo' | 'subir'>('creadoras');
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
@@ -81,18 +81,10 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   const [uploadImageFile, setUploadImageFile] = useState<string | null>(null);
 
   // My uploaded items mock state for creator
-  const [myUploads, setMyUploads] = useState<Array<{ id: string; caption: string; price: number; url: string; date: string }>>([
-    {
-      id: 'up_1',
-      caption: isEs ? 'Set exclusivo de lencería y antifaz nocturno' : 'Exclusive lingerie & mask set',
-      price: isMx ? 120 : 20,
-      url: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80',
-      date: 'Hace 1 día',
-    }
-  ]);
+  const [myUploads, setMyUploads] = useState<Array<{ id: string; caption: string; price: number; url: string; date: string }>>([]);
 
   // Virtual card balance
-  const [virtualCardBalance, setVirtualCardBalance] = useState(2450);
+  const [virtualCardBalance] = useState(0);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -117,7 +109,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
     onRegisterCreator({
       name: creatorForm.name.trim(),
       handle: creatorForm.handle.startsWith('@') ? creatorForm.handle : `@${creatorForm.handle}`,
-      bio: creatorForm.bio.trim() || (isEs ? 'Creadora verificada' : 'Verified creator'),
+      bio: creatorForm.bio.trim() || (isEs ? 'Perfil pendiente de revisión; sin verificar.' : 'Profile pending review; not verified.'),
       price: Number(creatorForm.price),
       avatar: creatorForm.avatar,
       status: 'activa',
@@ -146,7 +138,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
     });
     setUploadCaption('');
     setUploadImageFile(null);
-    alert(isEs ? '¡Contenido publicado con éxito! Ya aparece en tu perfil para pago por evento.' : 'Content successfully published!');
+    alert(isEs ? 'Borrador guardado solo en esta sesión. El contenido no se publicó ni se habilitaron pagos.' : 'Draft saved in this session only. Content was not published and payments were not enabled.');
   };
 
   return (
@@ -519,8 +511,8 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
               </div>
               <div className="text-[10px] text-emerald-400 pt-1">
                 {isEs 
-                  ? `Se abona a la tarjeta virtual de la creadora (${Math.round(selectedCreator.price * 0.85)} MXN).` 
-                  : `Credited to creator's virtual earnings card.`}
+                  ? 'La liquidación no está conectada; no se registran ingresos ni pagos a creadoras.'
+                  : 'Payouts are not connected; no creator earnings or payments are recorded.'}
               </div>
             </div>
 
@@ -533,9 +525,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
               </button>
               <button
                 onClick={() => {
-                  const amt = Math.round(selectedCreator.price * (1.1 + taxRate));
                   onSubscribe(selectedCreator);
-                  setVirtualCardBalance(prev => prev + Math.round(selectedCreator.price * 0.85));
                   setSelectedCreator(null);
                 }}
                 className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white text-xs font-bold shadow-lg"
