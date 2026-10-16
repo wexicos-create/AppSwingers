@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import type { AppRegion, MatchItem, Profile, ProfileKind, SwipeAction } from './types';
+import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, SwipeAction } from './types';
 import { supabase } from './supabase';
 
 export interface ProfileEditorData {
@@ -191,4 +191,109 @@ export async function fetchUserMatches(userId: string): Promise<MatchItem[]> {
       unreadCount: 0,
     };
   }));
+}
+
+export async function getOrCreateConversation(userId: string, otherUserId: string): Promise<string> {
+  if (!userId || !otherUserId || userId === otherUserId) {
+    throw new Error('Conversación no válida.');
+  }
+
+  const { data: existing, error: lookupError } = await supabase
+    .from('chat_conversations')
+    .select('id,participant_a,participant_b')
+    .or(`participant_a.eq.${userId},participant_b.eq.${userId}`)
+    .limit(100);
+
+  if (lookupError) {
+    console.warn('Supabase conversation lookup failed:', lookupError.code);
+    throw new Error('No fue posible abrir la conversación.');
+  }
+  const found = (existing ?? []).find(row =>
+    (row.participant_a === userId && row.participant_b === otherUserId) ||
+    (row.participant_b === userId && row.participant_a === otherUserId)
+  );
+  if (found) return found.id;
+
+  const { data: created, error: createError } = await supabase
+    .from('chat_conversations')
+    .insert({ participant_a: userId, participant_b: otherUserId, conversation_type: 'dating', status: 'active' })
+    .select('id')
+    .single();
+
+  if (!createError && created?.id) return created.id;
+
+  // A concurrent match/open may have created the same pair first.
+  const { data: retry } = await supabase
+    .from('chat_conversations')
+    .select('id,participant_a,participant_b')
+    .or(`participant_a.eq.${userId},participant_b.eq.${userId}`)
+    .limit(100);
+  const raced = (retry ?? []).find(row =>
+    (row.participant_a === userId && row.participant_b === otherUserId) ||
+    (row.participant_b === userId && row.participant_a === otherUserId)
+  );
+  if (raced) return raced.id;
+
+  console.warn('Supabase conversation creation failed:', createError?.code);
+  throw new Error('No se pudo iniciar el chat. Comprueba que ambas cuentas estén verificadas y no bloqueadas.');
+}
+
+export async function fetchChatMessages(userId: string, conversationId: string): Promise<ChatMessage[]> {
+  if (!userId || !conversationId) return [];
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('id,sender_user_id,body,created_at')
+    .eq('conversation_id', conversationId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true })
+    .limit(200);
+  if (error) {
+    console.warn('Supabase message load failed:', error.code);
+    throw new Error('No fue posible cargar los mensajes.');
+  }
+  return (data ?? []).map(row => ({
+    id: row.id,
+    me: row.sender_user_id === userId,
+    ts: new Date(row.created_at).getTime(),
+    t: row.body,
+  }));
+}
+
+export async function sendChatMessage(userId: string, conversationId: string, body: string): Promise<ChatMessage> {
+  const text = body.trim();
+  if (!userId || !conversationId || !text || text.length > 4000) {
+    throw new Error('El mensaje está vacío o supera el límite permitido.');
+  }
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .insert({
+      conversation_id: conversationId,
+      sender_user_id: userId,
+      body: text,
+      message_type: 'text',
+    })
+    .select('id,sender_user_id,body,created_at')
+    .single();
+  if (error || !data) {
+    console.warn('Supabase message send failed:', error?.code);
+    throw new Error('No se pudo enviar el mensaje. Verifica el estado de tu conversación.');
+  }
+  return {
+    id: data.id,
+    me: data.sender_user_id === userId,
+    ts: new Date(data.created_at).getTime(),
+    t: data.body,
+  };
+}
+
+export async function blockUser(userId: string, blockedUserId: string): Promise<void> {
+  if (!userId || !blockedUserId || userId === blockedUserId) return;
+  const { error } = await supabase.from('user_blocks').upsert(
+    { blocker_user_id: userId, blocked_user_id: blockedUserId },
+    { onConflict: 'blocker_user_id,blocked_user_id' },
+  );
+  if (error) {
+    console.warn('Supabase block failed:', error.code);
+    throw new Error('No se pudo bloquear la cuenta.');
+  }
 }
