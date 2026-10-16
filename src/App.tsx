@@ -115,11 +115,11 @@ export default function App() {
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>(import.meta.env.DEV ? INITIAL_EVENTS : []);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>(import.meta.env.DEV ? INITIAL_PROPOSALS : []);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
   const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
@@ -152,25 +152,23 @@ export default function App() {
   };
 
   // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
+  const [creators, setCreators] = useState<Creator[]>(import.meta.env.DEV ? INITIAL_CREATORS : []);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
   const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
   const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
+  const [lives, setLives] = useState<LiveStream[]>(import.meta.env.DEV ? INITIAL_LIVES : []);
 
   // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ReportItem[]>(import.meta.env.DEV ? INITIAL_REPORTS : []);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
-  const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
-    {
+  const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>(import.meta.env.DEV ? [{
       id: 'ann_1',
       title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
       body: isEs 
         ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
         : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
       ts: Date.now(),
-    }
-  ]);
+    }] : []);
   const [activeAnnouncement, setActiveAnnouncement] = useState<SystemAnnouncement | null>(announcements[0]);
 
   // Club de Experiencias (10 stamps punch card)
@@ -895,12 +893,10 @@ export default function App() {
               lang={lang}
               onSubscribe={handleSubscribeCreator}
               onBuyLiveAccess={handleBuyLiveAccess}
-              onRegisterCreator={(c) => {
-                setUserCreator(c);
-                setCreators(prev => [c, ...prev]);
+              onRegisterCreator={(_c) => {
                 alert(isEs
-                  ? "Borrador de perfil creado solo en esta sesión. El registro y la publicación en servidor aún no están conectados."
-                  : "Creator profile draft created in this session only. Server registration and publishing are not connected yet.");
+                  ? 'El registro de creadoras está temporalmente deshabilitado hasta conectar verificación de identidad, almacenamiento privado y moderación en servidor. No se registró ni verificó la cuenta.'
+                  : 'Creator registration is disabled until identity verification, private storage, and server moderation are connected. The account was not registered or verified.');
               }}
               onUploadMedia={(data) => {
                 alert(isEs
