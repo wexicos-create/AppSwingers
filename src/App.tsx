@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './supabase';
 import { 
   auth, 
   googleProvider, 
@@ -8,7 +9,7 @@ import {
   recordMatch, 
   fetchUserMatches, 
   testConnection 
-} from './firebase';
+} from './backend';
 import { 
   Profile, 
   SwipeAction, 
@@ -73,7 +74,7 @@ import {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
 
   // Region and Language Detection (Default San Luis Potosí, México with USA option)
   const [region, setRegion] = useState<AppRegion>('MX');
@@ -276,57 +277,70 @@ export default function App() {
     };
   }, []);
 
-  // Firebase auth & test connection
+  // Supabase Auth & backend connectivity
   useEffect(() => {
-    testConnection().then(ok => setIsFirestoreConnected(ok));
+    void testConnection().then(setIsBackendConnected);
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) {
-        try {
-          await syncUserProfile(currentUser);
-          const remoteMatches = await fetchUserMatches(currentUser.uid);
+      if (!currentUser) return;
+
+      // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
+      void syncUserProfile(currentUser)
+        .then(() => fetchUserMatches(currentUser.id))
+        .then(remoteMatches => {
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
-              const seen = new Set();
-              return combined.filter(m => {
-                if (seen.has(m.profile.id)) return false;
-                seen.add(m.profile.id);
+              const seen = new Set<string>();
+              return combined.filter(match => {
+                if (seen.has(match.profile.id)) return false;
+                seen.add(match.profile.id);
                 return true;
               });
             });
           }
-        } catch (e) {
-          console.warn('Firebase user sync note:', e);
-        }
-      }
+          const metadata = currentUser.user_metadata ?? {};
+          const displayName = metadata.full_name || metadata.name;
+          if (typeof displayName === 'string' && displayName.trim()) {
+            setUserProfile(prev => ({ ...prev, alias: displayName.trim() }));
+          }
+        })
+        .catch(error => {
+          console.warn('Supabase user sync note:', error instanceof Error ? error.message : 'unknown error');
+        });
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
-  // Google sign in
+  // Google OAuth through Supabase Auth
   const handleGoogleSignIn = async () => {
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncUserProfile(result.user);
-        if (result.user.displayName) {
-          setUserProfile(prev => ({ ...prev, alias: result.user.displayName || prev.alias }));
-        }
-      }
-    } catch (e: any) {
-      console.warn('Sign In error:', e);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
+    } catch (error) {
+      console.warn('Supabase sign-in failed:', error instanceof Error ? error.message : 'unknown error');
+      setPushToast({
+        title: isEs ? 'No se pudo iniciar sesión' : 'Sign-in failed',
+        body: isEs
+          ? 'Revisa que Google esté habilitado en Supabase Auth y que esta URL esté permitida.'
+          : 'Check that Google is enabled in Supabase Auth and this URL is allow-listed.',
+      });
     }
   };
 
   const handleSignOut = async () => {
     try {
-      await fbSignOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setUser(null);
-    } catch (e) {
-      console.warn('Sign Out error:', e);
+    } catch (error) {
+      console.warn('Supabase sign-out failed:', error instanceof Error ? error.message : 'unknown error');
     }
   };
 
@@ -346,7 +360,7 @@ export default function App() {
 
     if (user) {
       try {
-        await recordSwipe(user.uid, target, action);
+        await recordSwipe(user.id, target, action);
       } catch (err) {
         console.warn('Error recording swipe:', err);
       }
@@ -368,7 +382,7 @@ export default function App() {
 
       if (user) {
         try {
-          await recordMatch(user.uid, target);
+          await recordMatch(user.id, target);
         } catch (err) {
           console.warn('Error saving match:', err);
         }
@@ -933,7 +947,7 @@ export default function App() {
                 setMaxDistance(val);
                 setUserProfile(prev => ({ ...prev, maxKm: val }));
               }}
-              isFirestoreConnected={isFirestoreConnected}
+              isFirestoreConnected={isBackendConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
