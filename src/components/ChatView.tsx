@@ -318,7 +318,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !activeChat) return;
-    if (currentUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(activeChat.profile.id)) {
+    if (currentUserId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(activeChat.profile.id)) {
       showToast('Los adjuntos todavía no están habilitados para conversaciones reales. No se subió ningún archivo.');
       e.target.value = '';
       return;
@@ -374,7 +374,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
     const chatKey = activeChat.profile.id;
     const messageText = inputText.trim();
-    const isRealProfile = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(chatKey);
+    const isRealProfile = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chatKey);
 
     if (isRealProfile) {
       if (!currentUserId) {
