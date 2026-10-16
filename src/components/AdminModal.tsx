@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { 
   X, 
@@ -30,6 +30,7 @@ interface AdminModalProps {
 
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isChangingCreds, setIsChangingCreds] = useState(false);
   const [newPass, setNewPass] = useState('');
@@ -44,6 +45,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     isEs ? 'Cupo limitado para parejas verificadas. Revisa la sección de eventos.' : 'Limited capacity for verified couples. Check events tab.'
   );
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setSignedInEmail(data.user?.email ?? null);
+    });
+    return () => { active = false; };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -129,7 +139,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {isEs ? 'Panel Admin & Business Analytics' : 'Admin & Business Analytics'}
           </h2>
           <p className="text-[11px] text-purple-200/70 mt-0.5">
-            {isEs ? 'Acceso protegido por rol de servidor' : 'Server-role protected access'}
+            {isEs ? 'Acceso protegido por rol en Supabase' : 'Server-role protected access'}
           </p>
         </div>
 
@@ -142,11 +152,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             )}
             <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-white/75 leading-relaxed">
               {isEs
-                ? 'El acceso administrativo se valida mediante Firebase Authentication y una custom claim administrada desde el servidor. No se usan contraseñas predeterminadas ni PIN almacenados en este dispositivo.'
+                ? 'El acceso administrativo se valida mediante roles de Supabase asignados de forma segura. No se usan contraseñas predeterminadas ni PIN almacenados en este dispositivo.'
                 : 'Admin access is verified through Supabase Auth and server-managed database roles. No default passwords or locally stored PINs are used.'}
             </div>
             <div className="text-center text-xs text-white/60">
-              {auth.currentUser?.email || (isEs ? 'No hay sesión iniciada' : 'No signed-in session')}
+              {signedInEmail || (isEs ? 'No hay sesión iniciada' : 'No signed-in session')}
             </div>
             <button
               type="button"
@@ -164,8 +174,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0" />
                 <div>
-                  <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión Autorizada (Root Admin)' : 'Authorized Session'}</h4>
-                  <p className="text-[10px] text-emerald-200">{auth.currentUser?.email || '—'}</p>
+                  <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión autorizada' : 'Authorized Session'}</h4>
+                  <p className="text-[10px] text-emerald-200">{signedInEmail || '—'}</p>
                 </div>
               </div>
               <button
