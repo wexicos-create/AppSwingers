@@ -27,10 +27,10 @@ service cloud.firestore {
     // Users collection with RBAC and privilege escalation prevention
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false);
+      allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false) && !request.resource.data.keys().hasAny(['identityVerification']);
       allow update: if isOwner(userId) && (
         // Prevent regular users from elevating themselves to admin
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin'])) || 
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'identityVerification'])) || 
         isAdmin()
       );
       allow delete: if isAdmin() || isOwner(userId);

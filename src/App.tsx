@@ -48,6 +48,7 @@ import { AdminModal } from './components/AdminModal';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
+import { AuthModal } from './components/AuthModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
@@ -73,6 +74,7 @@ import {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
 
   // Region and Language Detection (Default San Luis Potosí, México with USA option)
@@ -908,7 +910,7 @@ export default function App() {
           {activeTab === 'perfil' && (
             <ProfileView
               user={user}
-              onSignIn={handleGoogleSignIn}
+              onSignIn={() => setAuthModalOpen(true)}
               onSignOut={handleSignOut}
               stats={{
                 swipesCount: swipedHistory.length,
@@ -1049,6 +1051,13 @@ export default function App() {
             </div>
           </div>
         )}
+
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          onGoogleSignIn={handleGoogleSignIn}
+          isEs={isEs}
+        />
 
         {/* MODAL 1: REGISTRATION & SEXUAL TASTES / FANTASIES */}
         <RegistrationModal
