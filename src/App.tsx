@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
 import { 
   auth, 
@@ -50,6 +51,9 @@ import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { PlatformAccessPanel } from './components/PlatformAccessPanel';
+import { IdentityVerificationPanel } from './components/IdentityVerificationPanel';
+import { TrustSafetySettingsPanel } from './components/TrustSafetySettingsPanel';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -68,7 +72,8 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  Download
 } from 'lucide-react';
 
 export default function App() {
@@ -190,6 +195,7 @@ export default function App() {
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
+  const [platformPanelOpen, setPlatformPanelOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
 
@@ -203,8 +209,7 @@ export default function App() {
       setLang(l);
     });
 
-    // Request GPS location automatically
-    requestLocationAccess();
+    // Location permission is requested only after an explicit user action.
   }, []);
 
   // Location request to determine exact KM distances and country
@@ -238,19 +243,14 @@ export default function App() {
         (err) => {
           setIsLocating(false);
           console.warn('Geolocation note:', err);
+          setLocationGranted(false);
           if (isManualClick) {
-            setLocationGranted(true);
-            setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
             setPushToast({
-              title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
-              body: isEs 
-                ? `Ubicación configurada en ${cityName}. Cálculo en KM activado.` 
-                : `Location configured in ${cityName}. Distance calculations active.`
+              title: isEs ? 'Permiso de ubicación no concedido' : 'Location permission not granted',
+              body: isEs
+                ? 'Puedes continuar sin GPS y configurar tu ciudad manualmente. Activa el permiso desde los ajustes del navegador si lo deseas.'
+                : 'You can continue without GPS and set your city manually. Enable the permission in browser settings if you want.'
             });
-          } else {
-            setLocationGranted(false);
           }
         },
         { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
@@ -589,7 +589,7 @@ export default function App() {
                 onClick={() => setActiveTab('match')}
                 className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
               >
-                APPSWINGUER
+                APPSWINGER
               </span>
               {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
               <div className="flex items-center gap-1 ml-1">
@@ -656,6 +656,16 @@ export default function App() {
             >
               <UserIcon className="w-3 h-3 text-pink-400 shrink-0" />
               <span className="truncate">{userProfile.alias}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlatformPanelOpen(true)}
+              className="p-2 rounded-xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-400/30 text-purple-100 transition active:scale-95"
+              aria-label={isEs ? 'Instalación, descarga y permisos' : 'Install, download and permissions'}
+              title={isEs ? 'App, descarga y permisos' : 'App, download and permissions'}
+            >
+              <Download className="w-4 h-4 text-[#d49cff]" />
             </button>
 
             {/* Messages Drawer Trigger */}
@@ -1036,11 +1046,23 @@ export default function App() {
                   matches={matches}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
-                  onBlockUser={(id) => {
-                    setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
+                  onOpenReport={async (t) => {
+                    try {
+                      const submitReport = httpsCallable(getFunctions(auth.app), 'submitSafetyReport');
+                      await submitReport({ targetUid: t.id, category: 'other', details: `Reporte iniciado desde chat: ${t.name}` });
+                      alert(isEs ? 'Reporte enviado al equipo de moderación.' : 'Report sent to moderation.');
+                    } catch {
+                      alert(isEs ? 'No se pudo enviar el reporte al servidor. Inténtalo más tarde.' : 'Could not send the report to the server. Try again later.');
+                    }
+                  }}
+                  onBlockUser={async (id) => {
+                    try {
+                      const blockMember = httpsCallable(getFunctions(auth.app), 'blockMember');
+                      await blockMember({ targetUid: id });
+                      setMatches(prev => prev.filter(m => m.profile.id !== id));
+                      if (activeChatUserId === id) setActiveChatUserId(null);
+                    } catch {
+                      alert(isEs ? 'No se confirmó el bloqueo en el servidor. No se modificó la lista.' : 'Server did not confirm the block. The list was not changed.');
                     }
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
@@ -1148,6 +1170,15 @@ export default function App() {
             setTimeout(() => setPushToast(null), 5500);
           }}
         />
+
+        <PlatformAccessPanel
+          isOpen={platformPanelOpen}
+          onClose={() => setPlatformPanelOpen(false)}
+          isEs={isEs}
+          region={region}
+        />
+        <IdentityVerificationPanel />
+        <TrustSafetySettingsPanel />
 
         {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
         {pushToast && (

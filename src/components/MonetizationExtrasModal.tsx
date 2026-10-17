@@ -29,11 +29,11 @@ export function MonetizationExtrasModal({
   const currencyCode = isMx ? 'MXN' : 'USD';
 
   // Pricing calculation with 16% tax (IVA)
-  const silverBase = isMx ? 408 : 100;
+  const silverBase = isMx ? 350 : 100;
   const silverTax = Math.round(silverBase * 0.16 * 100) / 100;
   const silverTotal = Math.round((silverBase + silverTax) * 100) / 100;
 
-  const goldBase = isMx ? 800 : 180;
+  const goldBase = isMx ? 500 : 180;
   const goldTax = Math.round(goldBase * 0.16 * 100) / 100;
   const goldTotal = Math.round((goldBase + goldTax) * 100) / 100;
 
@@ -50,8 +50,8 @@ export function MonetizationExtrasModal({
       }, 3000);
       return;
     }
-    onSelectTier(tier);
-    setSuccessMsg(isEs ? `¡Suscripción ${tier.toUpperCase()} activada con éxito!` : `${tier.toUpperCase()} subscription successfully activated!`);
+    // Never grant paid access from client-side state. Membership activation requires an independently verified payment on a trusted backend.
+    setSuccessMsg(isEs ? 'Los cobros están desactivados hasta validar SPEI/CEP y el backend. No se activó ninguna membresía.' : 'Payments are disabled until SPEI/CEP and the backend are validated. No membership was activated.');
     setTimeout(() => {
       setSuccessMsg(null);
       onClose();
@@ -74,7 +74,7 @@ export function MonetizationExtrasModal({
             {isEs ? 'Planes y Promociones Oficiales' : 'Official Plans & Promotions'}
           </span>
           <h2 className="text-2xl font-bold text-white">
-            {isEs ? 'Eleva tu Experiencia con AppSwinguer' : 'Elevate Your AppSwinguer Experience'}
+            {isEs ? 'Eleva tu experiencia con AppSwinger' : 'Elevate Your AppSwinguer Experience'}
           </h2>
           <p className="text-sm text-white/70 mt-1">
             {isEs 
@@ -82,6 +82,23 @@ export function MonetizationExtrasModal({
               : 'Currency and taxes applied according to your region.'}
           </p>
         </div>
+
+        {isMx && (
+          <section className="rounded-2xl border border-purple-400/25 bg-purple-950/20 p-4 space-y-3" aria-label={isEs ? 'Guía de depósito SPEI' : 'SPEI deposit guide'}>
+            <div>
+              <h3 className="text-sm font-bold text-white">{isEs ? 'Pago por SPEI · ejemplo de referencia' : 'SPEI payment · reference example'}</h3>
+              <p className="mt-1 text-xs text-white/70">{isEs ? 'La imagen es ilustrativa. No son datos bancarios válidos ni un comprobante real.' : 'Illustration only. These are not valid bank details or a real transaction receipt.'}</p>
+            </div>
+            <img src="/deposit-demo-mx.svg" alt={isEs ? 'Ejemplo ilustrativo con Destino, Concepto y REFERENCIA subrayados en rojo; no es una transferencia real' : 'Illustrative example with Destination, Concept and REFERENCE underlined in red; not a real transfer'} className="mx-auto max-h-72 w-auto rounded-xl border border-white/10 object-contain" loading="lazy" />
+            <div className="grid gap-2 text-xs">
+              <div className="rounded-lg bg-black/30 p-3"><div className="font-bold text-purple-200">{isEs ? 'Destino' : 'Destination'}</div><div className="text-white/70">{isEs ? 'Se mostrará solo cuando administración configure y verifique la cuenta receptora.' : 'Shown only after the receiving account is configured and verified.'}</div><div className="mt-1 h-1 rounded bg-red-500" /></div>
+              <div className="rounded-lg bg-black/30 p-3"><div className="font-bold text-purple-200">{isEs ? 'Concepto' : 'Concept'}</div><div className="text-white/70">{isEs ? 'Se generará uno único por orden.' : 'A unique concept will be generated per order.'}</div><div className="mt-1 h-1 rounded bg-red-500" /></div>
+              <div className="rounded-lg bg-black/30 p-3"><div className="font-bold text-purple-200">REFERENCIA</div><div className="text-white/70">{isEs ? 'Se solicitará la referencia de la operación; no se exigirá pegar una URL.' : 'The transaction reference will be requested; pasting a URL will not be required.'}</div><div className="mt-1 h-1 rounded bg-red-500" /></div>
+            </div>
+            <a href="https://www.banxico.org.mx/cep/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs font-bold text-purple-200 underline underline-offset-4">{isEs ? 'Abrir comprobante electrónico de pago (CEP) de Banxico' : 'Open Banxico electronic payment receipt (CEP)'}</a>
+            <p className="text-xs text-amber-200">{isEs ? 'Los pagos siguen desactivados: falta conectar un verificador de CEP fiable y el backend de órdenes. No transfieras dinero usando esta maqueta.' : 'Payments remain disabled: a reliable CEP verifier and order backend still need to be connected. Do not transfer money using this mockup.'}</p>
+          </section>
+        )}
 
         {successMsg && (
           <div className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-center text-sm font-semibold animate-pulse">
@@ -125,12 +142,12 @@ export function MonetizationExtrasModal({
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-rose-400">{isEs ? 'Siguiente Plan (VIP Plus)' : 'VIP Plus Tier'}</span>
+                <span className="font-bold text-rose-400">{isEs ? 'Prime' : 'Prime'}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">15 {isEs ? 'días' : 'days'}</span>
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{silverTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
               <div className="text-[11px] font-bold text-pink-300 mb-2">
-                {isEs ? '15 postulaciones a la semana' : '15 applications per week'}
+                {isEs ? 'Beneficios Prime' : 'Prime benefits'}
               </div>
               <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${silverBase} + 16% IVA (${silverTax})` : `Base: ${silverBase} + 16% Tax (${silverTax})`}</div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
@@ -144,7 +161,7 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('plus')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-semibold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Obtener VIP Plus (15/sem)' : 'Get VIP Plus (15/wk)')}
+              {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Solicitar Prime por SPEI' : 'Request Prime via SPEI')}
             </button>
           </div>
 
@@ -159,7 +176,7 @@ export function MonetizationExtrasModal({
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{goldTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
               <div className="text-[11px] font-bold text-amber-300 mb-2">
-                {isEs ? 'Postulaciones ILIMITADAS' : 'UNLIMITED applications'}
+                {isEs ? 'Beneficios Gold' : 'Gold benefits'}
               </div>
               <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${goldBase} + 16% IVA (${goldTax})` : `Base: ${goldBase} + 16% Tax (${goldTax})`}</div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
@@ -173,7 +190,7 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('ultra')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-black font-black text-xs shadow-lg shadow-amber-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Activar Ultra (Ilimitadas)' : 'Activate Ultra (Unlimited)')}
+              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Solicitar Gold por SPEI' : 'Request Gold via SPEI')}
             </button>
           </div>
         </div>
