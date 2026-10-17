@@ -164,7 +164,7 @@ export default function App() {
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
       id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
+      title: isEs ? '¡Bienvenidos a AppSwinger Ultra Plus!' : 'Welcome to AppSwinger Ultra Plus!',
       body: isEs 
         ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
         : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
@@ -589,7 +589,7 @@ export default function App() {
                 onClick={() => setActiveTab('match')}
                 className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
               >
-                APPSWINGUER
+                APPSWINGER
               </span>
               {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
               <div className="flex items-center gap-1 ml-1">
