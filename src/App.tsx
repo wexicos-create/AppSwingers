@@ -444,11 +444,10 @@ export default function App() {
       folio: `F-${Math.floor(100 + Math.random() * 900)}`,
       code,
       ts: Date.now(),
-      status: 'pagado',
+      status: 'pendiente_pago',
     };
     setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+    alert(isEs ? `Solicitud registrada con folio ${newReservation.folio}. El pago no está confirmado y este folio no es un boleto de acceso.` : `Request saved as ${newReservation.folio}. Payment is not confirmed and this is not an admission ticket.`);
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -554,7 +553,7 @@ export default function App() {
       ...proposal,
       id: `collab_${Date.now()}`,
       status: 'en revisión',
-      paid: true,
+      paid: false,
       createdAt: Date.now(),
     };
     // Also insert as a public proposal
