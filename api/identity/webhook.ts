@@ -10,19 +10,19 @@ function getAdminApp() {
   return initializeApp({ credential: cert(JSON.parse(raw)) });
 }
 
-function canonicalize(value: any): any {
-  if (Array.isArray(value)) return value.map(canonicalize);
+function canonicalJson(value: any): string {
+  if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
   if (value && typeof value === 'object') {
-    return Object.keys(value).sort().reduce((out: Record<string, unknown>, key) => {
-      out[key] = canonicalize(value[key]);
-      return out;
-    }, {});
+    // Emit sorted key/value pairs directly: rebuilding an object can reorder integer-like keys.
+    return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalJson(value[key])).join(',') + '}';
   }
-  return value;
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) throw new Error('Unsupported value in Didit webhook payload');
+  return encoded;
 }
 
 function validSignature(payload: unknown, signature: string, secret: string) {
-  const expected = createHmac('sha256', secret).update(JSON.stringify(canonicalize(payload)), 'utf8').digest();
+  const expected = createHmac('sha256', secret).update(canonicalJson(payload), 'utf8').digest();
   const suppliedHex = signature.replace(/^sha256=/i, '').trim();
   if (!/^[a-f0-9]{64}$/i.test(suppliedHex)) return false;
   const supplied = Buffer.from(suppliedHex, 'hex');
