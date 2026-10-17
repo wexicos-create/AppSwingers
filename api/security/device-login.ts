@@ -75,7 +75,7 @@ export default async function handler(req: any, res: any) {
     if (!result.existing && 'email' in result && result.email) {
       const mail = await notifyBan(result.email, result.caseId || 'sin-folio', 'Acceso detectado desde un segundo dispositivo registrado.');
       if (result.caseId) await db.collection('securityCases').doc(result.caseId).set({
-        notification: { status: mail.sent ? 'sent' : 'failed', attempts: 1, failureReason: mail.reason || null, updatedAt: FieldValue.serverTimestamp() }
+        notification: { status: mail.sent ? 'sent' : 'failed', attempts: 1, failureReason: ('reason' in mail ? mail.reason : null), updatedAt: FieldValue.serverTimestamp() }
       }, { merge: true });
     }
     if (!result.existing) await getAuth(app).revokeRefreshTokens(decoded.uid);
