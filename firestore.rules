@@ -11,7 +11,7 @@ service cloud.firestore {
 
     function accountIsActive(userId) {
       return !exists(/databases/$(database)/documents/users/$(userId)) ||
-        get(/databases/$(database)/documents/users/$(userId)).data.accountSecurity.status != 'banned';
+        (get(/databases/$(database)/documents/users/$(userId)).data.accountSecurity == null ||\n         get(/databases/$(database)/documents/users/$(userId)).data.accountSecurity.status != 'banned');
     }
 
     function canUseAccount() {
