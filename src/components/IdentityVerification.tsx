@@ -39,7 +39,7 @@ export const IdentityVerification: React.FC<{ user: User; isEs?: boolean }> = ({
       const response = await fetch('/api/identity/session', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: '{}'
+        body: JSON.stringify({ consent: true })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.url !== 'string') throw new Error(payload.error || 'Could not start verification');
