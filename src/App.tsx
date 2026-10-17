@@ -51,6 +51,7 @@ import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { 
   Flame, 
   Megaphone, 
@@ -1170,6 +1171,9 @@ export default function App() {
             </button>
           </div>
         )}
+
+        {/* VERCEL SPEED INSIGHTS */}
+        <SpeedInsights />
 
       </div>
     </div>
