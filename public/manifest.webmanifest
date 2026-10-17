@@ -1,0 +1,20 @@
+{
+  "name": "AppSwinger",
+  "short_name": "AppSwinger",
+  "description": "Comunidad de conexiones adultas, perfiles verificados y eventos por región.",
+  "lang": "es-MX",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050307",
+  "theme_color": "#140e1d",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/appswinger-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
