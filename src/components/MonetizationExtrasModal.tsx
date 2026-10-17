@@ -29,11 +29,11 @@ export function MonetizationExtrasModal({
   const currencyCode = isMx ? 'MXN' : 'USD';
 
   // Pricing calculation with 16% tax (IVA)
-  const silverBase = isMx ? 408 : 100;
+  const silverBase = isMx ? 350 : 100;
   const silverTax = Math.round(silverBase * 0.16 * 100) / 100;
   const silverTotal = Math.round((silverBase + silverTax) * 100) / 100;
 
-  const goldBase = isMx ? 800 : 180;
+  const goldBase = isMx ? 500 : 180;
   const goldTax = Math.round(goldBase * 0.16 * 100) / 100;
   const goldTotal = Math.round((goldBase + goldTax) * 100) / 100;
 
@@ -50,8 +50,8 @@ export function MonetizationExtrasModal({
       }, 3000);
       return;
     }
-    onSelectTier(tier);
-    setSuccessMsg(isEs ? `¡Suscripción ${tier.toUpperCase()} activada con éxito!` : `${tier.toUpperCase()} subscription successfully activated!`);
+    // Never grant paid access from client-side state. Membership activation requires an independently verified payment on a trusted backend.
+    setSuccessMsg(isEs ? 'Los cobros están desactivados hasta validar SPEI/CEP y el backend. No se activó ninguna membresía.' : 'Payments are disabled until SPEI/CEP and the backend are validated. No membership was activated.');
     setTimeout(() => {
       setSuccessMsg(null);
       onClose();
@@ -74,7 +74,7 @@ export function MonetizationExtrasModal({
             {isEs ? 'Planes y Promociones Oficiales' : 'Official Plans & Promotions'}
           </span>
           <h2 className="text-2xl font-bold text-white">
-            {isEs ? 'Eleva tu Experiencia con AppSwinguer' : 'Elevate Your AppSwinguer Experience'}
+            {isEs ? 'Eleva tu experiencia con AppSwinger' : 'Elevate Your AppSwinguer Experience'}
           </h2>
           <p className="text-sm text-white/70 mt-1">
             {isEs 
@@ -125,12 +125,12 @@ export function MonetizationExtrasModal({
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-rose-400">{isEs ? 'Siguiente Plan (VIP Plus)' : 'VIP Plus Tier'}</span>
+                <span className="font-bold text-rose-400">{isEs ? 'Prime' : 'Prime'}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">15 {isEs ? 'días' : 'days'}</span>
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{silverTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
               <div className="text-[11px] font-bold text-pink-300 mb-2">
-                {isEs ? '15 postulaciones a la semana' : '15 applications per week'}
+                {isEs ? 'Beneficios Prime' : 'Prime benefits'}
               </div>
               <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${silverBase} + 16% IVA (${silverTax})` : `Base: ${silverBase} + 16% Tax (${silverTax})`}</div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
@@ -144,7 +144,7 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('plus')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 text-white font-semibold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Obtener VIP Plus (15/sem)' : 'Get VIP Plus (15/wk)')}
+              {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Solicitar Prime por SPEI' : 'Request Prime via SPEI')}
             </button>
           </div>
 
@@ -159,7 +159,7 @@ export function MonetizationExtrasModal({
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{goldTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
               <div className="text-[11px] font-bold text-amber-300 mb-2">
-                {isEs ? 'Postulaciones ILIMITADAS' : 'UNLIMITED applications'}
+                {isEs ? 'Beneficios Gold' : 'Gold benefits'}
               </div>
               <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${goldBase} + 16% IVA (${goldTax})` : `Base: ${goldBase} + 16% Tax (${goldTax})`}</div>
               <ul className="text-xs text-white/70 flex flex-col gap-2">
@@ -173,7 +173,7 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('ultra')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-black font-black text-xs shadow-lg shadow-amber-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Activar Ultra (Ilimitadas)' : 'Activate Ultra (Unlimited)')}
+              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Solicitar Gold por SPEI' : 'Request Gold via SPEI')}
             </button>
           </div>
         </div>
