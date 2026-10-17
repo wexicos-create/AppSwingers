@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db, syncUserProfile } from '../firebase';
+import { auth, syncUserProfile } from '../firebase';
 import { X, Mail, Lock, UserRound, Loader2, ShieldCheck } from 'lucide-react';
 
 interface AuthModalProps {
