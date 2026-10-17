@@ -37,7 +37,7 @@ service cloud.firestore {
     // Users collection with RBAC and privilege escalation prevention
     match /users/{userId} {
       allow read: if canUseAccount();
-      allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false) && !request.resource.data.keys().hasAny(['identityVerification']);
+      allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false) && !request.resource.data.keys().hasAny(['identityVerification', 'accountSecurity']);
       allow update: if isOwner(userId) && (
         // Security status, admin privilege, and identity decision are server-managed.
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'identityVerification', 'accountSecurity'])) ||
