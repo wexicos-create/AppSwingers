@@ -50,6 +50,7 @@ import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { PlatformAccessPanel } from './components/PlatformAccessPanel';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -68,7 +69,8 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  Download
 } from 'lucide-react';
 
 export default function App() {
@@ -190,6 +192,7 @@ export default function App() {
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
+  const [platformPanelOpen, setPlatformPanelOpen] = useState(false);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
 
@@ -656,6 +659,16 @@ export default function App() {
             >
               <UserIcon className="w-3 h-3 text-pink-400 shrink-0" />
               <span className="truncate">{userProfile.alias}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlatformPanelOpen(true)}
+              className="p-2 rounded-xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-400/30 text-purple-100 transition active:scale-95"
+              aria-label={isEs ? 'Instalación, descarga y permisos' : 'Install, download and permissions'}
+              title={isEs ? 'App, descarga y permisos' : 'App, download and permissions'}
+            >
+              <Download className="w-4 h-4 text-[#d49cff]" />
             </button>
 
             {/* Messages Drawer Trigger */}
@@ -1147,6 +1160,13 @@ export default function App() {
             setPushToast({ title, body });
             setTimeout(() => setPushToast(null), 5500);
           }}
+        />
+
+        <PlatformAccessPanel
+          isOpen={platformPanelOpen}
+          onClose={() => setPlatformPanelOpen(false)}
+          isEs={isEs}
+          region={region}
         />
 
         {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
