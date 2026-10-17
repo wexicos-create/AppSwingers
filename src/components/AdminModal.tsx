@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../supabase';
 import { 
   X, 
   ShieldAlert, 
@@ -28,15 +29,9 @@ interface AdminModalProps {
 }
 
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [signedInEmail, setSignedInEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
   const [isChangingCreds, setIsChangingCreds] = useState(false);
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -51,38 +46,56 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   );
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setSignedInEmail(data.user?.email ?? null);
+    });
+    return () => { active = false; };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async () => {
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
+    const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      setError(isEs ? 'No fue posible validar la sesión.' : 'Could not validate the session.');
       return;
     }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
+    if (!currentUser) {
+      setError(isEs
+        ? 'Primero inicia sesión en la aplicación con la cuenta autorizada.'
+        : 'Sign in to the app with the authorized account first.');
       return;
     }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
+    try {
+      const { data: role, error: roleError } = await supabase
+        .from('admin_roles')
+        .select('role')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();
+      if (roleError || !role || !['admin', 'moderator', 'support'].includes(role.role)) {
+        setError(isEs
+          ? 'Esta cuenta no tiene un rol administrativo autorizado en Supabase.'
+          : 'This account has no authorized administrative role in Supabase.');
+        return;
+      }
+      setIsLoggedIn(true);
+    } catch {
+      setError(isEs ? 'No fue posible validar los permisos. Inténtalo de nuevo.' : 'Could not verify admin privileges. Please try again.');
     }
-    setIsLoggedIn(true);
   };
 
   const handleUpdateCreds = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
-    }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
-    }
     setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
+    setNewPass('');
+    setNewPin('');
+    alert(isEs
+      ? 'Las contraseñas no se guardan en el navegador. Administra las credenciales y los roles desde Supabase Auth y el panel administrativo seguro.'
+      : 'Passwords are not stored in the browser. Manage credentials and roles through Supabase Auth y el panel administrativo seguro.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -126,67 +139,33 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {isEs ? 'Panel Admin & Business Analytics' : 'Admin & Business Analytics'}
           </h2>
           <p className="text-[11px] text-purple-200/70 mt-0.5">
-            {isEs ? 'Acceso seguro para jocervantes99@gmail.com' : 'Secure access for jocervantes99@gmail.com'}
+            {isEs ? 'Acceso protegido por rol en Supabase' : 'Server-role protected access'}
           </p>
         </div>
 
         {!isLoggedIn ? (
-          <form onSubmit={handleLogin} className="flex flex-col gap-3.5">
+          <div className="flex flex-col gap-3.5">
             {error && (
-              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold text-center">
+              <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold text-center">
                 {error}
               </div>
             )}
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Mail className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Correo Electrónico Admin' : 'Admin Email'}
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="jocervantes99@gmail.com"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
+            <div className="p-4 rounded-xl bg-white/5 border border-white/10 text-xs text-white/75 leading-relaxed">
+              {isEs
+                ? 'El acceso administrativo se valida mediante roles de Supabase asignados de forma segura. No se usan contraseñas predeterminadas ni PIN almacenados en este dispositivo.'
+                : 'Admin access is verified through Supabase Auth and server-managed database roles. No default passwords or locally stored PINs are used.'}
             </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Key className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Contraseña' : 'Password'}
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                required
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
-              />
+            <div className="text-center text-xs text-white/60">
+              {signedInEmail || (isEs ? 'No hay sesión iniciada' : 'No signed-in session')}
             </div>
             <button
-              type="submit"
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition mt-1 active:scale-95"
+              type="button"
+              onClick={handleLogin}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg hover:opacity-95 transition"
             >
-              {isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System'}
+              {isEs ? 'Validar permisos administrativos' : 'Verify administrator permissions'}
             </button>
-          </form>
+          </div>
         ) : (
           <div className="flex flex-col gap-4">
             
@@ -195,8 +174,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0" />
                 <div>
-                  <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión Autorizada (Root Admin)' : 'Authorized Session'}</h4>
-                  <p className="text-[10px] text-emerald-200">jocervantes99@gmail.com</p>
+                  <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión autorizada' : 'Authorized Session'}</h4>
+                  <p className="text-[10px] text-emerald-200">{signedInEmail || '—'}</p>
                 </div>
               </div>
               <button

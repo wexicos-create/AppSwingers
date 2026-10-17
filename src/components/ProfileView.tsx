@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { Profile, SubscriptionTier, AppRegion, MatchItem } from '../types';
-import { fetchUserMatches } from '../firebase';
+import { fetchUserMatches } from '../backend';
 import { 
   LogOut, 
   LogIn, 
@@ -43,7 +43,7 @@ interface ProfileViewProps {
   onRedeemClubReward: () => void;
   maxDistance: number;
   onChangeMaxDistance: (val: number) => void;
-  isFirestoreConnected: boolean;
+  isBackendConnected: boolean;
   onOpenAdmin: () => void;
   onOpenLegal: () => void;
   onExportData: () => void;
@@ -68,7 +68,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onRedeemClubReward,
   maxDistance,
   onChangeMaxDistance,
-  isFirestoreConnected,
+  isBackendConnected,
   onOpenAdmin,
   onOpenLegal,
   onExportData,
@@ -87,18 +87,18 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [photosMatchOnly, setPhotosMatchOnly] = useState(true);
   const [hideDistance, setHideDistance] = useState(false);
   const [activePhotoSlot, setActivePhotoSlot] = useState<number | null>(null);
-  const [firestoreMatches, setFirestoreMatches] = useState<MatchItem[]>(matches);
+  const [remoteMatches, setRemoteMatches] = useState<MatchItem[]>(matches);
 
   React.useEffect(() => {
     let isMounted = true;
     if (user) {
-      fetchUserMatches(user.uid).then(res => {
+      fetchUserMatches(user.id).then(res => {
         if (isMounted && res.length > 0) {
-          setFirestoreMatches(res);
+          setRemoteMatches(res);
         }
-      }).catch(err => console.warn('Error fetching Firestore matches in ProfileView:', err));
+      }).catch(err => console.warn('Error fetching Supabase matches in ProfileView:', err));
     } else if (matches.length > 0) {
-      setFirestoreMatches(matches);
+      setRemoteMatches(matches);
     }
     return () => { isMounted = false; };
   }, [user, matches]);
@@ -135,10 +135,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         <div className="relative mb-3">
           <img
             src={
-              user?.photoURL ||
+              (user?.user_metadata?.avatar_url || user?.user_metadata?.picture) ||
               'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'
             }
-            alt={user?.displayName || 'Explorador'}
+            alt={(user?.user_metadata?.full_name || user?.user_metadata?.name) || 'Explorador'}
             className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/60 shadow-[0_0_25px_rgba(177,76,255,0.5)]"
           />
           <div className="absolute bottom-0 right-0 p-1.5 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 text-white shadow-lg">
@@ -147,7 +147,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
 
         <h3 className="text-xl font-bold text-white flex items-center gap-1.5">
-          {user?.displayName || 'Pareja / Explorador Liberal'}
+          {(user?.user_metadata?.full_name || user?.user_metadata?.name) || 'Pareja / Explorador Liberal'}
           <CheckCircle2 className="w-4 h-4 text-blue-400 fill-blue-400/20" />
         </h3>
         <p className="text-xs text-purple-200/70 mt-0.5">
@@ -171,7 +171,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
-      {/* Recently Active Matches Widget with Progress Bars (Firestore Timestamp Integration) */}
+      {/* Recently Active Matches Widget with Progress Bars (Supabase match activity) */}
       <div className="p-5 rounded-3xl bg-neutral-900/80 border border-purple-500/30 shadow-xl mb-5 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -183,22 +183,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 {isEs ? 'Actividad Reciente de Matches' : 'Recently Active Matches'}
               </h3>
               <p className="text-[10px] text-purple-200/70">
-                {isEs ? 'Última interacción registrada en Firestore' : 'Last interaction timestamp from Firestore'}
+                {isEs ? 'Última interacción sincronizada con Supabase' : 'Last interaction synced with Supabase'}
               </p>
             </div>
           </div>
           <span className="text-xs font-mono font-bold text-pink-300 px-2 py-0.5 rounded-full bg-purple-950/80 border border-purple-500/40">
-            {firestoreMatches.length} {isEs ? 'Activos' : 'Active'}
+            {remoteMatches.length} {isEs ? 'Activos' : 'Active'}
           </span>
         </div>
 
-        {firestoreMatches.length === 0 ? (
+        {remoteMatches.length === 0 ? (
           <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-center text-xs text-purple-200/60">
             {isEs ? 'Aún no tienes matches recientes. ¡Haz swipe para conectar!' : 'No recent matches yet. Swipe to connect!'}
           </div>
         ) : (
           <div className="space-y-3">
-            {firestoreMatches.map((m) => {
+            {remoteMatches.map((m) => {
               const matchTime = new Date(m.matchedAt).getTime();
               const now = Date.now();
               const diffHours = Math.max(0, (now - matchTime) / (1000 * 60 * 60));

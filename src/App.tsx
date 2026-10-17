@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
-import { 
-  auth, 
-  googleProvider, 
-  syncUserProfile, 
-  recordSwipe, 
-  recordMatch, 
-  fetchUserMatches, 
-  testConnection 
-} from './firebase';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './supabase';
+import {
+  syncUserProfile,
+  recordSwipe,
+  fetchUserMatches,
+  fetchDiscoverableProfiles,
+  saveUserProfile,
+  blockUser,
+  createSafetyReport,
+  fetchExperienceProposals,
+  createExperienceProposal,
+  applyToExperienceProposal,
+  testConnection,
+} from './backend';
 import { 
   Profile, 
   SwipeAction, 
@@ -73,7 +78,7 @@ import {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
 
   // Region and Language Detection (Default San Luis Potosí, México with USA option)
   const [region, setRegion] = useState<AppRegion>('MX');
@@ -110,16 +115,16 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
 
   // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>(import.meta.env.DEV ? INITIAL_PROFILES : []);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>(import.meta.env.DEV ? INITIAL_EVENTS : []);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>(import.meta.env.DEV ? INITIAL_PROPOSALS : []);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
   const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
@@ -152,25 +157,23 @@ export default function App() {
   };
 
   // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
+  const [creators, setCreators] = useState<Creator[]>(import.meta.env.DEV ? INITIAL_CREATORS : []);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
   const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
   const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
+  const [lives, setLives] = useState<LiveStream[]>(import.meta.env.DEV ? INITIAL_LIVES : []);
 
   // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ReportItem[]>(import.meta.env.DEV ? INITIAL_REPORTS : []);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
-  const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
-    {
+  const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>(import.meta.env.DEV ? [{
       id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
+      title: isEs ? 'Bienvenido a AppSwinger' : 'Welcome to AppSwinger',
       body: isEs 
-        ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
-        : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
+        ? 'Aviso de demostración. Los registros, eventos y verificaciones reales estarán disponibles después de validar el backend.'
+        : 'Demo notice. Real registration, events, and verification will be available after backend validation.',
       ts: Date.now(),
-    }
-  ]);
+    }] : []);
   const [activeAnnouncement, setActiveAnnouncement] = useState<SystemAnnouncement | null>(announcements[0]);
 
   // Club de Experiencias (10 stamps punch card)
@@ -278,64 +281,89 @@ export default function App() {
     };
   }, []);
 
-  // Firebase auth & test connection
+  // Supabase Auth & backend connectivity
   useEffect(() => {
-    testConnection().then(ok => setIsFirestoreConnected(ok));
+    void testConnection().then(setIsBackendConnected);
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null;
       setUser(currentUser);
-      if (currentUser) {
-        try {
-          await syncUserProfile(currentUser);
-          const remoteMatches = await fetchUserMatches(currentUser.uid);
+      if (!currentUser) {
+        if (!import.meta.env.DEV) {
+          setProfiles([]);
+          setMatches([]);
+        }
+        return;
+      }
+
+      // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
+      void syncUserProfile(currentUser)
+        .then(async savedAlias => {
+          const [remoteMatches, discoveredProfiles, remoteProposals] = await Promise.all([
+            fetchUserMatches(currentUser.id),
+            fetchDiscoverableProfiles(),
+            fetchExperienceProposals(currentUser.id),
+          ]);
+          if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
+          if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
-              const seen = new Set();
-              return combined.filter(m => {
-                if (seen.has(m.profile.id)) return false;
-                seen.add(m.profile.id);
+              const seen = new Set<string>();
+              return combined.filter(match => {
+                if (seen.has(match.profile.id)) return false;
+                seen.add(match.profile.id);
                 return true;
               });
             });
           }
-        } catch (e) {
-          console.warn('Firebase user sync note:', e);
-        }
-      }
+          const metadata = currentUser.user_metadata ?? {};
+          const displayName = savedAlias || metadata.full_name || metadata.name;
+          if (typeof displayName === 'string' && displayName.trim()) {
+            setUserProfile(prev => ({ ...prev, alias: displayName.trim() }));
+          }
+        })
+        .catch(error => {
+          console.warn('Supabase user sync note:', error instanceof Error ? error.message : 'unknown error');
+        });
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
-  // Google sign in
+  // Google OAuth through Supabase Auth
   const handleGoogleSignIn = async () => {
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncUserProfile(result.user);
-        if (result.user.displayName) {
-          setUserProfile(prev => ({ ...prev, alias: result.user.displayName || prev.alias }));
-        }
-      }
-    } catch (e: any) {
-      console.warn('Sign In error:', e);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin },
+      });
+      if (error) throw error;
+    } catch (error) {
+      console.warn('Supabase sign-in failed:', error instanceof Error ? error.message : 'unknown error');
+      setPushToast({
+        title: isEs ? 'No se pudo iniciar sesión' : 'Sign-in failed',
+        body: isEs
+          ? 'Revisa que Google esté habilitado en Supabase Auth y que esta URL esté permitida.'
+          : 'Check that Google is enabled in Supabase Auth and this URL is allow-listed.',
+      });
     }
   };
 
   const handleSignOut = async () => {
     try {
-      await fbSignOut(auth);
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
       setUser(null);
-    } catch (e) {
-      console.warn('Sign Out error:', e);
+    } catch (error) {
+      console.warn('Supabase sign-out failed:', error instanceof Error ? error.message : 'unknown error');
     }
   };
 
   // Regional & Distance filtered profiles (México vs USA)
   const visibleProfiles = profiles.filter(p => {
     const profileCountry = p.country || 'MX';
-    return profileCountry === region && p.km <= maxDistance;
+    return profileCountry === region && (p.distance === 'Distancia no disponible' || p.km <= maxDistance);
   });
   const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
 
@@ -343,19 +371,21 @@ export default function App() {
     if (!currentProfile) return;
 
     const target = currentProfile;
+    let confirmedMutualMatch = false;
     setSwipedHistory(prev => [...prev, { profile: target, action }]);
     setCurrentIndex(prev => prev + 1);
 
     if (user) {
       try {
-        await recordSwipe(user.uid, target, action);
+        confirmedMutualMatch = await recordSwipe(user.id, target, action);
       } catch (err) {
         console.warn('Error recording swipe:', err);
       }
     }
 
     // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
+    const isRealDatabaseProfile = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(target.id);
+    const isMatch = isRealDatabaseProfile ? confirmedMutualMatch : (import.meta.env.DEV && (action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90))));
 
     if (isMatch) {
       const newMatch: MatchItem = {
@@ -367,14 +397,6 @@ export default function App() {
       };
 
       setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.uid, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
-        }
-      }
 
       setMatchModalProfile(target);
     }
@@ -422,11 +444,10 @@ export default function App() {
       folio: `F-${Math.floor(100 + Math.random() * 900)}`,
       code,
       ts: Date.now(),
-      status: 'pagado',
+      status: 'pendiente_pago',
     };
     setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+    alert(isEs ? `Solicitud registrada con folio ${newReservation.folio}. El pago no está confirmado y este folio no es un boleto de acceso.` : `Request saved as ${newReservation.folio}. Payment is not confirmed and this is not an admission ticket.`);
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -434,7 +455,26 @@ export default function App() {
   };
 
   // Proposal handlers with strict weekly quota enforcement
-  const handleApplyProposal = (proposal: Proposal) => {
+  const handleApplyProposal = async (proposal: Proposal) => {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(proposal.id)) {
+      if (!user) {
+        alert(isEs ? 'Inicia sesión para postularte.' : 'Sign in to apply.');
+        return;
+      }
+      try {
+        await applyToExperienceProposal(user.id, proposal.id);
+        setAppliedProposalIds(prev => [...new Set([...prev, proposal.id])]);
+        alert(isEs ? 'Interés enviado. El anfitrión podrá responder si tu cuenta cumple los requisitos de seguridad.' : 'Interest sent. The host can respond if your account meets safety requirements.');
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'No se pudo enviar el interés.');
+      }
+      return;
+    }
+    if (!import.meta.env.DEV) {
+      alert(isEs ? 'Esta propuesta no está conectada a Supabase.' : 'This proposal is not connected to Supabase.');
+      return;
+    }
     const weeklyLimit = getWeeklyLimit(subscriptionTier);
     const usedThisWeek = getWeeklyApplicationsCount();
 
@@ -477,7 +517,21 @@ export default function App() {
     );
   };
 
-  const handleCreateProposal = (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
+  const handleCreateProposal = async (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
+    if (user) {
+      try {
+        const created = await createExperienceProposal(user.id, newProp, userProfile.locationCity, region);
+        setProposals(prev => [created, ...prev.filter(p => p.id !== created.id)]);
+        alert(isEs ? 'Propuesta enviada a revisión y guardada en Supabase.' : 'Proposal sent for review and saved to Supabase.');
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'No se pudo guardar la propuesta.');
+      }
+      return;
+    }
+    if (!import.meta.env.DEV) {
+      alert(isEs ? 'Inicia sesión antes de crear una propuesta.' : 'Sign in before creating a proposal.');
+      return;
+    }
     const created: Proposal = {
       id: `prop_${Date.now()}`,
       title: newProp.title,
@@ -499,7 +553,7 @@ export default function App() {
       ...proposal,
       id: `collab_${Date.now()}`,
       status: 'en revisión',
-      paid: true,
+      paid: false,
       createdAt: Date.now(),
     };
     // Also insert as a public proposal
@@ -519,13 +573,15 @@ export default function App() {
 
   // Creator subscriptions
   const handleSubscribeCreator = (creator: Creator) => {
-    setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    alert(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
+    alert(isEs
+      ? `La suscripción a ${creator.name} no está disponible todavía: el checkout y la confirmación de pago no están conectados. No se concedió acceso.`
+      : `Subscriptions to ${creator.name} are not available yet: checkout and payment confirmation are not connected. No access was granted.`);
   };
 
   const handleBuyLiveAccess = (live: LiveStream) => {
-    setLiveAccessIds(prev => [...prev, live.id]);
-    alert(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
+    alert(isEs
+      ? `El acceso a “${live.title}” no está disponible hasta integrar y validar los cobros. No se concedió acceso.`
+      : `Access to “${live.title}” is unavailable until payments are integrated and validated. No access was granted.`);
   };
 
   // Club reward redemption
@@ -677,6 +733,14 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {import.meta.env.DEV && (
+          <div role="status" className="mx-2 mt-1 px-3 py-2 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-200 text-[10px] font-semibold">
+            {isEs
+              ? 'MODO DEMOSTRACIÓN: perfiles, eventos y creadoras de ejemplo son ficticios; no representan usuarios verificados.'
+              : 'DEMO MODE: sample profiles, events, and creators are fictional and are not verified users.'}
+          </div>
+        )}
 
         {/* Location GPS Permission Reminder Banner - Ultra-Compact */}
         {!locationGranted && !locationBannerDismissed && (
@@ -885,13 +949,15 @@ export default function App() {
               lang={lang}
               onSubscribe={handleSubscribeCreator}
               onBuyLiveAccess={handleBuyLiveAccess}
-              onRegisterCreator={(c) => {
-                setUserCreator(c);
-                setCreators(prev => [c, ...prev]);
-                alert(isEs ? "¡Perfil de creadora registrado! Ya puedes fijar precios y subir sets exclusivos." : "Creator profile registered!");
+              onRegisterCreator={(_c) => {
+                alert(isEs
+                  ? 'El registro de creadoras está temporalmente deshabilitado hasta conectar verificación de identidad, almacenamiento privado y moderación en servidor. No se registró ni verificó la cuenta.'
+                  : 'Creator registration is disabled until identity verification, private storage, and server moderation are connected. The account was not registered or verified.');
               }}
               onUploadMedia={(data) => {
-                alert(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
+                alert(isEs
+                  ? `El contenido “${data.caption}” no se ha subido: el almacenamiento privado y la cola de moderación aún no están conectados.`
+                  : `“${data.caption}” was not uploaded: private storage and the moderation queue are not connected yet.`);
               }}
             />
           )}
@@ -923,15 +989,22 @@ export default function App() {
                 setMaxDistance(val);
                 setUserProfile(prev => ({ ...prev, maxKm: val }));
               }}
-              isFirestoreConnected={isFirestoreConnected}
+              isBackendConnected={isBackendConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                if (tier === 'free') {
+                  setSubscriptionTier('free');
+                  alert(isEs ? 'Acceso gratuito seleccionado.' : 'Free access selected.');
+                  return;
+                }
+                setExtrasModalOpen(true);
+                alert(isEs
+                  ? 'Los planes de pago no se activan manualmente. Completa el pago cuando la integración validada esté disponible.'
+                  : 'Paid plans cannot be activated manually. Complete checkout once the validated payment integration is available.');
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
@@ -1034,14 +1107,18 @@ export default function App() {
               <div className="flex-1 overflow-hidden">
                 <ChatView
                   matches={matches}
+                  currentUserId={user?.id ?? null}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
-                  onBlockUser={(id) => {
+                  onOpenReport={async (t) => {
+                    if (!user) throw new Error(isEs ? 'Inicia sesión para reportar una cuenta.' : 'Sign in to report an account.');
+                    await createSafetyReport(user.id, t.id, t.reason, [t.reason, t.details].filter(Boolean).join('\n\n'));
+                  }}
+                  onBlockUser={async (id) => {
+                    if (!user) throw new Error(isEs ? 'Inicia sesión para bloquear esta cuenta.' : 'Sign in to block this account.');
+                    await blockUser(user.id, id);
                     setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
-                    }
+                    if (activeChatUserId === id) setActiveChatUserId(null);
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
                 />
@@ -1057,7 +1134,11 @@ export default function App() {
           lang={lang}
           region={region}
           initialData={userProfile}
-          onSave={(data) => {
+          onSave={async (data) => {
+            if (!user) {
+              throw new Error(isEs ? 'Inicia sesión antes de guardar tu perfil.' : 'Sign in before saving your profile.');
+            }
+            await saveUserProfile(user.id, data, region);
             setUserProfile({
               alias: data.alias,
               kind: data.kind,
@@ -1069,7 +1150,9 @@ export default function App() {
               locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
             });
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            alert(isEs
+              ? 'Perfil guardado en Supabase. Permanecerá privado hasta completar la verificación de edad, identidad y foto.'
+              : 'Profile saved to Supabase. It stays private until age, identity, and photo verification are complete.');
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
@@ -1102,7 +1185,7 @@ export default function App() {
         <MatchModal
           isOpen={!!matchModalProfile}
           matchProfile={matchModalProfile}
-          currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+          currentUserPhoto={user?.user_metadata?.avatar_url || user?.user_metadata?.picture || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
           currentUserName={userProfile.alias}
           isEs={isEs}
           onClose={() => setMatchModalProfile(null)}
