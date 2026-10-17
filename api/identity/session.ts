@@ -1,4 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
@@ -11,7 +10,8 @@ function getAdminApp() {
   return initializeApp({ credential: cert(JSON.parse(raw)) });
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
+  if (req.body?.consent !== true) return res.status(400).json({ error: 'Explicit identity and biometric consent is required' });
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   try {
@@ -42,6 +42,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: 'Could not start identity verification' });
     }
     await userRef.set({
+      identityConsent: { accepted: true, version: 'identity-biometric-consent-v1', acceptedAt: FieldValue.serverTimestamp() },
       identityVerification: {
         status: 'pending',
         provider: 'didit',
