@@ -52,6 +52,7 @@ import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { PlatformAccessPanel } from './components/PlatformAccessPanel';
 import { IdentityVerificationPanel } from './components/IdentityVerificationPanel';
+import { TrustSafetySettingsPanel } from './components/TrustSafetySettingsPanel';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -1164,6 +1165,7 @@ export default function App() {
           region={region}
         />
         <IdentityVerificationPanel />
+        <TrustSafetySettingsPanel />
 
         {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
         {pushToast && (
