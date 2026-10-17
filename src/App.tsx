@@ -44,7 +44,7 @@ import { VirtualView } from './components/VirtualView';
 import { CommunityView } from './components/CommunityView';
 import { ChatView } from './components/ChatView';
 import { ProfileView } from './components/ProfileView';
-import { AdminModal } from './components/AdminModal';
+import { AdminModalWithSecurity } from './components/AdminModalWithSecurity';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
@@ -1169,7 +1169,7 @@ export default function App() {
 
         {/* MODAL 6: ADMIN PANEL */}
         {adminModalOpen && (
-          <AdminModal
+          <AdminModalWithSecurity
             isOpen={adminModalOpen}
             onClose={() => setAdminModalOpen(false)}
             isEs={isEs}
