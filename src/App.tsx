@@ -206,8 +206,7 @@ export default function App() {
       setLang(l);
     });
 
-    // Request GPS location automatically
-    requestLocationAccess();
+    // Location permission is requested only after an explicit user action.
   }, []);
 
   // Location request to determine exact KM distances and country
@@ -241,19 +240,14 @@ export default function App() {
         (err) => {
           setIsLocating(false);
           console.warn('Geolocation note:', err);
+          setLocationGranted(false);
           if (isManualClick) {
-            setLocationGranted(true);
-            setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
             setPushToast({
-              title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
-              body: isEs 
-                ? `Ubicación configurada en ${cityName}. Cálculo en KM activado.` 
-                : `Location configured in ${cityName}. Distance calculations active.`
+              title: isEs ? 'Permiso de ubicación no concedido' : 'Location permission not granted',
+              body: isEs
+                ? 'Puedes continuar sin GPS y configurar tu ciudad manualmente. Activa el permiso desde los ajustes del navegador si lo deseas.'
+                : 'You can continue without GPS and set your city manually. Enable the permission in browser settings if you want.'
             });
-          } else {
-            setLocationGranted(false);
           }
         },
         { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
