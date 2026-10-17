@@ -592,7 +592,7 @@ export default function App() {
                 onClick={() => setActiveTab('match')}
                 className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
               >
-                APPSWINGUER
+                APPSWINGER
               </span>
               {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
               <div className="flex items-center gap-1 ml-1">
