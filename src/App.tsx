@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
 import { 
   auth, 
@@ -1045,11 +1046,23 @@ export default function App() {
                   matches={matches}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
-                  onBlockUser={(id) => {
-                    setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
+                  onOpenReport={async (t) => {
+                    try {
+                      const submitReport = httpsCallable(getFunctions(auth.app), 'submitSafetyReport');
+                      await submitReport({ targetUid: t.id, category: 'other', details: `Reporte iniciado desde chat: ${t.name}` });
+                      alert(isEs ? 'Reporte enviado al equipo de moderación.' : 'Report sent to moderation.');
+                    } catch {
+                      alert(isEs ? 'No se pudo enviar el reporte al servidor. Inténtalo más tarde.' : 'Could not send the report to the server. Try again later.');
+                    }
+                  }}
+                  onBlockUser={async (id) => {
+                    try {
+                      const blockMember = httpsCallable(getFunctions(auth.app), 'blockMember');
+                      await blockMember({ targetUid: id });
+                      setMatches(prev => prev.filter(m => m.profile.id !== id));
+                      if (activeChatUserId === id) setActiveChatUserId(null);
+                    } catch {
+                      alert(isEs ? 'No se confirmó el bloqueo en el servidor. No se modificó la lista.' : 'Server did not confirm the block. The list was not changed.');
                     }
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
