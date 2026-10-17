@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
@@ -73,7 +72,7 @@ export default async function handler(req: any, res: any) {
       return { banned: true, caseId: caseRef.id, existing: false, email };
     });
     if (!result.banned) return res.status(200).json({ allowed: true });
-    if (!result.existing && result.email) {
+    if (!result.existing && 'email' in result && result.email) {
       const mail = await notifyBan(result.email, result.caseId || 'sin-folio', 'Acceso detectado desde un segundo dispositivo registrado.');
       if (result.caseId) await db.collection('securityCases').doc(result.caseId).set({
         notification: { status: mail.sent ? 'sent' : 'failed', attempts: 1, failureReason: mail.reason || null, updatedAt: FieldValue.serverTimestamp() }
