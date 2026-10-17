@@ -83,6 +83,23 @@ export function MonetizationExtrasModal({
           </p>
         </div>
 
+        {isMx && (
+          <section className="rounded-2xl border border-purple-400/25 bg-purple-950/20 p-4 space-y-3" aria-label={isEs ? 'Guía de depósito SPEI' : 'SPEI deposit guide'}>
+            <div>
+              <h3 className="text-sm font-bold text-white">{isEs ? 'Pago por SPEI · ejemplo de referencia' : 'SPEI payment · reference example'}</h3>
+              <p className="mt-1 text-xs text-white/70">{isEs ? 'La imagen es ilustrativa. No son datos bancarios válidos ni un comprobante real.' : 'Illustration only. These are not valid bank details or a real transaction receipt.'}</p>
+            </div>
+            <img src="/deposit-demo-mx.svg" alt={isEs ? 'Ejemplo ilustrativo con Destino, Concepto y REFERENCIA subrayados en rojo; no es una transferencia real' : 'Illustrative example with Destination, Concept and REFERENCE underlined in red; not a real transfer'} className="mx-auto max-h-72 w-auto rounded-xl border border-white/10 object-contain" loading="lazy" />
+            <div className="grid gap-2 text-xs">
+              <div className="rounded-lg bg-black/30 p-3"><div className="font-bold text-purple-200">{isEs ? 'Destino' : 'Destination'}</div><div className="text-white/70">{isEs ? 'Se mostrará solo cuando administración configure y verifique la cuenta receptora.' : 'Shown only after the receiving account is configured and verified.'}</div><div className="mt-1 h-1 rounded bg-red-500" /></div>
+              <div className="rounded-lg bg-black/30 p-3"><div className="font-bold text-purple-200">{isEs ? 'Concepto' : 'Concept'}</div><div className="text-white/70">{isEs ? 'Se generará uno único por orden.' : 'A unique concept will be generated per order.'}</div><div className="mt-1 h-1 rounded bg-red-500" /></div>
+              <div className="rounded-lg bg-black/30 p-3"><div className="font-bold text-purple-200">REFERENCIA</div><div className="text-white/70">{isEs ? 'Se solicitará la referencia de la operación; no se exigirá pegar una URL.' : 'The transaction reference will be requested; pasting a URL will not be required.'}</div><div className="mt-1 h-1 rounded bg-red-500" /></div>
+            </div>
+            <a href="https://www.banxico.org.mx/cep/" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 text-xs font-bold text-purple-200 underline underline-offset-4">{isEs ? 'Abrir comprobante electrónico de pago (CEP) de Banxico' : 'Open Banxico electronic payment receipt (CEP)'}</a>
+            <p className="text-xs text-amber-200">{isEs ? 'Los pagos siguen desactivados: falta conectar un verificador de CEP fiable y el backend de órdenes. No transfieras dinero usando esta maqueta.' : 'Payments remain disabled: a reliable CEP verifier and order backend still need to be connected. Do not transfer money using this mockup.'}</p>
+          </section>
+        )}
+
         {successMsg && (
           <div className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-center text-sm font-semibold animate-pulse">
             {successMsg}
