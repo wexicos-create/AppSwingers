@@ -19,6 +19,7 @@ export const IdentityVerification: React.FC<{ user: User; isEs?: boolean }> = ({
   const [status, setStatus] = useState<IdentityStatus>('not_started');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [acceptedBiometricConsent, setAcceptedBiometricConsent] = useState(false);
 
   useEffect(() => onSnapshot(doc(db, 'users', user.uid), snap => {
     const value = snap.data()?.identityVerification?.status;
@@ -27,6 +28,10 @@ export const IdentityVerification: React.FC<{ user: User; isEs?: boolean }> = ({
   }, () => setError(isEs ? 'No se pudo consultar el estado de verificación.' : 'Could not load verification status.')), [user.uid, isEs]);
 
   const start = async () => {
+    if (!acceptedBiometricConsent) {
+      setError(isEs ? 'Debes aceptar el tratamiento de datos de identidad y biométricos para continuar.' : 'Consent to identity and biometric data processing to continue.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -60,10 +65,12 @@ export const IdentityVerification: React.FC<{ user: User; isEs?: boolean }> = ({
           <p className="mt-3 text-sm font-semibold text-purple-200">{title}</p>
         </div>
       </div>
-      {status !== 'approved' && <button type="button" onClick={start} disabled={busy} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 px-4 py-3 text-sm font-bold disabled:opacity-60">
+      {status !== 'approved' && <>
+      <label className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-white/70"><input type="checkbox" checked={acceptedBiometricConsent} onChange={e => setAcceptedBiometricConsent(e.target.checked)} className="mt-0.5 accent-purple-500" /><span>{isEs ? 'Autorizo expresamente a Didit a procesar mi documento oficial, imagen facial y prueba de vida para verificar mi identidad. Entiendo que puedo consultar el aviso de privacidad de AppSwinger y que no se publicarán estos datos en mi perfil.' : 'I expressly authorize Didit to process my ID document, facial image and liveness check for identity verification. I understand I can review AppSwinger’s privacy notice and these data will not be public.'}</span></label>
+      <button type="button" onClick={start} disabled={busy || !acceptedBiometricConsent} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 px-4 py-3 text-sm font-bold disabled:opacity-60">
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
         {busy ? (isEs ? 'Conectando con Didit…' : 'Connecting to Didit…') : (status === 'pending' || status === 'in_review' ? (isEs ? 'Iniciar / repetir verificación' : 'Start / retry verification') : (isEs ? 'Verificar con INE y rostro' : 'Verify ID and face'))}
-      </button>}
+      </button></>}
       {error && <p role="alert" className="mt-3 text-xs text-rose-300">{error}</p>}
       <p className="mt-3 text-[10px] leading-relaxed text-white/40">{isEs ? 'La insignia solo se activa tras validar el webhook firmado de Didit. No se aceptan capturas como prueba.' : 'The badge is granted only after validating Didit’s signed webhook. Screenshots are not accepted.'}</p>
     </section>
