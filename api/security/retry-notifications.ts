@@ -25,7 +25,7 @@ async function sendEmail(email: string, caseId: string, reason: string) {
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-  if (!process.env.SECURITY_CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.SECURITY_CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET || process.env.SECURITY_CRON_SECRET;\n  if (!cronSecret || req.headers.authorization !== `Bearer ${cronSecret}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   if (!process.env.RESEND_API_KEY || !process.env.SECURITY_EMAIL_FROM) {
