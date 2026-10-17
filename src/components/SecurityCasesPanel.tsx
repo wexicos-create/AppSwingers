@@ -31,7 +31,6 @@ export function SecurityCasesPanel({ isEs }: { isEs: boolean }) {
   const [status, setStatus] = useState('');
   const [selected, setSelected] = useState<SecurityCase | null>(null);
   const [note, setNote] = useState('');
-  const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
