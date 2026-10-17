@@ -1,8 +1,6 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions for RBAC and ownership
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -11,82 +9,93 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.admin == true || 
-         request.auth.uid == "admin" ||
-         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
+    function accountIsActive(userId) {
+      return !exists(/databases/$(database)/documents/users/$(userId)) ||
+        (get(/databases/$(database)/documents/users/$(userId)).data.accountSecurity == null ||
+         get(/databases/$(database)/documents/users/$(userId)).data.accountSecurity.status != 'banned');
     }
 
-    // Test connection rule
+    function canUseAccount() {
+      return isAuthenticated() && accountIsActive(request.auth.uid);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
     match /test/connection {
       allow read: if true;
     }
 
-    // Users collection with RBAC and privilege escalation prevention
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false) && !request.resource.data.keys().hasAny(['identityVerification']);
-      allow update: if isOwner(userId) && (
-        // Prevent regular users from elevating themselves to admin
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'identityVerification'])) || 
-        isAdmin()
-      );
-      allow delete: if isAdmin() || isOwner(userId);
+      allow read: if canUseAccount();
+      allow create: if isOwner(userId) &&
+        (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false) &&
+        !request.resource.data.keys().hasAny(['identityVerification', 'accountSecurity']);
+      allow update: if isOwner(userId) && accountIsActive(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['isAdmin', 'identityVerification', 'accountSecurity']);
+      allow delete: if isAdmin() || (isOwner(userId) && accountIsActive(userId));
 
-      // Subcollections owned by user
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
+      match /swipes/{swipeId} {
+        allow read, write: if isOwner(userId) && accountIsActive(userId);
+      }
+      match /matches/{matchId} {
+        allow read, write: if isOwner(userId) && accountIsActive(userId);
+      }
+      match /deviceRegistry/{deviceId} {
+        allow read, write: if false;
       }
     }
 
-    // Matches collection: strictly validate participants
     match /matches/{matchId} {
-      allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || 
+      allow read: if canUseAccount() && (
+        resource.data.userId == request.auth.uid ||
         resource.data.partnerId == request.auth.uid ||
         (resource.data.participants != null && request.auth.uid in resource.data.participants)
       );
-      allow create: if isAuthenticated() && (
-        request.resource.data.userId == request.auth.uid || 
+      allow create: if canUseAccount() && (
+        request.resource.data.userId == request.auth.uid ||
         request.resource.data.partnerId == request.auth.uid ||
         (request.resource.data.participants != null && request.auth.uid in request.resource.data.participants)
       );
-      allow update: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || 
+      allow update: if canUseAccount() && (
+        resource.data.userId == request.auth.uid ||
         resource.data.partnerId == request.auth.uid ||
         (resource.data.participants != null && request.auth.uid in resource.data.participants)
       );
       allow delete: if isAdmin();
     }
 
-    // Reservations collection: strictly validate user ownership
     match /reservations/{reservationId} {
-      allow read: if isAuthenticated() && (
+      allow read: if canUseAccount() && (
         resource.data.userId == request.auth.uid || isAdmin()
       );
-      allow create: if isAuthenticated() && (
-        request.resource.data.userId == request.auth.uid
-      );
-      allow update, delete: if isAuthenticated() && (
+      allow create: if canUseAccount() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if canUseAccount() && (
         resource.data.userId == request.auth.uid || isAdmin()
       );
     }
 
-    // Proposals collection
     match /proposals/{proposalId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && (
+      allow read: if canUseAccount();
+      allow create: if canUseAccount();
+      allow update, delete: if canUseAccount() && (
         resource.data.authorId == request.auth.uid || isAdmin()
       );
     }
 
-    // Reports collection: any authenticated user can create, only admin can read/manage
     match /reports/{reportId} {
-      allow create: if isAuthenticated() && request.resource.data.reporterId == request.auth.uid;
+      allow create: if canUseAccount() && request.resource.data.reporterId == request.auth.uid;
       allow read, update, delete: if isAdmin();
+    }
+
+    // The Admin SDK APIs are the only writers/readers for security audit data.
+    match /securityCases/{caseId} {
+      allow read, write: if false;
+    }
+    match /diditWebhookEvents/{eventId} {
+      allow read, write: if false;
     }
   }
 }

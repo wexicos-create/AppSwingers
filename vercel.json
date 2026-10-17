@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/security/retry-notifications",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}
