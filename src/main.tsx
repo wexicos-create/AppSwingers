@@ -13,7 +13,7 @@ function Root() {
         </div>
         <button onClick={() => void signOut()} className="shrink-0 rounded-lg border border-purple-400/30 px-3 py-1.5 hover:bg-purple-900/40">Cerrar sesión segura</button>
       </div>
-      <App />
+      <App authUser={user} isAdmin={isAdmin} onSignOut={signOut} />
     </div>
   )}</AuthGate>;
 }
