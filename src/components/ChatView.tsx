@@ -32,7 +32,7 @@ interface ChatViewProps {
   initialChatUserId?: string | null;
   onOpenProfile: (profile: Profile) => void;
   onOpenReport?: (target: { type: 'usuario'; id: string; name: string; reason: string; details: string }) => void | Promise<void>;
-  onBlockUser?: (userId: string) => void;
+  onBlockUser?: (userId: string) => void | Promise<void>;
   onBackToApp?: () => void;
 }
 
@@ -155,6 +155,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [initialChatUserId, matches]);
 
   useEffect(() => {
+    setActiveConversationId(null);
     if (!currentUserId || !activeChat ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(activeChat.profile.id)) {
       setActiveConversationId(null);
@@ -420,22 +421,27 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  const handleConfirmBlock = () => {
+  const handleConfirmBlock = async () => {
     if (!activeChat) return;
     const blockedName = activeChat.profile.name;
     const blockedId = activeChat.profile.id;
-    setBlockModalOpen(false);
-    setActiveChat(null);
-    onBlockUser?.(blockedId);
-    showToast(`Has bloqueado a ${blockedName}. No podrá comunicarse ni interactuar contigo.`);
+    try {
+      await onBlockUser?.(blockedId);
+      setBlockModalOpen(false);
+      setActiveChat(null);
+      showToast(`Has bloqueado a ${blockedName}. No podrá comunicarse ni interactuar contigo.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'No se pudo bloquear la cuenta.');
+    }
   };
 
   // IF AN ACTIVE CHAT CONVERSATION IS OPEN
   if (activeChat) {
     const chatKey = activeChat.profile.id;
-    const currentMsgs = chatMessages[chatKey] || [
+    const isRealChat = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(chatKey);
+    const currentMsgs = chatMessages[chatKey] || (import.meta.env.DEV && !isRealChat ? [
       { id: 'init', me: false, ts: Date.now(), t: `¡Hola! Qué gusto coincidir. ¿Qué plan te llama más la atención? ✨` }
-    ];
+    ] : []);
 
     return (
       <div className="w-full max-w-md mx-auto h-[calc(100vh-76px)] flex flex-col bg-[#090414] text-white relative">
