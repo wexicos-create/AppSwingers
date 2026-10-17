@@ -26,9 +26,9 @@ Esta rama migra la autenticación y la base de datos del cliente de Firebase a S
 
 ## Funcionalidad que aún no debe considerarse completa
 
-- La lista de descubrimiento pública todavía no está conectada a un RPC que devuelva solo perfiles verificados y datos públicos mínimos.
-- La consulta de tarjetas de matches aún no está conectada a una función de lectura segura; la tabla de matches sí registra los matches recíprocos.
-- El chat visual y varios flujos de eventos, creadores, contenido, moderación y avisos aún requieren integración con sus tablas y pruebas RLS.
+- El descubrimiento ya usa un RPC que devuelve datos mínimos solo de perfiles verificados; la ubicación exacta no se expone y la distancia real sigue pendiente de geolocalización consentida.
+- Las tarjetas de matches usan un RPC de lectura segura. Los likes recíprocos crean el match y la conversación desde la base de datos.
+- Los mensajes de texto, bloqueos y reportes del chat están conectados a Supabase. Adjuntos, notas de voz, eventos, perfiles de creador, contenido, pagos y parte de la administración aún requieren integración y pruebas RLS.
 - Verificación de edad/identidad, revisión de foto y moderación requieren un proveedor y callbacks de servidor confiables. No se aceptan verificaciones enviadas por el cliente.
 - Stripe, Google Pay y SPEI no procesan cobros reales en esta rama. Activarlos requiere pruebas end-to-end, webhooks firmados, idempotencia y aprobación expresa.
 - El proyecto es actualmente una aplicación React/Vite; no es todavía un APK Android nativo compilado y firmado.
@@ -45,7 +45,7 @@ Esta rama migra la autenticación y la base de datos del cliente de Firebase a S
 
 - [ ] Ejecutar pruebas RLS con usuarios no autenticados, usuarios normales, usuarios bloqueados y administradores.
 - [ ] Confirmar que un usuario no puede cambiar estado, verificación, moderación, membresía o rol.
-- [ ] Implementar y probar RPCs de descubrimiento, matches y chat con autorización de adultos verificados.
+- [ ] Probar RPCs de descubrimiento, matches y chat con autorización de adultos verificados.
 - [ ] Implementar flujos reales de reportes, bloqueo, moderación, eliminación y exportación de datos.
 - [ ] Probar recuperación de cuenta, OAuth redirect y configuración de dominios.
 - [ ] Validar pagos y fiscalidad en sandbox; mantener producción de cobros desactivada hasta aprobación expresa.
