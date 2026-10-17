@@ -31,7 +31,7 @@ Admin API access is based on the Firebase custom claim admin: true, not a client
 - The device identifier is stored in browser local storage. It is not proof of a physical device identity and can be reset by the user or browser.
 - The case record is the source of truth. Email is only a notification. If delivery fails, the failure and attempt count remain recorded.
 - This branch does not send email to an unverified address. Ensure Firebase email verification is enforced for the relevant access policy before production.
-- The admin API is implemented, and a UI panel component exists in src/components/SecurityCasesPanel.tsx; it still needs to be wired into the existing admin modal and validated with an administrator custom claim.
+- The case panel is connected through src/components/AdminModalWithSecurity.tsx and is shown only when the signed-in Firebase user has the admin custom claim. The legacy AdminModal still contains a client-side credential form for its other mock controls; that form is not authorization for the security-case API and should be replaced before production.
 - A ban's session revocation does not instantly erase an already-issued client ID token. Firestore rules block banned-account reads/writes; every sensitive server endpoint must also check revocation and account status.
 - Do not enable production bans until the backend deploy, Firestore rules, Resend delivery, cron schedule, and appeal path have been tested end-to-end.
 
