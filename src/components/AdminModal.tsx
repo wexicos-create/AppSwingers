@@ -53,8 +53,9 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     setError(null);
     setIsAuthenticating(true);
     try {
-      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
-      const token = await getIdTokenResult(credential.user, true);
+      const currentUser = auth.currentUser;
+      const authenticatedUser = currentUser || (await signInWithEmailAndPassword(auth, email.trim(), password)).user;
+      const token = await getIdTokenResult(authenticatedUser, true);
       if (token.claims.admin !== true) {
         setError(isEs
           ? 'La cuenta se autenticó, pero no tiene el rol administrativo autorizado. El rol debe asignarse desde un entorno de servidor seguro; no se puede activar desde la app.'
@@ -134,34 +135,46 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 {error}
               </div>
             )}
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Mail className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Correo Electrónico Admin' : 'Admin Email'}
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder={isEs ? "Correo de tu cuenta Firebase" : "Your Firebase account email"}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Key className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Contraseña' : 'Password'}
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={isEs ? "Contraseña de tu cuenta Firebase" : "Your Firebase account password"}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
+            {auth.currentUser ? (
+              <div className="rounded-xl border border-purple-400/25 bg-purple-950/20 p-3 text-xs text-purple-100">
+                <span className="block font-bold">{isEs ? 'Cuenta actualmente iniciada' : 'Currently signed-in account'}</span>
+                <span className="mt-1 block break-all text-purple-200/80">{auth.currentUser.email || auth.currentUser.uid}</span>
+                <span className="mt-1 block text-[10px] text-purple-200/70">{isEs ? 'Se comprobará el rol administrativo de esta misma cuenta.' : 'The admin role for this same account will be checked.'}</span>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
+                    <Mail className="w-3.5 h-3.5 text-rose-400" />
+                    {isEs ? 'Correo de tu cuenta Firebase' : 'Firebase account email'}
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    autoComplete="username"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder={isEs ? 'Correo de tu cuenta Firebase' : 'Your Firebase account email'}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
+                    <Key className="w-3.5 h-3.5 text-rose-400" />
+                    {isEs ? 'Contraseña de Firebase' : 'Firebase password'}
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={isEs ? 'Contraseña de tu cuenta Firebase' : 'Your Firebase account password'}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              </>
+            )}
             <button
               type="submit"
               disabled={isAuthenticating}
