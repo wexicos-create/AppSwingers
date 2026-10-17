@@ -19,7 +19,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!token) return res.status(401).json({ error: 'Authentication required' });
     const app = getAdminApp();
     const decoded = await getAuth(app).verifyIdToken(token, true);
-    if (!process.env.DIDIT_API_KEY || !process.env.DIDIT_WORKFLOW_ID) {
+    if (!process.env.DIDIT_API_KEY || !process.env.DIDIT_WORKFLOW_ID || !process.env.DIDIT_WEBHOOK_URL) {
       return res.status(503).json({ error: 'Identity verification is not configured yet' });
     }
     const db = getFirestore(app);
@@ -33,7 +33,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       body: JSON.stringify({
         workflow_id: process.env.DIDIT_WORKFLOW_ID,
         vendor_data: decoded.uid,
-        callback: process.env.DIDIT_WEBHOOK_URL || undefined
+        callback: process.env.DIDIT_WEBHOOK_URL
       })
     });
     const payload = await response.json().catch(() => ({}));
