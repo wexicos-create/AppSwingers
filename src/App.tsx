@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
 import { 
   auth, 
   googleProvider, 
@@ -71,8 +70,8 @@ import {
   Loader2
 } from 'lucide-react';
 
-export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+export default function App({ authUser, isAdmin = false, onSignOut }: { authUser?: any; isAdmin?: boolean; onSignOut?: () => Promise<void> } = {}) {
+  const [user, setUser] = useState<any>(authUser ? { uid: authUser.id, email: authUser.email, displayName: authUser.user_metadata?.display_name || authUser.email?.split('@')[0] || 'Mi perfil', photoURL: authUser.user_metadata?.avatar_url || null } : null);
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
 
   // Region and Language Detection (Default San Luis Potosí, México with USA option)
@@ -278,59 +277,10 @@ export default function App() {
     };
   }, []);
 
-  // Firebase auth & test connection
+  // Supabase Auth is managed centrally by AuthGate. Firebase remains only for legacy data calls.
   useEffect(() => {
     testConnection().then(ok => setIsFirestoreConnected(ok));
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        try {
-          await syncUserProfile(currentUser);
-          const remoteMatches = await fetchUserMatches(currentUser.uid);
-          if (remoteMatches.length > 0) {
-            setMatches(prev => {
-              const combined = [...remoteMatches, ...prev];
-              const seen = new Set();
-              return combined.filter(m => {
-                if (seen.has(m.profile.id)) return false;
-                seen.add(m.profile.id);
-                return true;
-              });
-            });
-          }
-        } catch (e) {
-          console.warn('Firebase user sync note:', e);
-        }
-      }
-    });
-
-    return () => unsubscribe();
   }, []);
-
-  // Google sign in
-  const handleGoogleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncUserProfile(result.user);
-        if (result.user.displayName) {
-          setUserProfile(prev => ({ ...prev, alias: result.user.displayName || prev.alias }));
-        }
-      }
-    } catch (e: any) {
-      console.warn('Sign In error:', e);
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await fbSignOut(auth);
-      setUser(null);
-    } catch (e) {
-      console.warn('Sign Out error:', e);
-    }
-  };
 
   // Regional & Distance filtered profiles (México vs USA)
   const visibleProfiles = profiles.filter(p => {
@@ -908,8 +858,8 @@ export default function App() {
           {activeTab === 'perfil' && (
             <ProfileView
               user={user}
-              onSignIn={handleGoogleSignIn}
-              onSignOut={handleSignOut}
+              onSignIn={async () => { /* Supabase sign-in is handled by the global AuthGate. */ }}
+              onSignOut={onSignOut || handleSignOut}
               stats={{
                 swipesCount: swipedHistory.length,
                 matchesCount: matches.length,
@@ -924,7 +874,7 @@ export default function App() {
                 setUserProfile(prev => ({ ...prev, maxKm: val }));
               }}
               isFirestoreConnected={isFirestoreConnected}
-              onOpenAdmin={() => setAdminModalOpen(true)}
+              onOpenAdmin={() => { if (isAdmin) setAdminModalOpen(true); else alert(isEs ? 'Acceso administrativo restringido.' : 'Administrative access restricted.'); }}
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
               onWipeData={handleWipeData}
