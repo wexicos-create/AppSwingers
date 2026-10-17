@@ -1,8 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-type Props = { children: (context: { user: User; isAdmin: boolean; signOut: () => Promise<void> }) => React.ReactNode };
+type Props = { children: (context: { user: User; isAdmin: boolean; signOut: () => Promise<void> }) => ReactNode };
 
 export default function AuthGate({ children }: Props) {
   const [session, setSession] = useState<Session | null>(null);
