@@ -45,9 +45,16 @@ service cloud.firestore {
       );
       allow delete: if isAdmin() || isOwner(userId);
 
-      // Subcollections owned by user
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
+      // Only explicitly permitted user subcollections are client-accessible.
+      // Device registry and security cases are server-only.
+      match /swipes/{swipeId} {
+        allow read, write: if isOwner(userId) && accountIsActive(userId);
+      }
+      match /matches/{matchId} {
+        allow read, write: if isOwner(userId) && accountIsActive(userId);
+      }
+      match /deviceRegistry/{deviceId} {
+        allow read, write: if false;
       }
     }
 
@@ -104,7 +111,7 @@ service cloud.firestore {
     // Security cases and device registry are server-only. Users submit appeals through
     // authenticated API endpoints; clients cannot forge or edit the audit trail.
     match /securityCases/{caseId} {
-      allow read, write: if isAdmin();
+      allow read, write: if false;
     }
     match /diditWebhookEvents/{eventId} {
       allow read, write: if false;
