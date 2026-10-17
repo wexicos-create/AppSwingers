@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { serverTimestamp } from 'firebase/firestore';
 import { createUserWithEmailAndPassword, sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { auth, syncUserProfile } from '../firebase';
 import { X, Mail, Lock, UserRound, Loader2, ShieldCheck } from 'lucide-react';
