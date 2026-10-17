@@ -192,3 +192,15 @@ export const updateTrustPreferences = onCall(async (request) => {
   }, { merge: true });
   return { saved: true };
 });
+
+
+export const getTrustPreferences = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Inicia sesión para consultar preferencias.");
+  const snap = await db.collection("userPreferences").doc(request.auth.uid).get();
+  const data = snap.data();
+  return {
+    soundEnabled: data?.soundEnabled !== false,
+    autoDeleteDays: [0, 7, 30, 90].includes(data?.autoDeleteDays) ? data?.autoDeleteDays : 0,
+    mutedUserIds: Array.isArray(data?.mutedUserIds) ? data?.mutedUserIds.filter((id) => typeof id === "string").slice(0, 100) : [],
+  };
+});
