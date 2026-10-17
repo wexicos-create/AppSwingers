@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { User } from 'firebase/auth';
 import { Profile, SubscriptionTier, AppRegion, MatchItem } from '../types';
 import { fetchUserMatches } from '../firebase';
+import { IdentityVerification } from './IdentityVerification';
 import { 
   LogOut, 
   LogIn, 
@@ -170,6 +171,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
       </div>
+
+      {user && <div className="mb-5"><IdentityVerification user={user} isEs={isEs} /></div>}
 
       {/* Recently Active Matches Widget with Progress Bars (Firestore Timestamp Integration) */}
       <div className="p-5 rounded-3xl bg-neutral-900/80 border border-purple-500/30 shadow-xl mb-5 space-y-4">
