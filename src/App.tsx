@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { } from 'firebase/auth';
 import { 
   auth, 
   googleProvider, 
@@ -867,7 +867,7 @@ export default function App({ authUser, isAdmin = false, onSignOut }: { authUser
           {activeTab === 'perfil' && (
             <ProfileView
               user={user}
-              onSignIn={handleGoogleSignIn}
+              onSignIn={async () => { /* Supabase sign-in is handled by the global AuthGate. */ }}
               onSignOut={onSignOut || handleSignOut}
               stats={{
                 swipesCount: swipedHistory.length,
