@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { } from 'firebase/auth';
 import { 
   auth, 
   googleProvider, 
@@ -282,14 +281,6 @@ export default function App({ authUser, isAdmin = false, onSignOut }: { authUser
   useEffect(() => {
     testConnection().then(ok => setIsFirestoreConnected(ok));
   }, []);
-
-  const handleGoogleSignIn = async () => {
-    console.warn('Authentication is managed by Supabase AuthGate.');
-  };
-
-  const handleSignOut = async () => {
-    console.warn('Use the secure sign-out control in the app header.');
-  };
 
   // Regional & Distance filtered profiles (México vs USA)
   const visibleProfiles = profiles.filter(p => {
