@@ -32,22 +32,7 @@ drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles
 for select to authenticated using (id = (select auth.uid()));
 
-drop policy if exists "profiles_update_own_safe_fields" on public.profiles;
-create policy "profiles_update_own_safe_fields" on public.profiles
-for update to authenticated
-using (id = (select auth.uid()))
-with check (
-  id = (select auth.uid())
-  and status in ('pending', 'active', 'suspended', 'banned')
-  and identity_verified_at is not distinct from (
-    select p.identity_verified_at from public.profiles p where p.id = (select auth.uid())
-  )
-  and age_verified_at is not distinct from (
-    select p.age_verified_at from public.profiles p where p.id = (select auth.uid())
-  )
-);
-
-drop policy if exists "admin_roles_select_self" on public.admin_roles;
+-- Profile mutations are intentionally not granted by this migration; add column-safe RPCs before enabling edits.\n\ndrop policy if exists "admin_roles_select_self" on public.admin_roles;
 create policy "admin_roles_select_self" on public.admin_roles
 for select to authenticated using (user_id = (select auth.uid()));
 
