@@ -24,7 +24,7 @@ async function sendEmail(email: string, caseId: string, reason: string) {
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Cache-Control', 'no-store');
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   if (!process.env.SECURITY_CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.SECURITY_CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
