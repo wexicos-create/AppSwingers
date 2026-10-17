@@ -295,11 +295,10 @@ export async function sendChatMessage(userId: string, conversationId: string, bo
 
 export async function blockUser(userId: string, blockedUserId: string): Promise<void> {
   if (!userId || !blockedUserId || userId === blockedUserId) return;
-  const { error } = await supabase.from('user_blocks').upsert(
+  const { error } = await supabase.from('user_blocks').insert(
     { blocker_user_id: userId, blocked_user_id: blockedUserId },
-    { onConflict: 'blocker_user_id,blocked_user_id' },
   );
-  if (error) {
+  if (error && error.code !== '23505') {
     console.warn('Supabase block failed:', error.code);
     throw new Error('No se pudo bloquear la cuenta.');
   }
