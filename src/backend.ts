@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, SwipeAction } from './types';
+import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, Proposal, SwipeAction } from './types';
 import { supabase } from './supabase';
 
 export interface ProfileEditorData {
@@ -327,5 +327,103 @@ export async function createSafetyReport(
   if (error) {
     console.warn('Supabase safety report failed:', error.code);
     throw new Error('No se pudo enviar el reporte. Inténtalo de nuevo.');
+  }
+}
+
+const proposalCategoryFromDb = (category: string): string => ({
+  date: 'Cita',
+  trio: 'Trío',
+  group_meetup: 'Reunión grupal',
+  fetish_discussion: 'Conversación de intereses',
+  other: 'Otra propuesta',
+}[category] || 'Otra propuesta');
+
+export async function fetchExperienceProposals(userId: string): Promise<Proposal[]> {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('experience_proposals')
+    .select('id,owner_user_id,title,description,category,city,status,created_at')
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) {
+    console.warn('Supabase proposals load failed:', error.code);
+    return [];
+  }
+  return (data ?? []).map(row => ({
+    id: row.id,
+    title: row.title,
+    cat: proposalCategoryFromDb(row.category),
+    author: row.owner_user_id === userId ? 'Tú' : 'Miembro verificado',
+    when: new Date(row.created_at).toLocaleDateString(),
+    apps: 0,
+    status: row.status === 'active' ? 'publicada' : row.status === 'rejected' ? 'rechazada' : row.status === 'closed' || row.status === 'paused' ? 'retirada' : 'en revisión',
+    body: row.description,
+    mine: row.owner_user_id === userId,
+  }));
+}
+
+export async function createExperienceProposal(
+  userId: string,
+  proposal: { title: string; cat: string; body: string; limited: boolean },
+  city?: string,
+  region: AppRegion = 'MX',
+): Promise<Proposal> {
+  const title = proposal.title.trim().slice(0, 120);
+  const description = proposal.body.trim().slice(0, 3000);
+  if (title.length < 8) throw new Error('El título debe tener al menos 8 caracteres.');
+  if (description.length < 20) throw new Error('La descripción debe tener al menos 20 caracteres.');
+  const category = /tr[ií]o/i.test(proposal.cat) ? 'trio'
+    : /grupo|fiesta|meetup/i.test(proposal.cat) ? 'group_meetup'
+    : /fetiche|inter[eé]s/i.test(proposal.cat) ? 'fetish_discussion'
+    : /cita|date/i.test(proposal.cat) ? 'date' : 'other';
+
+  const { data, error } = await supabase
+    .from('experience_proposals')
+    .insert({
+      owner_user_id: userId,
+      title,
+      description,
+      category,
+      participant_min: 2,
+      participant_max: 2,
+      boundaries: proposal.limited ? 'Identidad y datos personales limitados hasta aceptación mutua.' : 'Consentimiento explícito, respeto y límites acordados.',
+      location_mode: 'city_only',
+      city: city?.trim().slice(0, 100) || null,
+      status: 'pending',
+    })
+    .select('id,owner_user_id,title,description,category,city,status,created_at')
+    .single();
+
+  if (error || !data) {
+    console.warn('Supabase proposal create failed:', error?.code);
+    throw new Error('No se pudo enviar la propuesta. La cuenta debe estar verificada y activa.');
+  }
+  return {
+    id: data.id,
+    title: data.title,
+    cat: proposalCategoryFromDb(data.category),
+    author: 'Tú',
+    when: new Date(data.created_at).toLocaleDateString(),
+    apps: 0,
+    status: 'en revisión',
+    body: data.description,
+    mine: true,
+  };
+}
+
+export async function applyToExperienceProposal(userId: string, proposalId: string): Promise<void> {
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidPattern.test(userId) || !uuidPattern.test(proposalId)) {
+    throw new Error('La propuesta no pertenece al backend real.');
+  }
+  const { error } = await supabase.from('experience_interests').insert({
+    proposal_id: proposalId,
+    requester_user_id: userId,
+    message: 'Me interesa esta propuesta. Acepto conversar con respeto y consentimiento mutuo.',
+    status: 'pending',
+  });
+  if (error) {
+    console.warn('Supabase proposal interest failed:', error.code);
+    throw new Error('No se pudo enviar el interés. Verifica tu cuenta y que la propuesta siga activa.');
   }
 }
