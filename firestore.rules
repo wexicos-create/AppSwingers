@@ -11,6 +11,16 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // A suspension is authoritative only when written by trusted server code.
+    function accountIsActive(userId) {
+      return !exists(/databases/$(database)/documents/users/$(userId)) ||
+        get(/databases/$(database)/documents/users/$(userId)).data.accountSecurity.status != 'banned';
+    }
+
+    function canUseAccount() {
+      return isAuthenticated() && accountIsActive(request.auth.uid);
+    }
+
     function isAdmin() {
       return isAuthenticated() && 
         (request.auth.token.admin == true || 
@@ -26,11 +36,11 @@ service cloud.firestore {
 
     // Users collection with RBAC and privilege escalation prevention
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      allow read: if canUseAccount();
       allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false) && !request.resource.data.keys().hasAny(['identityVerification']);
       allow update: if isOwner(userId) && (
-        // Prevent regular users from elevating themselves to admin
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'identityVerification'])) || 
+        // Security status, admin privilege, and identity decision are server-managed.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'identityVerification', 'accountSecurity'])) ||
         isAdmin()
       );
       allow delete: if isAdmin() || isOwner(userId);
@@ -43,17 +53,17 @@ service cloud.firestore {
 
     // Matches collection: strictly validate participants
     match /matches/{matchId} {
-      allow read: if isAuthenticated() && (
+      allow read: if canUseAccount() && (
         resource.data.userId == request.auth.uid || 
         resource.data.partnerId == request.auth.uid ||
         (resource.data.participants != null && request.auth.uid in resource.data.participants)
       );
-      allow create: if isAuthenticated() && (
+      allow create: if canUseAccount() && (
         request.resource.data.userId == request.auth.uid || 
         request.resource.data.partnerId == request.auth.uid ||
         (request.resource.data.participants != null && request.auth.uid in request.resource.data.participants)
       );
-      allow update: if isAuthenticated() && (
+      allow update: if canUseAccount() && (
         resource.data.userId == request.auth.uid || 
         resource.data.partnerId == request.auth.uid ||
         (resource.data.participants != null && request.auth.uid in resource.data.participants)
@@ -63,30 +73,42 @@ service cloud.firestore {
 
     // Reservations collection: strictly validate user ownership
     match /reservations/{reservationId} {
-      allow read: if isAuthenticated() && (
+      allow read: if canUseAccount() && (
         resource.data.userId == request.auth.uid || isAdmin()
       );
-      allow create: if isAuthenticated() && (
+      allow create: if canUseAccount() && (
         request.resource.data.userId == request.auth.uid
       );
-      allow update, delete: if isAuthenticated() && (
+      allow update, delete: if canUseAccount() && (
         resource.data.userId == request.auth.uid || isAdmin()
       );
     }
 
     // Proposals collection
     match /proposals/{proposalId} {
-      allow read: if isAuthenticated();
+      allow read: if canUseAccount();
       allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && (
+      allow update, delete: if canUseAccount() && (
         resource.data.authorId == request.auth.uid || isAdmin()
       );
     }
 
     // Reports collection: any authenticated user can create, only admin can read/manage
     match /reports/{reportId} {
-      allow create: if isAuthenticated() && request.resource.data.reporterId == request.auth.uid;
+      allow create: if canUseAccount() && request.resource.data.reporterId == request.auth.uid;
       allow read, update, delete: if isAdmin();
     }
   }
 }
+
+    // Security cases and device registry are server-only. Users submit appeals through
+    // authenticated API endpoints; clients cannot forge or edit the audit trail.
+    match /securityCases/{caseId} {
+      allow read, write: if isAdmin();
+    }
+    match /diditWebhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+    match /users/{userId}/deviceRegistry/{deviceId} {
+      allow read, write: if false;
+    }
