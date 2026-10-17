@@ -66,7 +66,7 @@ export default async function handler(req: any, res: any) {
         caseId: caseRef.id, userId: decoded.uid, email, plan: userSnap.get('subscriptionTier') || 'unknown',
         reasonCode: 'MULTIPLE_DEVICES', reason, evidence: { knownDeviceCount: knownDevices, newDeviceId: deviceId, registeredDeviceId: userSnap.get('accountSecurity.registeredDeviceId') || null },
         status: 'suspended_pending_review', observations: [], appeal: null, createdAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(), notification: { status: 'pending' }, reviewerUid: null, resolution: null
+        updatedAt: FieldValue.serverTimestamp(), notification: { status: 'pending', attempts: 0 }, reviewerUid: null, resolution: null
       });
       tx.set(deviceRef, { deviceId, firstSeenAt: FieldValue.serverTimestamp(), lastSeenAt: FieldValue.serverTimestamp(), flagged: true });
       tx.set(userRef, { accountSecurity: { status: 'banned', caseId: caseRef.id, reasonCode: 'MULTIPLE_DEVICES', bannedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() } }, { merge: true });
@@ -76,7 +76,7 @@ export default async function handler(req: any, res: any) {
     if (!result.existing && result.email) {
       const mail = await notifyBan(result.email, result.caseId || 'sin-folio', 'Acceso detectado desde un segundo dispositivo registrado.');
       if (result.caseId) await db.collection('securityCases').doc(result.caseId).set({
-        notification: { status: mail.sent ? 'sent' : 'failed', failureReason: mail.reason || null, updatedAt: FieldValue.serverTimestamp() }
+        notification: { status: mail.sent ? 'sent' : 'failed', attempts: 1, failureReason: mail.reason || null, updatedAt: FieldValue.serverTimestamp() }
       }, { merge: true });
     }
     if (!result.existing) await getAuth(app).revokeRefreshTokens(decoded.uid);
