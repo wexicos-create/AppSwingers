@@ -9,6 +9,9 @@ import {
   saveUserProfile,
   blockUser,
   createSafetyReport,
+  fetchExperienceProposals,
+  createExperienceProposal,
+  applyToExperienceProposal,
   testConnection,
 } from './backend';
 import { 
@@ -296,11 +299,13 @@ export default function App() {
       // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
       void syncUserProfile(currentUser)
         .then(async savedAlias => {
-          const [remoteMatches, discoveredProfiles] = await Promise.all([
+          const [remoteMatches, discoveredProfiles, remoteProposals] = await Promise.all([
             fetchUserMatches(currentUser.id),
             fetchDiscoverableProfiles(),
+            fetchExperienceProposals(currentUser.id),
           ]);
           if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
+          if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
@@ -451,7 +456,26 @@ export default function App() {
   };
 
   // Proposal handlers with strict weekly quota enforcement
-  const handleApplyProposal = (proposal: Proposal) => {
+  const handleApplyProposal = async (proposal: Proposal) => {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(proposal.id)) {
+      if (!user) {
+        alert(isEs ? 'Inicia sesión para postularte.' : 'Sign in to apply.');
+        return;
+      }
+      try {
+        await applyToExperienceProposal(user.id, proposal.id);
+        setAppliedProposalIds(prev => [...new Set([...prev, proposal.id])]);
+        alert(isEs ? 'Interés enviado. El anfitrión podrá responder si tu cuenta cumple los requisitos de seguridad.' : 'Interest sent. The host can respond if your account meets safety requirements.');
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'No se pudo enviar el interés.');
+      }
+      return;
+    }
+    if (!import.meta.env.DEV) {
+      alert(isEs ? 'Esta propuesta no está conectada a Supabase.' : 'This proposal is not connected to Supabase.');
+      return;
+    }
     const weeklyLimit = getWeeklyLimit(subscriptionTier);
     const usedThisWeek = getWeeklyApplicationsCount();
 
@@ -494,7 +518,21 @@ export default function App() {
     );
   };
 
-  const handleCreateProposal = (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
+  const handleCreateProposal = async (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
+    if (user) {
+      try {
+        const created = await createExperienceProposal(user.id, newProp, userProfile.locationCity, region);
+        setProposals(prev => [created, ...prev.filter(p => p.id !== created.id)]);
+        alert(isEs ? 'Propuesta enviada a revisión y guardada en Supabase.' : 'Proposal sent for review and saved to Supabase.');
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'No se pudo guardar la propuesta.');
+      }
+      return;
+    }
+    if (!import.meta.env.DEV) {
+      alert(isEs ? 'Inicia sesión antes de crear una propuesta.' : 'Sign in before creating a proposal.');
+      return;
+    }
     const created: Proposal = {
       id: `prop_${Date.now()}`,
       title: newProp.title,
