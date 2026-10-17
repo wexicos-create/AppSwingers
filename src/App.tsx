@@ -1114,15 +1114,11 @@ export default function App() {
                     if (!user) throw new Error(isEs ? 'Inicia sesión para reportar una cuenta.' : 'Sign in to report an account.');
                     await createSafetyReport(user.id, t.id, t.reason, [t.reason, t.details].filter(Boolean).join('\n\n'));
                   }}
-                  onBlockUser={(id) => {
-                    if (user) {
-                      void blockUser(user.id, id).then(() => {
-                        setMatches(prev => prev.filter(m => m.profile.id !== id));
-                        if (activeChatUserId === id) setActiveChatUserId(null);
-                      }).catch(error => alert(error instanceof Error ? error.message : 'No se pudo bloquear la cuenta.'));
-                    } else {
-                      alert(isEs ? 'Inicia sesión para bloquear esta cuenta.' : 'Sign in to block this account.');
-                    }
+                  onBlockUser={async (id) => {
+                    if (!user) throw new Error(isEs ? 'Inicia sesión para bloquear esta cuenta.' : 'Sign in to block this account.');
+                    await blockUser(user.id, id);
+                    setMatches(prev => prev.filter(m => m.profile.id !== id));
+                    if (activeChatUserId === id) setActiveChatUserId(null);
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
                 />
