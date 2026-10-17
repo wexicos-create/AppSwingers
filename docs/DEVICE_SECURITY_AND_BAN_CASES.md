@@ -16,10 +16,10 @@ Set these as server-side secrets only; do not use a VITE_ prefix:
 - FIREBASE_SERVICE_ACCOUNT_JSON: service-account JSON for the same Firebase project.
 - RESEND_API_KEY: Resend API key.
 - SECURITY_EMAIL_FROM: verified sender address/domain in Resend.
-- SECURITY_CRON_SECRET: long random secret for the scheduled retry endpoint.
+- CRON_SECRET: long random secret; Vercel uses this to sign scheduled requests. SECURITY_CRON_SECRET is accepted as an alternative for manual scheduling.
 - Keep existing Didit variables configured separately.
 
-The Vercel cron is declared in vercel.json and calls /api/security/retry-notifications every five minutes. Confirm that the Vercel plan supports the chosen cron frequency. The endpoint requires Authorization: Bearer <SECURITY_CRON_SECRET>.
+The Vercel cron is declared in vercel.json and calls /api/security/retry-notifications every five minutes. Confirm that the Vercel plan supports the chosen cron frequency. The endpoint requires Authorization: Bearer <CRON_SECRET> (or the configured SECURITY_CRON_SECRET fallback).
 
 ## Admin authorization
 
