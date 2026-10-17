@@ -21,7 +21,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -51,7 +50,7 @@ jobs:
           npx cap add android
           npx cap sync android
 
-      - name: Build signed debug APK
+      - name: Build signed debug APK (debug certificate, not Play Store release key)
         run: |
           cd android
           chmod +x gradlew
