@@ -20,27 +20,34 @@
 5. Test registration, verification, login, wrong-password handling, and password recovery before production.
 6. Review Firestore rules for `users/{uid}`: an authenticated user should only read/write their own profile. Newsletter preference must not be treated as permission to send marketing unless the checkbox was selected.
 
-## Didit identity verification: server configuration still required
+## Didit identity verification: code added; activation/configuration still required
 
 The app's Firebase login is separate from identity verification. Do not mark a profile verified based on a browser redirect or a client-side result.
 
-To enable Didit safely, configure a server-side session-creation endpoint and a signed webhook receiver. Required server-only configuration values are:
+This branch now includes a Vercel serverless session endpoint (`/api/identity/session`), a signed webhook receiver (`/api/identity/webhook`), and a profile UI that displays the server-confirmed state. It also blocks client-side writes to `identityVerification` in Firestore rules. This is code integration, not yet a live/validated production connection. Configure these server-only values:
 
 - `DIDIT_API_KEY`
 - `DIDIT_WORKFLOW_ID`
-- `DIDIT_WEBHOOK_SECRET`
+- `DIDIT_WEBHOOK_SECRET` (the signing secret from the Didit webhook destination)
+- `DIDIT_WEBHOOK_URL` (the deployed HTTPS URL ending in `/api/identity/webhook`)
+- `FIREBASE_SERVICE_ACCOUNT_JSON` (Firebase service account JSON, stored only in the hosting secret manager)
 - A public HTTPS callback URL
 
 The server must authenticate the Firebase user before creating a Didit session, set `vendor_data` to that user's stable Firebase UID, and return only the hosted session URL to the browser. The API key and webhook secret must never be bundled into Vite client variables or committed to Git.
 
-The webhook must verify Didit's `X-Signature-V2` HMAC signature and timestamp, reject stale/invalid signatures, deduplicate events, and update the user's verification status only after a verified server-to-server callback. Keep statuses such as pending, in review, approved, declined, and expired distinct. Do not expose ID images or biometric results in public profile documents.
+The webhook validates Didit's `X-Signature-V2` HMAC signature, deduplicates events, rejects stale sessions, and updates the user's verification status only after a signed callback. Verify the signature implementation against Didit's current official test vectors before production. Keep statuses such as pending, in review, approved, declined, and expired distinct. Do not expose ID images or biometric results in public profile documents.
 
 ## Production checklist
 
 - Enable and test Firebase email/password in the project console.
 - Configure custom sender domain and email templates if needed.
-- Configure Didit workflow in Didit Dashboard and copy its workflow ID.
+- Configure and publish a Didit workflow that explicitly supports Mexican INE/document verification, OCR/document validation, passive liveness, and face match; confirm Mexican INE is enabled for the chosen workflow. Copy its workflow ID and configure the webhook URL/secret.
 - Add the three Didit secrets to the hosting/backend secret manager, not to source code.
 - Deploy and test the session endpoint and signed webhook.
 - Test approved, declined, in-review, expired, duplicate-webhook, and invalid-signature cases.
 - Add consent text and retention/deletion rules for identity and biometric data before launch.
+
+
+## Remaining login decision
+
+The current AuthModal uses Firebase email/password and email-based password reset. Firebase's built-in phone provider is OTP-based, not phone-plus-password; switching to phone/password with WhatsApp recovery requires a separate secure backend and an approved WhatsApp Business API provider. Do not claim that phone/password or WhatsApp recovery is live until that service is implemented and tested.
