@@ -1,0 +1,67 @@
+name: Build Android APK
+
+on:
+  push:
+    branches:
+      - fix/apkswing-android-build-and-payment-safety
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install web dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Install Capacitor Android toolchain
+        run: npm install --no-save --no-audit --no-fund @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7
+
+      - name: Configure Android wrapper
+        run: |
+          cat > capacitor.config.json <<'EOF'
+          {
+            "appId": "live.appswinger.app",
+            "appName": "AppSwinger",
+            "webDir": "dist",
+            "bundledWebRuntime": false
+          }
+          EOF
+          npx cap add android
+          npx cap sync android
+
+      - name: Build signed debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+          cp app/build/outputs/apk/debug/app-debug.apk ../ApsWing.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ApsWing-apk
+          path: ApsWing.apk
+          if-no-files-found: error
+          retention-days: 14
