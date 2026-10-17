@@ -131,3 +131,64 @@ export const diditVerificationWebhook = onRequest(
     res.sendStatus(200);
   }
 );
+
+
+const reportCategories = new Set([
+  "harassment", "threats", "insults", "fraud", "non_consensual_content",
+  "impersonation", "spam", "other",
+]);
+
+export const submitSafetyReport = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Inicia sesión para reportar.");
+  const reporterUid = request.auth.uid;
+  const targetUid = String(request.data?.targetUid || "");
+  const category = String(request.data?.category || "");
+  const details = String(request.data?.details || "").trim().slice(0, 1500);
+  if (!targetUid || targetUid === reporterUid) throw new HttpsError("invalid-argument", "El perfil reportado no es válido.");
+  if (!reportCategories.has(category)) throw new HttpsError("invalid-argument", "Selecciona una categoría válida.");
+  const ref = await db.collection("safetyReports").add({
+    reporterUid, targetUid, category, details,
+    status: "open",
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+    reviewHistory: [],
+  });
+  await db.collection("adminNotifications").add({
+    type: "safety_report",
+    reportId: ref.id,
+    targetUid,
+    category,
+    status: "unread",
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return { reportId: ref.id, status: "open" };
+});
+
+export const blockMember = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Inicia sesión para bloquear.");
+  const blockerUid = request.auth.uid;
+  const targetUid = String(request.data?.targetUid || "");
+  if (!targetUid || targetUid === blockerUid) throw new HttpsError("invalid-argument", "El perfil no es válido.");
+  await db.collection("userBlocks").doc(blockerUid + "_" + targetUid).set({
+    blockerUid, targetUid, active: true, createdAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return { blocked: true };
+});
+
+export const updateTrustPreferences = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Inicia sesión para guardar preferencias.");
+  const soundEnabled = request.data?.soundEnabled;
+  const autoDeleteDays = request.data?.autoDeleteDays;
+  const mutedUserIds = request.data?.mutedUserIds;
+  if (typeof soundEnabled !== "boolean") throw new HttpsError("invalid-argument", "soundEnabled debe ser booleano.");
+  if (![0, 7, 30, 90].includes(autoDeleteDays)) throw new HttpsError("invalid-argument", "Período de borrado no válido.");
+  if (!Array.isArray(mutedUserIds) || mutedUserIds.length > 100 ||
+      mutedUserIds.some((id) => typeof id !== "string" || id.length > 128)) {
+    throw new HttpsError("invalid-argument", "La lista de conversaciones silenciadas no es válida.");
+  }
+  await db.collection("userPreferences").doc(request.auth.uid).set({
+    soundEnabled, autoDeleteDays, mutedUserIds: [...new Set(mutedUserIds)],
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true });
+  return { saved: true };
+});
