@@ -288,6 +288,44 @@ export default function App() {
       setUser(currentUser);
       if (currentUser) {
         try {
+          // Register/check this installation with the trusted backend before loading account data.
+          let deviceId = localStorage.getItem('appswinger_device_id');
+          if (!deviceId) {
+            deviceId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+              ? crypto.randomUUID()
+              : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+                  const random = Math.random() * 16 | 0;
+                  return (ch === 'x' ? random : (random & 0x3 | 0x8)).toString(16);
+                });
+            localStorage.setItem('appswinger_device_id', deviceId);
+          }
+          const token = await currentUser.getIdToken();
+          const securityResponse = await fetch('/api/security/device-login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ deviceId })
+          });
+          if (!securityResponse.ok) {
+            const securityError = await securityResponse.json().catch(() => ({}));
+            if (securityError.error === 'ACCOUNT_SUSPENDED') {
+              const caseId = typeof securityError.caseId === 'string' ? securityError.caseId : '';
+              if (caseId && window.confirm(`Tu cuenta fue suspendida por acceso desde varios dispositivos. Folio: ${caseId}. ¿Deseas enviar una aclaración ahora?`)) {
+                const message = window.prompt('Explica por qué consideras que la suspensión es un error (mínimo 20 caracteres):');
+                if (message && message.trim().length >= 20) {
+                  await fetch('/api/security/appeal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                    body: JSON.stringify({ caseId, message: message.trim() })
+                  });
+                  window.alert('La aclaración se envió para revisión. Conserva el folio: ' + caseId);
+                }
+              }
+              await fbSignOut(auth);
+              setUser(null);
+              return;
+            }
+            throw new Error('No fue posible validar la seguridad de la sesión. Intenta nuevamente.');
+          }
           await syncUserProfile(currentUser);
           const remoteMatches = await fetchUserMatches(currentUser.uid);
           if (remoteMatches.length > 0) {
