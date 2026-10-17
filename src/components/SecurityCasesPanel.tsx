@@ -62,7 +62,11 @@ export function SecurityCasesPanel({ isEs }: { isEs: boolean }) {
     } finally { setBusy(false); }
   }, [queryText, status, request]);
 
-  useEffect(() => {\n    let active = true;\n    request('GET').then(data => { if (active) setCases(data.cases || []); }).catch(e => { if (active) setError(e instanceof Error ? e.message : 'No fue posible cargar los casos.'); });\n    return () => { active = false; };\n  }, [request]);
+  useEffect(() => {
+    let active = true;
+    request('GET').then(data => { if (active) setCases(data.cases || []); }).catch(e => { if (active) setError(e instanceof Error ? e.message : 'No fue posible cargar los casos.'); });
+    return () => { active = false; };
+  }, [request]);
 
   const act = async (action: 'add_observation' | 'lift_suspension' | 'confirm_ban') => {
     if (!selected) return;
