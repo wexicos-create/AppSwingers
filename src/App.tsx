@@ -547,7 +547,7 @@ export default function App() {
     alert(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
   };
 
-  // Collaboration Proposal (Swinger/Gangbang $350 MXN / $80 USD)
+  // Propuestas de eventos en México; la verificación Didit es obligatoria.
   const handleSubmitCollaboration = (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
     const fullProposal: CollaborationProposal = {
       ...proposal,
@@ -1217,7 +1217,7 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-0 pr-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
-                {region === 'MX' ? 'Notificación Push México (SLP)' : 'Push Notification USA'}
+                Notificación Push México
               </span>
               <h4 className="font-bold text-xs text-white truncate mt-0.5">{pushToast.title}</h4>
               <p className="text-[11px] text-purple-200/90 leading-tight mt-0.5">{pushToast.body}</p>
