@@ -5,43 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AppSwinger</title>
     <meta name="description" content="AppSwinger — comunidad para adultos +18, perfiles y eventos organizados por estado y ciudad en México." />
-    <meta property="og:title" content="AppSwinger Ultra Plus" />
-    <meta property="og:description" content="AppSwinger — comunidad para adultos +18, perfiles y eventos organizados por estado y ciudad en México." />
+    <meta property="og:title" content="AppSwinger" />
+    <meta property="og:description" content="Comunidad para adultos +18 en México. Perfiles, propuestas y eventos organizados por estado y ciudad." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-  
-    <div id="appswinger-apk-banner" role="status" aria-live="polite" style="display:none;position:fixed;z-index:99999;left:12px;right:12px;bottom:12px;max-width:620px;margin:0 auto;background:#171321;color:#fff;border:1px solid rgba(192,132,252,.65);border-radius:18px;box-shadow:0 12px 36px rgba(0,0,0,.45);padding:12px 14px;font-family:system-ui,sans-serif">
-      <button id="appswinger-apk-close" type="button" aria-label="Cerrar aviso de instalación" style="position:absolute;right:8px;top:6px;border:0;background:transparent;color:#d4d4d8;font-size:22px;line-height:1;cursor:pointer">×</button>
-      <div style="display:flex;align-items:center;gap:11px;padding-right:24px">
-        <div aria-hidden="true" style="width:42px;height:42px;flex:0 0 42px;display:grid;place-items:center;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#c084fc);font-size:22px;font-weight:800">A</div>
-        <div style="min-width:0;flex:1"><div style="font-size:14px;font-weight:750">Instala AppSwinger</div><div style="font-size:12px;color:#d4d4d8;margin-top:2px">Descarga Android desde la versión publicada en GitHub.</div></div>
-        <a id="appswinger-apk-install" href="https://github.com/wexicos-create/AppSwingers/releases/latest/download/AppSwinger-Mexico-debug.apk" style="white-space:nowrap;background:#9333ea;color:#fff;text-decoration:none;font-size:12px;font-weight:750;padding:10px 12px;border-radius:11px">Instalar</a>
-      </div>
-    </div>
-    <script>
-      (function () {
-        var banner = document.getElementById('appswinger-apk-banner');
-        var close = document.getElementById('appswinger-apk-close');
-        var install = document.getElementById('appswinger-apk-install');
-        if (!banner || !close || !install) return;
-        var standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-        var dismissed = false;
-        try { dismissed = sessionStorage.getItem('appswinger-apk-banner-dismissed') === '1'; } catch (_) {}
-        if (!standalone && !dismissed) banner.style.display = 'block';
-        close.addEventListener('click', function () {
-          banner.style.display = 'none';
-          try { sessionStorage.setItem('appswinger-apk-banner-dismissed', '1'); } catch (_) {}
-        });
-        install.addEventListener('click', function () {
-          install.setAttribute('aria-busy', 'true');
-          install.textContent = 'Abriendo descarga…';
-        });
-      })();
-    </script>
   </body>
 </html>
-
