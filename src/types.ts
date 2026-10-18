@@ -109,6 +109,8 @@ export interface CollaborationProposal {
   organizerName: string;
   region: AppRegion;
   state?: string;
+  eventDate: string;
+  schedule: string;
   feeAmount: number; // MXN
   city: string; // e.g. San Luis Potosí, CDMX, Texas, etc.
   consentRules: string;
