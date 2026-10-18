@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const diditKey = Deno.env.get("DIDIT_API_KEY");
-  const workflowId = Deno.env.get("DIDIT_WORKFLOW_ID");
+  const workflowId = Deno.env.get("DIDIT_WORKFLOW_ID") || "2e82a3cc-410d-483f-80bc-dcbd201151cd";
   if (!url || !anonKey || !serviceKey || !diditKey || !workflowId) {
     return Response.json({ error: "La verificación no está configurada en el servidor." }, { status: 503, headers: corsHeaders });
   }
