@@ -4,6 +4,8 @@ import { supabase } from './supabase';
 import {
   syncUserProfile,
   fetchUserLocation,
+  fetchApprovedEvents,
+  createEventProposal,
   recordSwipe,
   fetchUserMatches,
   fetchDiscoverableProfiles,
@@ -308,17 +310,19 @@ export default function App() {
       // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
       void syncUserProfile(currentUser)
         .then(async savedAlias => {
-          const [remoteMatches, discoveredProfiles, remoteProposals, userLocation] = await Promise.all([
+          const [remoteMatches, discoveredProfiles, remoteProposals, userLocation, remoteEvents] = await Promise.all([
             fetchUserMatches(currentUser.id),
             fetchDiscoverableProfiles(),
             fetchExperienceProposals(currentUser.id),
             fetchUserLocation(currentUser.id),
+            fetchApprovedEvents(currentUser.id),
           ]);
           const activeState = userLocation?.state || 'San Luis Potosí';
           const activeCity = userLocation?.city || 'San Luis Potosí';
           setUserProfile(prev => ({ ...prev, locationState: activeState, locationCity: activeCity }));
           if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles.filter(profile => profile.state === activeState && (profile.city || '').toLocaleLowerCase('es-MX') === activeCity.toLocaleLowerCase('es-MX')));
           if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals.filter(proposal => proposal.state === activeState && (proposal.city || '').toLocaleLowerCase('es-MX') === activeCity.toLocaleLowerCase('es-MX')));
+          if (!import.meta.env.DEV || remoteEvents.length > 0) setEvents(remoteEvents);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
@@ -564,9 +568,8 @@ export default function App() {
     if (error || !identity || identity.identity_verification_status !== 'verified' || !identity.age_verified_at || !identity.identity_verified_at || identity.face_match_status !== 'matched' || identity.profile_photo_match_status !== 'matched') {
       throw new Error('Completa primero la verificación INE + rostro + prueba de vida con Didit y la revisión de foto de perfil.');
     }
-    const fullProposal: CollaborationProposal = { ...proposal, region: 'MX', id: 'collab_' + Date.now(), status: 'en revisión', paid: false, createdAt: Date.now() };
-    const asProp: Proposal = { id: fullProposal.id, title: fullProposal.title, cat: fullProposal.eventType, author: fullProposal.organizerName + ' (Verificada)', when: isEs ? 'ahora' : 'just now', apps: 0, status: 'en revisión', body: 'Ciudad: ' + fullProposal.city + ', ' + fullProposal.state + ' | Ratio: ' + fullProposal.attendeeRatio + ' | Reglas: ' + fullProposal.consentRules + ' | Salud: ' + fullProposal.healthProtocols, city: fullProposal.city, state: fullProposal.state, mine: true };
-    setProposals(prev => [asProp, ...prev]);
+    await createEventProposal(user.id, proposal);
+    setPushToast({ title: 'Propuesta enviada a revisión', body: proposal.city + ', ' + proposal.state + '. Solo se publicará después de la aprobación administrativa.' });
   };
 
   // Creator subscriptions
@@ -1123,6 +1126,7 @@ export default function App() {
             });
             const refreshedProfiles = await fetchDiscoverableProfiles();
             setProfiles(refreshedProfiles.filter(p => p.state === (data.locationState || 'San Luis Potosí') && (p.city || '').toLocaleLowerCase('es-MX') === (data.locationCity || 'San Luis Potosí').toLocaleLowerCase('es-MX')));
+            setEvents(await fetchApprovedEvents(user.id));
             setCurrentIndex(0);
             setMaxDistance(data.maxKm);
             alert(isEs
