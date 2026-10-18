@@ -1,0 +1,9 @@
+{
+  "appId": "live.appswinger.app",
+  "appName": "AppSwinger",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}
