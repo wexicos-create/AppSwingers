@@ -37,6 +37,49 @@ create index if not exists event_proposals_local_discovery_idx
 create index if not exists creator_profiles_local_discovery_idx
   on public.creator_profiles(country_code, state, city, visibility, moderation_status);
 
+-- Keep creator profiles anchored to the member's own state/city, even if a client submits different values.
+update public.creator_profiles cp
+set state = p.state, city = coalesce(cp.city, p.city), country_code = 'MX'
+from public.profiles p
+where p.id = cp.user_id and cp.state is null and p.state is not null;
+
+create or replace function private.sync_creator_profile_locality()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $
+begin
+  select p.state, p.city into new.state, new.city
+  from public.profiles p
+  where p.id = new.user_id;
+  new.country_code := 'MX';
+  return new;
+end;
+$;
+drop trigger if exists sync_creator_profile_locality on public.creator_profiles;
+create trigger sync_creator_profile_locality
+before insert or update of user_id, state, city, country_code on public.creator_profiles
+for each row execute function private.sync_creator_profile_locality();
+
+drop policy if exists "creator creates own creator profile" on public.creator_profiles;
+create policy "creator creates own creator profile" on public.creator_profiles
+  for insert to authenticated with check (
+    user_id = (select auth.uid())
+    and country_code = 'MX'
+    and state = (select p.state from public.profiles p where p.id = (select auth.uid()))
+    and moderation_status = 'pending'
+    and visibility <> 'published'
+  );
+drop policy if exists "creator updates own creator profile" on public.creator_profiles;
+create policy "creator updates own creator profile" on public.creator_profiles
+  for update to authenticated using (user_id = (select auth.uid()))
+  with check (
+    user_id = (select auth.uid())
+    and country_code = 'MX'
+    and state = (select p.state from public.profiles p where p.id = (select auth.uid()))
+  );
+
 -- Reuse the existing identity_verifications table; only provider outcome metadata is stored.
 create index if not exists identity_verifications_provider_session_idx on public.identity_verifications(provider_session_id);
 alter table public.identity_verifications enable row level security;
