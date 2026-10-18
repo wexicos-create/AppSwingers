@@ -75,7 +75,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
 
-  // Region and Language Detection (Default San Luis Potosí, México with USA option)
+  // Region and Language Detection (México únicamente; la ubicación debe corresponder al estado y ciudad elegidos por la persona.)
   const [region, setRegion] = useState<AppRegion>('MX');
   const [lang, setLang] = useState<Language>('es');
   const [locationGranted, setLocationGranted] = useState(false);
@@ -164,7 +164,7 @@ export default function App() {
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
       id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
+      title: isEs ? '¡Bienvenidos a AppSwinger Ultra Plus!' : 'Welcome to AppSwinger Ultra Plus!',
       body: isEs 
         ? 'Lanzamiento en México. Perfiles y eventos organizados por estado y ciudad, con acceso exclusivo para adultos.' 
         : 'Mexico-only launch. Profiles and events are organized by state and city, for adults only.',
@@ -221,10 +221,10 @@ export default function App() {
           // Mexico geographical bounds: lat 14 to 33, lng -119 to -85
           if (lat >= 14 && lat <= 33 && lng >= -119 && lng <= -85) {
             setRegion('MX');
-            setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
+            setUserProfile(prev => ({ ...prev, locationCity: 'Selecciona tu estado y ciudad en México' }));
           } else {
             setRegion('MX');
-            setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
+            setUserProfile(prev => ({ ...prev, locationCity: '' }));
           }
           if (isManualClick) {
             setPushToast({
@@ -241,7 +241,7 @@ export default function App() {
           if (isManualClick) {
             setLocationGranted(true);
             setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
+            const cityName = 'Selecciona tu estado y ciudad en México';
             setUserProfile(prev => ({ ...prev, locationCity: cityName }));
             setPushToast({
               title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
@@ -332,7 +332,7 @@ export default function App() {
     }
   };
 
-  // Regional & Distance filtered profiles (México vs USA)
+  // Perfiles filtrados por comunidad local de México
   const visibleProfiles = profiles.filter(p => {
     const profileCountry = p.country || 'MX';
     return profileCountry === region && p.km <= maxDistance;
@@ -589,7 +589,7 @@ export default function App() {
                 onClick={() => setActiveTab('match')}
                 className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
               >
-                APPSWINGUER
+                APPSWINGER
               </span>
               {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
               <div className="flex items-center gap-1 ml-1">
@@ -1049,7 +1049,7 @@ export default function App() {
               seeking: data.seeking,
               ages: data.ages,
               maxKm: data.maxKm,
-              locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
+              locationCity: data.locationCity || 'Selecciona tu estado y ciudad en México',
             });
             setMaxDistance(data.maxKm);
             alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
@@ -1140,7 +1140,7 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-0 pr-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
-                {region === 'MX' ? 'Notificación Push México (SLP)' : 'Push Notification USA'}
+                {'Notificación AppSwinger México'}
               </span>
               <h4 className="font-bold text-xs text-white truncate mt-0.5">{pushToast.title}</h4>
               <p className="text-[11px] text-purple-200/90 leading-tight mt-0.5">{pushToast.body}</p>
