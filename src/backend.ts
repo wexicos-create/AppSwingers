@@ -192,7 +192,7 @@ export async function fetchUserMatches(userId: string): Promise<MatchItem[]> {
       age: row.age ?? undefined,
       km: 0,
       distance: 'Distancia no disponible',
-      country: row.country_code === 'US' ? 'US' : 'MX',
+      country: 'MX',
       verify: 'verificado',
       status: 'activo',
       hue: 270,
