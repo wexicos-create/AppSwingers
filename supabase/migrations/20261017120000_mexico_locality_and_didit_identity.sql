@@ -20,27 +20,15 @@ alter table public.profiles drop constraint if exists profiles_face_match_status
 alter table public.profiles add constraint profiles_face_match_status_check
   check (face_match_status in ('pending','matched','rejected'));
 
-create table if not exists public.identity_verifications (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users(id) on delete cascade,
-  provider text not null default 'didit' check (provider = 'didit'),
-  didit_session_id text unique not null,
-  status text not null default 'pending' check (status in ('pending','verified','rejected','review')),
-  age_verified boolean not null default false,
-  face_match_status text not null default 'pending' check (face_match_status in ('pending','matched','rejected')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  verified_at timestamptz
-);
-create index if not exists identity_verifications_user_created_idx
-  on public.identity_verifications(user_id, created_at desc);
+-- Reuse the existing identity_verifications table; only provider outcome metadata is stored.
+create index if not exists identity_verifications_provider_session_idx on public.identity_verifications(provider_session_id);
 alter table public.identity_verifications enable row level security;
 drop policy if exists "Users read own identity status" on public.identity_verifications;
-create policy "Users read own identity status"
-  on public.identity_verifications for select to authenticated
-  using (user_id = (select auth.uid()));
+create policy "Users read own identity status" on public.identity_verifications
+  for select to authenticated using (user_id = (select auth.uid()));
 revoke all on public.identity_verifications from anon, authenticated;
 grant select on public.identity_verifications to authenticated;
+
 
 -- Recreate the RPC to include state and isolate discovery to the signed-in user's state.
 drop function if exists public.discover_verified_profiles(integer);
