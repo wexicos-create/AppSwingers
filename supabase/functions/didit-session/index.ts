@@ -29,6 +29,13 @@ Deno.serve(async (req) => {
   if (profileError || !profile) return Response.json({ error: "Primero completa tu perfil." }, { status: 409, headers: corsHeaders });
   if (profile.identity_verification_status === "verified") return Response.json({ error: "Tu identidad ya está verificada." }, { status: 409, headers: corsHeaders });
 
+  let input: { identityConsent?: boolean; termsAccepted?: boolean };
+  try { input = await req.json(); } catch { return Response.json({ error: 'invalid_json' }, { status: 400, headers: corsHeaders }); }
+  if (input.identityConsent !== true || input.termsAccepted !== true) return Response.json({ error: 'explicit_identity_and_terms_consent_required' }, { status: 400, headers: corsHeaders });
+  const consentAt = new Date().toISOString();
+  const { error: consentError } = await admin.from('profiles').update({ identity_consent_at: consentAt, terms_accepted_at: consentAt, updated_at: consentAt }).eq('id', user.id);
+  if (consentError) return Response.json({ error: 'consent_record_failed' }, { status: 500, headers: corsHeaders });
+
   const diditResponse = await fetch("https://verification.didit.me/v3/session/", {
     method: "POST",
     headers: { "x-api-key": diditKey, "content-type": "application/json" },
