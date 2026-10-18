@@ -1,0 +1,80 @@
+name: AppSwinger Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - release/mexico-tax-apk-automation
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm install
+
+      - name: Install Capacitor toolchain
+        run: npm install --no-save @capacitor/core@^7 @capacitor/cli@^7 @capacitor/android@^7
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Generate Android project if absent
+        shell: bash
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Build debug APK with Gradle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Stage APK
+        shell: bash
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/AppSwinger-Mexico-debug.apk
+          sha256sum release/AppSwinger-Mexico-debug.apk > release/SHA256SUMS.txt
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AppSwinger-Mexico-APK
+          path: release/*
+          retention-days: 30
+
+      - name: Publish downloadable APK release (main only)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-build-${{ github.run_number }}
+          name: AppSwinger Android build ${{ github.run_number }}
+          generate_release_notes: true
+          files: |
+            release/AppSwinger-Mexico-debug.apk
+            release/SHA256SUMS.txt
