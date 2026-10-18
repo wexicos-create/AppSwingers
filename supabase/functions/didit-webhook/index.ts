@@ -40,21 +40,22 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: existing, error: lookupError } = await admin.from("identity_verifications")
-      .select("id,user_id,didit_session_id").eq("didit_session_id", sessionId).maybeSingle();
-    if (lookupError || !existing || existing.user_id !== userId) return new Response("Session mismatch", { status: 404 });
+      .select("user_id,provider_session_id").eq("provider_session_id", sessionId).maybeSingle();
+    if (lookupError || !existing || existing.user_id !== userId || existing.provider_session_id !== sessionId) return new Response("Session mismatch", { status: 404 });
 
     const normalized = rawStatus.toLowerCase();
     const approved = ["approved", "verified"].includes(normalized);
     const rejected = ["declined", "rejected"].includes(normalized);
-    const status = approved ? "verified" : rejected ? "rejected" : "review";
+    const status = approved ? "verified" : rejected ? "rejected" : "manual_review";
     const faceStatus = approved ? "matched" : rejected ? "rejected" : "pending";
     const now = new Date().toISOString();
     const { error: updateError } = await admin.from("identity_verifications").update({
-      status, age_verified: approved, face_match_status: faceStatus, updated_at: now, verified_at: approved ? now : null,
-    }).eq("didit_session_id", sessionId).eq("user_id", userId);
+      status, age_verified_at: approved ? now : null, document_match_verified_at: approved ? now : null,
+      selfie_match_verified_at: approved ? now : null, updated_at: now, verified_at: approved ? now : null,
+    }).eq("provider_session_id", sessionId).eq("user_id", userId);
     if (updateError) throw updateError;
     const { error: profileError } = await admin.from("profiles").update({
-      identity_verification_status: status === "review" ? "pending" : status,
+      identity_verification_status: status === "manual_review" ? "pending" : status,
       face_match_status: faceStatus,
       identity_verified_at: approved ? now : null,
       age_verified_at: approved ? now : null,
