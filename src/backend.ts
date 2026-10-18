@@ -11,6 +11,7 @@ export interface ProfileEditorData {
   ages: string[];
   maxKm: number;
   locationCity?: string;
+  locationState?: string;
 }
 
 export async function testConnection(): Promise<boolean> {
@@ -55,7 +56,8 @@ export async function saveUserProfile(userId: string, data: ProfileEditorData, r
     profile_kind: data.kind,
     bio: data.bio.trim().slice(0, 1200),
     city: data.locationCity?.trim().slice(0, 100) || null,
-    country_code: region,
+    state: data.locationState?.trim().slice(0, 80) || null,
+    country_code: 'MX',
     interests: data.interests.slice(0, 40),
     seeking: data.seeking.slice(0, 20),
     preferred_age_ranges: data.ages.slice(0, 10),
@@ -74,6 +76,7 @@ interface DiscoverableProfile {
   profile_kind: ProfileKind;
   bio: string;
   city: string | null;
+  state: string | null;
   country_code: string;
   interests: string[];
   seeking: string[];
@@ -109,7 +112,9 @@ export async function fetchDiscoverableProfiles(limit = 30): Promise<Profile[]> 
       age: row.age ?? undefined,
       km: 0,
       distance: 'Distancia no disponible',
-      country: row.country_code === 'US' ? 'US' : 'MX',
+      country: 'MX',
+      city: row.city ?? undefined,
+      state: row.state ?? undefined,
       verify: 'verificado',
       status: 'activo',
       hue: 270,
