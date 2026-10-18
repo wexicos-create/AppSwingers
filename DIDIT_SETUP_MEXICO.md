@@ -7,7 +7,8 @@
 
 ## Configuración obligatoria antes de desplegar
 1. En Didit, crea/publica un workflow que compruebe el documento mexicano admitido por el proveedor, prueba de vida y comparación facial.
-2. En el entorno seguro de Supabase, configura `DIDIT_API_KEY`, `DIDIT_WORKFLOW_ID` y `DIDIT_WEBHOOK_SECRET`. No las guardes en GitHub ni en variables `VITE_*`.
+2. En Supabase, configura los secretos del servidor. El código ya trae el workflow ID MX como fallback, pero puedes definir `DIDIT_WORKFLOW_ID` para cambiarlo. Nunca guardes secretos en GitHub ni en variables `VITE_*`.
+   `supabase secrets set DIDIT_API_KEY=\"<API_KEY_DE_DIDIT>\" DIDIT_WEBHOOK_SECRET=\"<SECRETO_DE_FIRMA>\" --project-ref plsnlwskttnskhsacina`
 3. El endpoint público de webhook será `https://plsnlwskttnskhsacina.supabase.co/functions/v1/didit-webhook`. Regístralo en Didit y configura su secreto de firma.
 4. Aplica la migración `20261017120000_mexico_locality_and_didit_identity.sql`.
 5. Despliega `didit-session` con verificación JWT habilitada y `didit-webhook` con verificación JWT deshabilitada; el webhook valida HMAC-SHA256 en `X-Signature-V2`.
