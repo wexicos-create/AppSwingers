@@ -32,25 +32,11 @@ export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPay
 
   const handlePay = (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setSuccess(true);
-      const newPayment: PaymentItem = {
-        id: 'pay_' + Date.now(),
-        kind: item.kind,
-        ref: item.ref,
-        label: item.label,
-        amount: totalAmount,
-        status: 'confirmado',
-        ts: Date.now(),
-      };
-      onSuccessPayment(newPayment);
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 2000);
-    }, 1500);
+    // Do not fake a payment success. Only a verified provider webhook or
+    // confirmed manual reconciliation may activate paid access.
+    window.alert(isEs
+      ? 'Los pagos reales aún no están conectados. No se realizó ningún cobro ni se activó la membresía.'
+      : 'Real payments are not connected yet. No charge was made and no membership was activated.');
   };
 
   return (

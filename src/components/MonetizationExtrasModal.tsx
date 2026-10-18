@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppRegion, SubscriptionTier } from '../types';
+import { calculateMexicanIva } from '../utils/mexicoTax';
 import { X, Sparkles, Flame, Crown, Megaphone, Zap, Heart, Check, Clock, ShieldCheck, DollarSign } from 'lucide-react';
 
 interface MonetizationExtrasModalProps {
@@ -24,22 +25,25 @@ export function MonetizationExtrasModal({
 
   if (!isOpen) return null;
 
-  const isMx = region === 'MX';
-  const currencySymbol = isMx ? '$' : '$';
-  const currencyCode = isMx ? 'MXN' : 'USD';
+  const currencySymbol = '$';
+  const currencyCode = 'MXN';
 
-  // Pricing calculation with 16% tax (IVA)
-  const silverBase = isMx ? 408 : 100;
-  const silverTax = Math.round(silverBase * 0.16 * 100) / 100;
-  const silverTotal = Math.round((silverBase + silverTax) * 100) / 100;
+  // Mexico-only prices; IVA is calculated consistently at 16%.
+  const silverBase = 329; // Prime Velvet, 15 days
+  const silverTax = calculateMexicanIva(silverBase).ivaAmount;
+  const silverTotal = calculateMexicanIva(silverBase).totalAmount;
 
-  const goldBase = isMx ? 800 : 180;
-  const goldTax = Math.round(goldBase * 0.16 * 100) / 100;
-  const goldTotal = Math.round((goldBase + goldTax) * 100) / 100;
+  const goldBase = 549; // Black Gold VIP Elite, 30 days
+  const goldTax = calculateMexicanIva(goldBase).ivaAmount;
+  const goldTotal = calculateMexicanIva(goldBase).totalAmount;
 
-  const sponsorBase = isMx ? 1500 : 800;
-  const sponsorTax = Math.round(sponsorBase * 0.16 * 100) / 100;
-  const sponsorTotal = Math.round((sponsorBase + sponsorTax) * 100) / 100;
+  const ultraPlusBase = 599; // Ultra Plus, 30 days
+  const ultraPlusTax = calculateMexicanIva(ultraPlusBase).ivaAmount;
+  const ultraPlusTotal = calculateMexicanIva(ultraPlusBase).totalAmount;
+
+  const sponsorBase = 2500; // Four event publications, 25 applications per event, 30 days
+  const sponsorTax = calculateMexicanIva(sponsorBase).ivaAmount;
+  const sponsorTotal = calculateMexicanIva(sponsorBase).totalAmount;
 
   const handleCheckout = (tier: SubscriptionTier | 'sponsored') => {
     if (tier === 'sponsored') {
@@ -50,12 +54,12 @@ export function MonetizationExtrasModal({
       }, 3000);
       return;
     }
-    onSelectTier(tier);
-    setSuccessMsg(isEs ? `¡Suscripción ${tier.toUpperCase()} activada con éxito!` : `${tier.toUpperCase()} subscription successfully activated!`);
-    setTimeout(() => {
-      setSuccessMsg(null);
-      onClose();
-    }, 2500);
+    if (tier === 'free') {
+      onSelectTier('free');
+      setSuccessMsg(isEs ? 'Plan Gratis seleccionado.' : 'Free plan selected.');
+      return;
+    }
+    setSuccessMsg(isEs ? 'Pago real pendiente de configuración: no se activó ningún plan.' : 'Real payment is not configured: no plan was activated.');
   };
 
   return (
@@ -84,7 +88,7 @@ export function MonetizationExtrasModal({
         </div>
 
         {successMsg && (
-          <div className="p-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-center text-sm font-semibold animate-pulse">
+          <div className="p-4 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-center text-sm font-semibold animate-pulse">
             {successMsg}
           </div>
         )}
@@ -125,7 +129,7 @@ export function MonetizationExtrasModal({
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-rose-400">{isEs ? 'Siguiente Plan (VIP Plus)' : 'VIP Plus Tier'}</span>
+                <span className="font-bold text-rose-400">{isEs ? 'Prime Velvet' : 'Prime Velvet'}</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-rose-500/20 text-rose-300">15 {isEs ? 'días' : 'days'}</span>
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{silverTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
@@ -150,11 +154,11 @@ export function MonetizationExtrasModal({
 
           {/* Ultra / Gold Plan */}
           <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition ${
-            currentTier === 'ultra' || currentTier === 'gold' ? 'bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-600/30' : 'bg-black/40 border-amber-500/30'
+            currentTier === 'ultra' ? 'bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-600/30' : 'bg-black/40 border-amber-500/30'
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
-                <span className="font-bold text-amber-400 flex items-center gap-1"><Crown className="w-4 h-4" /> Ultra VIP</span>
+                <span className="font-bold text-amber-400 flex items-center gap-1"><Crown className="w-4 h-4" /> Black Gold VIP Elite</span>
                 <span className="text-xs px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">1 {isEs ? 'mes' : 'month'}</span>
               </div>
               <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{goldTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
@@ -173,9 +177,30 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('ultra')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-black font-black text-xs shadow-lg shadow-amber-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Activar Ultra (Ilimitadas)' : 'Activate Ultra (Unlimited)')}
+              {currentTier === 'ultra' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Black Gold VIP Elite · 30 días' : 'Black Gold VIP Elite · 30 days')}
             </button>
           </div>
+        </div>
+
+
+        {/* Ultra Plus monthly plan */}
+        <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition ${currentTier === 'gold' ? 'bg-violet-950/40 border-violet-400/70 shadow-lg shadow-violet-600/30' : 'bg-black/40 border-violet-500/30'}`}>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="font-bold text-violet-300">Ultra Plus</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-violet-500/20 text-violet-200">30 {isEs ? 'días' : 'days'}</span>
+            </div>
+            <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{ultraPlusTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
+            <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${ultraPlusBase} + 16% IVA (${ultraPlusTax})` : `Base: ${ultraPlusBase} + 16% IVA (${ultraPlusTax})`}</div>
+            <ul className="text-xs text-white/70 flex flex-col gap-2">
+              <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-violet-300" /> {isEs ? 'Postulaciones ilimitadas' : 'Unlimited applications'}</li>
+              <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-violet-300" /> {isEs ? 'Herramientas de visibilidad avanzada' : 'Advanced visibility tools'}</li>
+              <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-violet-300" /> {isEs ? 'Vigencia mensual' : 'Monthly validity'}</li>
+            </ul>
+          </div>
+          <button onClick={() => handleCheckout('gold')} className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-500 text-white font-bold text-xs shadow-lg shadow-violet-600/30 hover:opacity-95 transition">
+            {currentTier === 'gold' ? (isEs ? '✓ Plan Actual' : '✓ Current Plan') : (isEs ? 'Ultra Plus · 30 días' : 'Ultra Plus · 30 days')}
+          </button>
         </div>
 
         {/* Sponsored Profile Ad Tier */}
@@ -190,8 +215,8 @@ export function MonetizationExtrasModal({
             </h4>
             <p className="text-xs text-white/70">
               {isEs 
-                ? `Promociona tu club swinger, agencia o evento destacado. Incluye base ${sponsorBase} + 16% IVA (${sponsorTax}).`
-                : `Promote your swinger club, agency, or featured event. Includes base ${sponsorBase} + 16% Tax (${sponsorTax}).`}
+                ? `Paquete para agencias y creadoras: 4 publicaciones de eventos, máximo 25 postulaciones por evento, vigencia de 30 días. Base ${sponsorBase} + 16% IVA (${sponsorTax}).`
+                : `Agency/creator package: 4 event publications, up to 25 applications per event, valid for 30 days. Base ${sponsorBase} + 16% IVA (${sponsorTax}).`}
             </p>
           </div>
           <button
