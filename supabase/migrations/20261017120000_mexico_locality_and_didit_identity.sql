@@ -78,6 +78,13 @@ create policy "creator updates own creator profile" on public.creator_profiles
     user_id = (select auth.uid())
     and country_code = 'MX'
     and state = (select p.state from public.profiles p where p.id = (select auth.uid()))
+    and (
+      (moderation_status = 'approved' and (
+        visibility in ('paused','private')
+        or (visibility = 'published' and photo_match_status = 'matched' and profile_photo_path is not null)
+      ))
+      or (moderation_status <> 'approved' and visibility <> 'published')
+    )
   );
 
 -- Reuse the existing identity_verifications table; only provider outcome metadata is stored.
