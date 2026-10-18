@@ -547,27 +547,15 @@ export default function App() {
     alert(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
   };
 
-  // Propuestas de eventos en México; la verificación Didit es obligatoria.
-  const handleSubmitCollaboration = (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
-    const fullProposal: CollaborationProposal = {
-      ...proposal,
-      id: `collab_${Date.now()}`,
-      status: 'en revisión',
-      paid: false,
-      createdAt: Date.now(),
-    };
-    // Also insert as a public proposal
-    const asProp: Proposal = {
-      id: fullProposal.id,
-      title: fullProposal.title,
-      cat: fullProposal.eventType,
-      author: `${fullProposal.organizerName} (${fullProposal.organizerType} Verificada)`,
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: `Ciudad: ${fullProposal.city} | Ratio: ${fullProposal.attendeeRatio} | Reglas: ${fullProposal.consentRules} | Salud: ${fullProposal.healthProtocols}`,
-      mine: true,
-    };
+  // Event proposals require server-recorded Didit identity, age, and face-match verification.
+  const handleSubmitCollaboration = async (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
+    if (!user) throw new Error('Inicia sesión para enviar una propuesta.');
+    const { data: identity, error } = await supabase.from('profiles').select('identity_verification_status,age_verified_at,identity_verified_at,face_match_status,profile_photo_match_status').eq('id', user.id).maybeSingle();
+    if (error || !identity || identity.identity_verification_status !== 'verified' || !identity.age_verified_at || !identity.identity_verified_at || identity.face_match_status !== 'matched' || identity.profile_photo_match_status !== 'matched') {
+      throw new Error('Completa primero la verificación INE + rostro + prueba de vida con Didit y la revisión de foto de perfil.');
+    }
+    const fullProposal: CollaborationProposal = { ...proposal, region: 'MX', id: 'collab_' + Date.now(), status: 'en revisión', paid: false, createdAt: Date.now() };
+    const asProp: Proposal = { id: fullProposal.id, title: fullProposal.title, cat: fullProposal.eventType, author: fullProposal.organizerName + ' (Verificada)', when: isEs ? 'ahora' : 'just now', apps: 0, status: 'en revisión', body: 'Ciudad: ' + fullProposal.city + ', ' + fullProposal.state + ' | Ratio: ' + fullProposal.attendeeRatio + ' | Reglas: ' + fullProposal.consentRules + ' | Salud: ' + fullProposal.healthProtocols, city: fullProposal.city, state: fullProposal.state, mine: true };
     setProposals(prev => [asProp, ...prev]);
   };
 
