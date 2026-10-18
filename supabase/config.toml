@@ -1,0 +1,7 @@
+project_id = "plsnlwskttnskhsacina"
+
+[functions.didit-session]
+verify_jwt = true
+
+[functions.didit-webhook]
+verify_jwt = false
