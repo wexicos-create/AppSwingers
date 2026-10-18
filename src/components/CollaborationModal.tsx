@@ -55,8 +55,8 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
   const [city, setCity] = useState('San Luis Potosí');
   const [stateName, setStateName] = useState('San Luis Potosí');
   const mexicanStates = ['Aguascalientes','Baja California','Baja California Sur','Campeche','Chiapas','Chihuahua','Ciudad de México','Coahuila','Colima','Durango','Estado de México','Guanajuato','Guerrero','Hidalgo','Jalisco','Michoacán','Morelos','Nayarit','Nuevo León','Oaxaca','Puebla','Querétaro','Quintana Roo','San Luis Potosí','Sinaloa','Sonora','Tabasco','Tamaulipas','Tlaxcala','Veracruz','Yucatán','Zacatecas'];
-  const [date, setDate] = useState('Próximo sábado');
-  const [time, setTime] = useState('21:00 hrs');
+  const [date, setDate] = useState(() => new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+  const [time, setTime] = useState('21:00');
   
   // Ratio & Capacity
   const [capacity, setCapacity] = useState(14);
@@ -117,6 +117,8 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
         organizerName: hostessFullName || userName || 'Anfitriona',
         region: 'MX',
         state: stateName,
+        eventDate: date,
+        schedule: time,
         feeAmount,
         city: city.trim(),
         consentRules: consentRules + ' | Ambientes: ' + venueZones,
@@ -319,14 +321,10 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-white/80 font-semibold block mb-1">Fecha tentativa:</label>
-                    <input
-                      type="text"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      placeholder="Próximo fin de semana"
-                      className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none"
-                    />
+                    <label className="text-white/80 font-semibold block mb-1">Fecha del evento:</label>
+                    <input type="date" required min={new Date().toISOString().slice(0,10)} value={date} onChange={e => setDate(e.target.value)} className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none" />
+                    <label className="text-white/80 font-semibold block mb-1 mt-2">Hora local:</label>
+                    <input type="time" required value={time} onChange={e => setTime(e.target.value)} className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none" />
                   </div>
                 </div>
 
