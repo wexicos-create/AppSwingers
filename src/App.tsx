@@ -48,6 +48,7 @@ import { AdminModal } from './components/AdminModal';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
+import { ApkInstallBanner } from './components/ApkInstallBanner';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
@@ -260,7 +261,7 @@ export default function App() {
       if (isManualClick) {
         setLocationGranted(true);
         setLocationBannerDismissed(true);
-        const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
+        const cityName = 'Selecciona tu estado y ciudad en México';
         setUserProfile(prev => ({ ...prev, locationCity: cityName }));
         setPushToast({
           title: isEs ? 'Ubicación Activada' : 'Location Activated',
@@ -1131,6 +1132,8 @@ export default function App() {
             setTimeout(() => setPushToast(null), 5500);
           }}
         />
+
+        <ApkInstallBanner />
 
         {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
         {pushToast && (
