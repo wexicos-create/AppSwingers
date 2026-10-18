@@ -5,6 +5,8 @@ import { Calendar, MapPin, Ticket, ShieldCheck, Plus, CheckCircle2, Megaphone, X
 
 interface EventsViewProps {
   events: ClubEvent[];
+  city?: string;
+  stateName?: string;
   reservations: Reservation[];
   onReserve: (eventId: string, tierId: string | null) => void;
   onCancelReservation: (reservationId: string) => void;
@@ -13,6 +15,8 @@ interface EventsViewProps {
 
 export const EventsView: React.FC<EventsViewProps> = ({
   events,
+  city = 'San Luis Potosí',
+  stateName = 'San Luis Potosí',
   reservations,
   onReserve,
   onCancelReservation,
@@ -54,7 +58,7 @@ export const EventsView: React.FC<EventsViewProps> = ({
           <h2 className="text-2xl font-black bg-gradient-to-r from-purple-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
             Eventos & Fiestas
           </h2>
-          <p className="text-xs text-purple-200/70">Reuniones selectas en CDMX &bull; Mascaradas</p>
+          <p className="text-xs text-purple-200/70">Cartelera local: {city}, {stateName}, México</p>
         </div>
 
         <button
@@ -143,7 +147,7 @@ export const EventsView: React.FC<EventsViewProps> = ({
       {/* VIEW: CARTELERA DE EVENTOS */}
       {viewTab === 'cartelera' && (
         <div className="space-y-4">
-          {events.map((ev, index) => {
+          {events.length === 0 ? <div className="rounded-3xl border border-purple-500/20 bg-white/5 p-6 text-center"><MapPin className="mx-auto mb-3 h-7 w-7 text-purple-300"/><h3 className="text-sm font-bold text-white">Aún no hay eventos en {city}, {stateName}</h3><p className="mt-2 text-xs leading-relaxed text-white/60">No mezclaremos eventos de otros estados. Activa las notificaciones para enterarte cuando haya eventos en tu zona.</p></div> : events.map((ev, index) => {
             const hasReservation = reservations.some(r => r.eventId === ev.id && r.status !== 'cancelado');
             const percentSold = Math.min(100, Math.round((ev.sold / ev.cap) * 100));
 
@@ -369,7 +373,7 @@ export const EventsView: React.FC<EventsViewProps> = ({
               />
               <input
                 type="text"
-                placeholder="Zona (ej. Roma Norte, CDMX)"
+                placeholder="Zona local, colonia o municipio"
                 value={agencyForm.zone}
                 onChange={(e) => setAgencyForm({ ...agencyForm, zone: e.target.value })}
                 className="w-full px-4 py-2.5 rounded-2xl bg-neutral-900 border border-purple-500/30 text-sm text-white"
