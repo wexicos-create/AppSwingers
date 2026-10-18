@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import {
   syncUserProfile,
+  fetchUserLocation,
   recordSwipe,
   fetchUserMatches,
   fetchDiscoverableProfiles,
@@ -284,6 +285,11 @@ export default function App() {
     };
   }, []);
 
+  // Return to the identity status panel after the hosted Didit flow.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('verification') === 'return') setActiveTab('perfil');
+  }, []);
+
   // Supabase Auth & backend connectivity
   useEffect(() => {
     void testConnection().then(setIsBackendConnected);
@@ -302,13 +308,17 @@ export default function App() {
       // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
       void syncUserProfile(currentUser)
         .then(async savedAlias => {
-          const [remoteMatches, discoveredProfiles, remoteProposals] = await Promise.all([
+          const [remoteMatches, discoveredProfiles, remoteProposals, userLocation] = await Promise.all([
             fetchUserMatches(currentUser.id),
             fetchDiscoverableProfiles(),
             fetchExperienceProposals(currentUser.id),
+            fetchUserLocation(currentUser.id),
           ]);
-          if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
-          if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals);
+          const activeState = userLocation?.state || 'San Luis Potosí';
+          const activeCity = userLocation?.city || 'San Luis Potosí';
+          setUserProfile(prev => ({ ...prev, locationState: activeState, locationCity: activeCity }));
+          if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles.filter(profile => profile.state === activeState && (profile.city || '').toLocaleLowerCase('es-MX') === activeCity.toLocaleLowerCase('es-MX')));
+          if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals.filter(proposal => proposal.state === activeState && (proposal.city || '').toLocaleLowerCase('es-MX') === activeCity.toLocaleLowerCase('es-MX')));
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
