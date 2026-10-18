@@ -203,8 +203,8 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
             </div>
             <h3 className="text-xl font-bold text-white">¡Propuesta enviada con éxito!</h3>
             <p className="text-xs text-purple-200/80 max-w-sm mx-auto leading-relaxed">
-              Tu propuesta &ldquo;{title}&rdquo; ha sido registrada con el folio <strong className="text-pink-400">PROP-{region === 'MX' ? 'SLP' : 'USA'}-{Math.floor(1000 + Math.random() * 9000)}</strong>.
-              El equipo de auditoría legal en {region === 'MX' ? 'San Luis Potosí' : 'USA'} revisará los documentos INE y los protocolos de consentimiento.
+              Tu propuesta &ldquo;{title}&rdquo; ha sido registrada con el folio <strong className="text-pink-400">PROP-MX-{Math.floor(1000 + Math.random() * 9000)}</strong>.
+              El equipo de revisión en México revisará la propuesta y los protocolos de consentimiento.
             </p>
             <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-xs text-white/70 max-w-xs mx-auto">
               Tarifa de revisión cubierta: <strong className="text-emerald-400">{currencyString}</strong>
@@ -220,14 +220,14 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
           /* Structured Form with Clear Schema Points */
           <form onSubmit={handleCompleteSubmission} className="space-y-4 text-xs">
             
-            {/* Banner de Precio de Revisión Dinámico ($350 MXN o $80 USD) */}
+            {/* Tarifa de revisión para México */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/80 via-pink-950/80 to-purple-950/80 border border-pink-500/40 flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
                   Tarifa de Revisión y Validación Oficial
                 </span>
                 <span className="text-xs text-white/80">
-                  {region === 'MX' ? 'Revisión por comité en San Luis Potosí, SLP' : 'Compliance & safety review fee in the US'}
+                  Revisión de seguridad en México
                 </span>
               </div>
               <div className="text-right">
@@ -314,7 +314,7 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      placeholder={region === 'MX' ? 'San Luis Potosí, SLP' : 'Miami / Houston'}
+                      placeholder="Ciudad o municipio en México"
                       className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none"
                     />
                   </div>
@@ -563,7 +563,7 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                     className="mt-0.5 rounded accent-pink-500"
                   />
                   <span className="text-[11px] text-white/80 leading-snug">
-                    Confirmo que soy mujer o parte de una pareja responsable, que los datos son verídicos y acepto la auditoría legal de {currencyString} para la revisión y publicación oficial del evento en San Luis Potosí o USA.
+                    Confirmo que soy mujer o parte de una pareja responsable, que los datos son verídicos y acepto la auditoría legal de {currencyString} para la revisión y publicación oficial del evento en México.
                   </span>
                 </label>
 
