@@ -93,6 +93,45 @@ $$;
 revoke all on function public.discover_verified_profiles(integer) from public, anon;
 grant execute on function public.discover_verified_profiles(integer) to authenticated;
 
+-- Keep client-side profile edits away from verification, age, moderation and consent result fields.
+revoke insert, update on public.profiles from authenticated;
+grant insert (id, display_name, profile_kind, bio, city, state, country_code, interests, seeking, preferred_age_ranges, max_distance_km)
+  on public.profiles to authenticated;
+grant update (id, display_name, profile_kind, bio, city, state, country_code, interests, seeking, preferred_age_ranges, max_distance_km)
+  on public.profiles to authenticated;
+drop policy if exists profiles_insert_own on public.profiles;
+create policy profiles_insert_own on public.profiles
+  for insert to authenticated with check (
+    id = (select auth.uid())
+    and status = 'pending'
+    and age_verified_at is null
+    and identity_verified_at is null
+    and identity_verification_status = 'not_started'
+    and face_match_status = 'pending'
+    and profile_photo_match_status = 'pending'
+    and country_code = 'MX'
+  );
+
+drop policy if exists "Verified adults create pending proposals" on public.experience_proposals;
+create policy "Verified adults create pending proposals" on public.experience_proposals
+  for insert to authenticated with check (
+    owner_user_id = (select auth.uid())
+    and status = 'pending'
+    and country_code = 'MX'
+    and state is not null
+    and exists (
+      select 1 from public.profiles p
+      where p.id = (select auth.uid())
+        and p.status = 'active'
+        and p.age_verified_at is not null
+        and p.identity_verified_at is not null
+        and p.identity_verification_status = 'verified'
+        and p.face_match_status = 'matched'
+        and p.profile_photo_path is not null
+        and p.profile_photo_match_status = 'matched'
+    )
+  );
+
 -- Enforce same-state reads at RLS, not just in the client-side filters.
 drop policy if exists "Read active proposals or own proposals" on public.experience_proposals;
 create policy "Read active proposals or own proposals" on public.experience_proposals
