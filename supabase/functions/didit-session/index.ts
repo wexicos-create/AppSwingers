@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
   const { error: consentError } = await admin.from('profiles').update({ identity_consent_at: consentAt, terms_accepted_at: consentAt, updated_at: consentAt }).eq('id', user.id);
   if (consentError) return Response.json({ error: 'consent_record_failed' }, { status: 500, headers: corsHeaders });
 
-  const diditResponse = await fetch("https://verification.didit.me/v3/session/", {
+  const diditResponse = await fetch("https://apx.didit.me/auth/v2/session/", {
     method: "POST",
     headers: { "x-api-key": diditKey, "content-type": "application/json" },
     body: JSON.stringify({
