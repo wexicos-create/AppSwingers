@@ -166,8 +166,8 @@ export default function App() {
       id: 'ann_1',
       title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
       body: isEs 
-        ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
-        : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
+        ? 'Lanzamiento en México. Perfiles y eventos organizados por estado y ciudad, con acceso exclusivo para adultos.' 
+        : 'Mexico-only launch. Profiles and events are organized by state and city, for adults only.',
       ts: Date.now(),
     }
   ]);
@@ -223,7 +223,7 @@ export default function App() {
             setRegion('MX');
             setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
           } else {
-            setRegion('US');
+            setRegion('MX');
             setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
           }
           if (isManualClick) {
@@ -593,26 +593,9 @@ export default function App() {
               </span>
               {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
               <div className="flex items-center gap-1 ml-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const nextReg = region === 'MX' ? 'US' : 'MX';
-                    setRegion(nextReg);
-                    setCurrentIndex(0);
-                    setPushToast({
-                      title: nextReg === 'MX' ? '🇲🇽 Región: México' : '🇺🇸 Region: United States',
-                      body: nextReg === 'MX' 
-                        ? 'Catálogo regional de México activado (distancias en KM).' 
-                        : 'US lifestyle catalog activated (distances in MI).'
-                    });
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-purple-900/90 hover:bg-pink-900/90 text-[10px] font-black tracking-wider uppercase text-pink-300 border border-pink-400/50 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
-                  title={isEs ? 'Cambiar región: México / Estados Unidos' : 'Switch region: Mexico / United States'}
-                  aria-label="Selector de país o región"
-                >
-                  <span>{region === 'MX' ? '🇲🇽 MX' : '🇺🇸 US'}</span>
-                </button>
+                <div className="px-1.5 py-0.5 rounded bg-purple-900/90 text-[10px] font-black tracking-wider uppercase text-pink-300 border border-pink-400/50 flex items-center gap-0.5" aria-label="Mercado México">
+                  🇲🇽 MX
+                </div>
 
                 <button
                   type="button"
