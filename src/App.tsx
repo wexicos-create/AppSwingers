@@ -520,7 +520,7 @@ export default function App() {
   const handleCreateProposal = async (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
     if (user) {
       try {
-        const created = await createExperienceProposal(user.id, newProp, userProfile.locationCity, region);
+        const created = await createExperienceProposal(user.id, newProp, userProfile.locationCity, userProfile.locationState, 'MX');
         setProposals(prev => [created, ...prev.filter(p => p.id !== created.id)]);
         alert(isEs ? 'Propuesta enviada a revisión y guardada en Supabase.' : 'Proposal sent for review and saved to Supabase.');
       } catch (error) {
@@ -878,7 +878,9 @@ export default function App() {
           {/* TAB 2: PROPUESTAS */}
           {activeTab === 'propuestas' && (
             <ProposalsView
-              proposals={proposals}
+              city={userProfile.locationCity}
+              stateName={userProfile.locationState}
+              proposals={proposals.filter(item => item.state === userProfile.locationState && (item.city || '').toLocaleLowerCase('es-MX') === userProfile.locationCity.toLocaleLowerCase('es-MX'))}
               appliedIds={appliedProposalIds}
               savedIds={savedProposalIds}
               onApply={handleApplyProposal}
@@ -896,7 +898,9 @@ export default function App() {
           {/* TAB 3: EVENTOS */}
           {activeTab === 'eventos' && (
             <EventsView
-              events={events}
+              city={userProfile.locationCity}
+              stateName={userProfile.locationState}
+              events={events.filter(item => item.state === userProfile.locationState && (item.city || '').toLocaleLowerCase('es-MX') === userProfile.locationCity.toLocaleLowerCase('es-MX'))}
               reservations={reservations}
               onReserve={handleReserveEvent}
               onCancelReservation={handleCancelReservation}
