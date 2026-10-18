@@ -20,6 +20,23 @@ alter table public.profiles drop constraint if exists profiles_face_match_status
 alter table public.profiles add constraint profiles_face_match_status_check
   check (face_match_status in ('pending','matched','rejected'));
 
+alter table public.creator_profiles add column if not exists state text;
+alter table public.creator_profiles drop constraint if exists creator_profiles_country_code_check;
+alter table public.creator_profiles add constraint creator_profiles_country_code_check check (country_code = 'MX');
+
+alter table public.event_proposals
+  add column if not exists state text,
+  add column if not exists country_code char(2) not null default 'MX';
+alter table public.event_proposals drop constraint if exists event_proposals_country_code_check;
+alter table public.event_proposals add constraint event_proposals_country_code_check check (country_code = 'MX');
+
+create index if not exists experience_proposals_local_discovery_idx
+  on public.experience_proposals(country_code, state, city, status);
+create index if not exists event_proposals_local_discovery_idx
+  on public.event_proposals(country_code, state, city, status, event_date);
+create index if not exists creator_profiles_local_discovery_idx
+  on public.creator_profiles(country_code, state, city, visibility, moderation_status);
+
 -- Reuse the existing identity_verifications table; only provider outcome metadata is stored.
 create index if not exists identity_verifications_provider_session_idx on public.identity_verifications(provider_session_id);
 alter table public.identity_verifications enable row level security;
@@ -75,3 +92,83 @@ as $$
 $$;
 revoke all on function public.discover_verified_profiles(integer) from public, anon;
 grant execute on function public.discover_verified_profiles(integer) to authenticated;
+
+-- Enforce same-state reads at RLS, not just in the client-side filters.
+drop policy if exists "Read active proposals or own proposals" on public.experience_proposals;
+create policy "Read active proposals or own proposals" on public.experience_proposals
+  for select to authenticated using (
+    owner_user_id = (select auth.uid())
+    or (
+      status = 'active'
+      and country_code = 'MX'
+      and state = (select p.state from public.profiles p where p.id = (select auth.uid()))
+      and exists (
+        select 1 from public.profiles me
+        where me.id = (select auth.uid())
+          and me.status = 'active'
+          and me.age_verified_at is not null
+          and me.identity_verified_at is not null
+          and me.identity_verification_status = 'verified'
+          and me.face_match_status = 'matched'
+          and me.profile_photo_path is not null
+          and me.profile_photo_match_status = 'matched'
+      )
+    )
+  );
+
+drop policy if exists event_proposals_owner_read on public.event_proposals;
+create policy event_proposals_owner_read on public.event_proposals
+  for select to authenticated using (
+    organizer_user_id = (select auth.uid())
+    or private.is_admin()
+    or (
+      status = 'approved'
+      and country_code = 'MX'
+      and state = (select p.state from public.profiles p where p.id = (select auth.uid()))
+      and exists (
+        select 1 from public.profiles me
+        where me.id = (select auth.uid())
+          and me.status = 'active'
+          and me.age_verified_at is not null
+          and me.identity_verified_at is not null
+          and me.identity_verification_status = 'verified'
+          and me.face_match_status = 'matched'
+          and me.profile_photo_match_status = 'matched'
+      )
+    )
+  );
+
+drop policy if exists event_proposals_owner_insert on public.event_proposals;
+create policy event_proposals_owner_insert on public.event_proposals
+  for insert to authenticated with check (
+    organizer_user_id = (select auth.uid())
+    and status = 'pending'
+    and approved_by is null
+    and approved_at is null
+    and country_code = 'MX'
+    and state is not null
+    and exists (
+      select 1 from public.profiles me
+      where me.id = (select auth.uid())
+        and me.status = 'active'
+        and me.age_verified_at is not null
+        and me.identity_verified_at is not null
+        and me.identity_verification_status = 'verified'
+        and me.face_match_status = 'matched'
+        and me.profile_photo_match_status = 'matched'
+    )
+  );
+
+drop policy if exists "creator reads own or approved public creator profile" on public.creator_profiles;
+create policy "creator reads own or approved public creator profile" on public.creator_profiles
+  for select to authenticated using (
+    user_id = (select auth.uid())
+    or (
+      visibility = 'published'
+      and moderation_status = 'approved'
+      and photo_match_status = 'matched'
+      and profile_photo_path is not null
+      and country_code = 'MX'
+      and state = (select p.state from public.profiles p where p.id = (select auth.uid()))
+    )
+  );
