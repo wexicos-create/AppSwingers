@@ -344,16 +344,20 @@ const proposalCategoryFromDb = (category: string): string => ({
 
 export async function fetchExperienceProposals(userId: string): Promise<Proposal[]> {
   if (!userId) return [];
+  const { data: ownProfile } = await supabase.from('profiles').select('state,city').eq('id', userId).maybeSingle();
+  if (!ownProfile?.state) return [];
   const { data, error } = await supabase
     .from('experience_proposals')
-    .select('id,owner_user_id,title,description,category,city,status,created_at')
+    .select('id,owner_user_id,title,description,category,city,state,status,created_at')
+    .eq('country_code', 'MX')
+    .eq('state', ownProfile.state)
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) {
     console.warn('Supabase proposals load failed:', error.code);
     return [];
   }
-  return (data ?? []).map(row => ({
+  return (data ?? []).filter(row => !ownProfile.city || row.city?.toLocaleLowerCase('es-MX') === ownProfile.city.toLocaleLowerCase('es-MX')).map(row => ({
     id: row.id,
     title: row.title,
     cat: proposalCategoryFromDb(row.category),
@@ -362,6 +366,8 @@ export async function fetchExperienceProposals(userId: string): Promise<Proposal
     apps: 0,
     status: row.status === 'active' ? 'publicada' : row.status === 'rejected' ? 'rechazada' : row.status === 'closed' || row.status === 'paused' ? 'retirada' : 'en revisión',
     body: row.description,
+    city: row.city ?? undefined,
+    state: row.state ?? undefined,
     mine: row.owner_user_id === userId,
   }));
 }
@@ -370,6 +376,7 @@ export async function createExperienceProposal(
   userId: string,
   proposal: { title: string; cat: string; body: string; limited: boolean },
   city?: string,
+  state?: string,
   region: AppRegion = 'MX',
 ): Promise<Proposal> {
   const title = proposal.title.trim().slice(0, 120);
@@ -393,9 +400,11 @@ export async function createExperienceProposal(
       boundaries: proposal.limited ? 'Identidad y datos personales limitados hasta aceptación mutua.' : 'Consentimiento explícito, respeto y límites acordados.',
       location_mode: 'city_only',
       city: city?.trim().slice(0, 100) || null,
+      state: state?.trim().slice(0, 80) || null,
+      country_code: 'MX',
       status: 'pending',
     })
-    .select('id,owner_user_id,title,description,category,city,status,created_at')
+    .select('id,owner_user_id,title,description,category,city,state,status,created_at')
     .single();
 
   if (error || !data) {
@@ -411,6 +420,8 @@ export async function createExperienceProposal(
     apps: 0,
     status: 'en revisión',
     body: data.description,
+    city: data.city ?? undefined,
+    state: data.state ?? undefined,
     mine: true,
   };
 }
