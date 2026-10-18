@@ -4,6 +4,13 @@ alter table public.profiles
   add column if not exists identity_verification_status text not null default 'not_started',
   add column if not exists face_match_status text not null default 'pending';
 
+-- Existing experience proposals are retained; each record now belongs to a Mexican state/city.
+alter table public.experience_proposals
+  add column if not exists state text,
+  add column if not exists country_code char(2) not null default 'MX';
+alter table public.experience_proposals drop constraint if exists experience_proposals_country_code_check;
+alter table public.experience_proposals add constraint experience_proposals_country_code_check check (country_code = 'MX');
+
 alter table public.profiles drop constraint if exists profiles_country_code_check;
 alter table public.profiles add constraint profiles_country_code_check check (country_code = 'MX');
 alter table public.profiles drop constraint if exists profiles_identity_verification_status_check;
