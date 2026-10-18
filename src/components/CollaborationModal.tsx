@@ -28,7 +28,7 @@ interface CollaborationModalProps {
   userName: string;
   region: AppRegion;
   onSwitchProfileKind?: (kind: ProfileKind) => void;
-  onSubmitProposal: (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => void;
+  onSubmitProposal: (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => void | Promise<void>;
 }
 
 export const CollaborationModal: React.FC<CollaborationModalProps> = ({
@@ -43,8 +43,8 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
   // Requirement: Postulante must be a Woman ('Dama') or Couple ('Pareja')
   const isEligible = userKind === 'Dama' || userKind === 'Pareja';
 
-  const feeAmount = region === 'MX' ? 350 : 80;
-  const currencyString = region === 'MX' ? '$350 MXN' : '$80 USD';
+  const feeAmount = 500;
+  const currencyString = '$500 MXN';
 
   // Stepper state
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -52,7 +52,9 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
   // Form state according to points scheme
   const [eventType, setEventType] = useState<'Swinger' | 'GangBang' | 'Trío MHM' | 'Fiesta Privada VIP'>('Swinger');
   const [title, setTitle] = useState('');
-  const [city, setCity] = useState(region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX');
+  const [city, setCity] = useState('San Luis Potosí');
+  const [stateName, setStateName] = useState('San Luis Potosí');
+  const mexicanStates = ['Aguascalientes','Baja California','Baja California Sur','Campeche','Chiapas','Chihuahua','Ciudad de México','Coahuila','Colima','Durango','Estado de México','Guanajuato','Guerrero','Hidalgo','Jalisco','Michoacán','Morelos','Nayarit','Nuevo León','Oaxaca','Puebla','Querétaro','Quintana Roo','San Luis Potosí','Sinaloa','Sonora','Tabasco','Tamaulipas','Tlaxcala','Veracruz','Yucatán','Zacatecas'];
   const [date, setDate] = useState('Próximo sábado');
   const [time, setTime] = useState('21:00 hrs');
   
@@ -103,32 +105,32 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
     }
   };
 
-  const handleCompleteSubmission = (e: React.FormEvent) => {
+  const handleCompleteSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isEligible || !title.trim() || !acceptedTerms) return;
-
+    if (!isEligible || !title.trim() || !city.trim() || !acceptedTerms) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      onSubmitProposal({
+    try {
+      await onSubmitProposal({
         title: title.trim(),
         eventType,
         organizerType: userKind === 'Pareja' ? 'Pareja' : 'Mujer',
-        organizerName: hostessFullName || userName || 'Anfitriona Verificada',
-        region,
+        organizerName: hostessFullName || userName || 'Anfitriona',
+        region: 'MX',
+        state: stateName,
         feeAmount,
         city: city.trim(),
-        consentRules: `${consentRules} | Ambientes: ${venueZones}`,
-        attendeeRatio: `${attendeeRatio} | Vestimenta: ${dressCode}`,
+        consentRules: consentRules + ' | Ambientes: ' + venueZones,
+        attendeeRatio: attendeeRatio + ' | Vestimenta: ' + dressCode,
         capacity,
         healthProtocols: healthProtocols.trim(),
-        admissionFilter: `${admissionFilter} | Contacto: ${hostessContact}`,
-        ineFrontUrl: ineFrontPreview || 'doc_ine_front_verified',
-        ineBackUrl: ineBackPreview || 'doc_ine_back_verified',
-        selfieUrl: selfiePreview || 'doc_selfie_verified',
+        admissionFilter: admissionFilter + ' | Contacto: ' + hostessContact,
       });
-      setIsSubmitting(false);
       setSuccessSubmitted(true);
-    }, 1000);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No se pudo enviar la propuesta.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -141,7 +143,7 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
             <div className="flex items-center gap-2">
               <Flame className="w-4 h-4 text-pink-400" />
               <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300">
-                Colaboración Swinger / GangBang &bull; {region === 'MX' ? '🇲🇽 San Luis Potosí & México' : '🇺🇸 USA'}
+                Colaboración Swinger / GangBang · México
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
@@ -545,76 +547,13 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                   />
                 </div>
 
-                {/* 3 Upload slots: INE Front, INE Back, and Selfie */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                  
-                  {/* INE Frontal */}
-                  <label className="p-3 rounded-2xl bg-neutral-950/80 border border-dashed border-purple-500/40 hover:border-pink-400 cursor-pointer flex flex-col items-center text-center transition group">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, setIneFrontPreview)}
-                      className="hidden"
-                    />
-                    {ineFrontPreview ? (
-                      <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1">
-                        <img src={ineFrontPreview} alt="INE Frente" className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 p-0.5 rounded-full bg-emerald-500 text-white">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      </div>
-                    ) : (
-                      <Upload className="w-5 h-5 text-purple-400 group-hover:text-pink-400 mb-1" />
-                    )}
-                    <span className="text-[11px] font-bold text-white">INE (Frente)</span>
-                    <span className="text-[9px] text-white/50">{ineFrontPreview ? 'Cargado' : 'Subir imagen'}</span>
-                  </label>
-
-                  {/* INE Reverso */}
-                  <label className="p-3 rounded-2xl bg-neutral-950/80 border border-dashed border-purple-500/40 hover:border-pink-400 cursor-pointer flex flex-col items-center text-center transition group">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, setIneBackPreview)}
-                      className="hidden"
-                    />
-                    {ineBackPreview ? (
-                      <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1">
-                        <img src={ineBackPreview} alt="INE Reverso" className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 p-0.5 rounded-full bg-emerald-500 text-white">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      </div>
-                    ) : (
-                      <Upload className="w-5 h-5 text-purple-400 group-hover:text-pink-400 mb-1" />
-                    )}
-                    <span className="text-[11px] font-bold text-white">INE (Reverso)</span>
-                    <span className="text-[9px] text-white/50">{ineBackPreview ? 'Cargado' : 'Subir imagen'}</span>
-                  </label>
-
-                  {/* Selfie con Documento */}
-                  <label className="p-3 rounded-2xl bg-neutral-950/80 border border-dashed border-purple-500/40 hover:border-pink-400 cursor-pointer flex flex-col items-center text-center transition group">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, setSelfiePreview)}
-                      className="hidden"
-                    />
-                    {selfiePreview ? (
-                      <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1">
-                        <img src={selfiePreview} alt="Selfie" className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 p-0.5 rounded-full bg-emerald-500 text-white">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      </div>
-                    ) : (
-                      <Camera className="w-5 h-5 text-purple-400 group-hover:text-pink-400 mb-1" />
-                    )}
-                    <span className="text-[11px] font-bold text-white">Selfie con ID</span>
-                    <span className="text-[9px] text-white/50">{selfiePreview ? 'Cargado' : 'Subir foto'}</span>
-                  </label>
+                <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3 text-xs leading-relaxed text-purple-100">
+                  No vuelvas a subir tu INE aquí. Primero verifica tu identidad desde Perfil con Didit (INE/documento mexicano, prueba de vida y comparación facial). El servidor no aceptará propuestas sin estado verificado.
                 </div>
-
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <label className="text-xs text-white/75">Estado<select required value={stateName} onChange={e => setStateName(e.target.value)} className="mt-1 w-full rounded-xl bg-neutral-950 border border-purple-500/30 p-2.5 text-white">{mexicanStates.map(state => <option key={state} value={state}>{state}</option>)}</select></label>
+                  <label className="text-xs text-white/75">Ciudad o municipio<input required value={city} onChange={e => setCity(e.target.value)} placeholder="Ciudad o municipio" className="mt-1 w-full rounded-xl bg-neutral-950 border border-purple-500/30 p-2.5 text-white" /></label>
+                </div>
                 {/* Terminos y condiciones de auditoria */}
                 <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-neutral-950/60 border border-purple-500/20 cursor-pointer mt-2">
                   <input
