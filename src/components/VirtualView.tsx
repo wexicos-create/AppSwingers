@@ -50,9 +50,9 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   const isEs = lang === 'es';
   const isMx = region === 'MX';
   const currencySymbol = isMx ? '$' : '$';
-  const currencyCode = isMx ? 'MXN' : 'USD';
-  const taxLabel = isMx ? 'IVA (16% México)' : (isEs ? 'Impuestos por configurar' : 'Tax setup pending');
-  const taxRate = isMx ? 0.16 : 0;
+  const currencyCode = 'MXN';
+  const taxLabel = 'IVA (16% México)';
+  const taxRate = 0.16;
 
   const [activeTab, setActiveTab] = useState<'creadoras' | 'vivo' | 'subir'>('creadoras');
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
@@ -244,7 +244,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
         <div className="space-y-4">
           {creators.map((c) => {
             const isSubscribed = subscribedIds.includes(c.handle);
-            // Calculate total price with IVA (16% in Mexico or max 20% in USA)
+            // Calcular precio total con IVA mexicano (16%).
             const basePrice = c.price;
             const taxAmount = Math.round(basePrice * taxRate);
             const totalPrice = basePrice + taxAmount;

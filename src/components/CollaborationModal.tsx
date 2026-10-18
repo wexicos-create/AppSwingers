@@ -28,7 +28,7 @@ interface CollaborationModalProps {
   userName: string;
   region: AppRegion;
   onSwitchProfileKind?: (kind: ProfileKind) => void;
-  onSubmitProposal: (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => void;
+  onSubmitProposal: (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => void | Promise<void>;
 }
 
 export const CollaborationModal: React.FC<CollaborationModalProps> = ({
@@ -43,8 +43,8 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
   // Requirement: Postulante must be a Woman ('Dama') or Couple ('Pareja')
   const isEligible = userKind === 'Dama' || userKind === 'Pareja';
 
-  const feeAmount = region === 'MX' ? 350 : 80;
-  const currencyString = region === 'MX' ? '$350 MXN' : '$80 USD';
+  const feeAmount = 500;
+  const currencyString = '$500 MXN';
 
   // Stepper state
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -52,9 +52,11 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
   // Form state according to points scheme
   const [eventType, setEventType] = useState<'Swinger' | 'GangBang' | 'Trío MHM' | 'Fiesta Privada VIP'>('Swinger');
   const [title, setTitle] = useState('');
-  const [city, setCity] = useState(region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX');
-  const [date, setDate] = useState('Próximo sábado');
-  const [time, setTime] = useState('21:00 hrs');
+  const [city, setCity] = useState('San Luis Potosí');
+  const [stateName, setStateName] = useState('San Luis Potosí');
+  const mexicanStates = ['Aguascalientes','Baja California','Baja California Sur','Campeche','Chiapas','Chihuahua','Ciudad de México','Coahuila','Colima','Durango','Estado de México','Guanajuato','Guerrero','Hidalgo','Jalisco','Michoacán','Morelos','Nayarit','Nuevo León','Oaxaca','Puebla','Querétaro','Quintana Roo','San Luis Potosí','Sinaloa','Sonora','Tabasco','Tamaulipas','Tlaxcala','Veracruz','Yucatán','Zacatecas'];
+  const [date, setDate] = useState(() => new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10));
+  const [time, setTime] = useState('21:00');
   
   // Ratio & Capacity
   const [capacity, setCapacity] = useState(14);
@@ -103,32 +105,34 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
     }
   };
 
-  const handleCompleteSubmission = (e: React.FormEvent) => {
+  const handleCompleteSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isEligible || !title.trim() || !acceptedTerms) return;
-
+    if (!isEligible || !title.trim() || !city.trim() || !acceptedTerms) return;
     setIsSubmitting(true);
-    setTimeout(() => {
-      onSubmitProposal({
+    try {
+      await onSubmitProposal({
         title: title.trim(),
         eventType,
         organizerType: userKind === 'Pareja' ? 'Pareja' : 'Mujer',
-        organizerName: hostessFullName || userName || 'Anfitriona Verificada',
-        region,
+        organizerName: hostessFullName || userName || 'Anfitriona',
+        region: 'MX',
+        state: stateName,
+        eventDate: date,
+        schedule: time,
         feeAmount,
         city: city.trim(),
-        consentRules: `${consentRules} | Ambientes: ${venueZones}`,
-        attendeeRatio: `${attendeeRatio} | Vestimenta: ${dressCode}`,
+        consentRules: consentRules + ' | Ambientes: ' + venueZones,
+        attendeeRatio: attendeeRatio + ' | Vestimenta: ' + dressCode,
         capacity,
         healthProtocols: healthProtocols.trim(),
-        admissionFilter: `${admissionFilter} | Contacto: ${hostessContact}`,
-        ineFrontUrl: ineFrontPreview || 'doc_ine_front_verified',
-        ineBackUrl: ineBackPreview || 'doc_ine_back_verified',
-        selfieUrl: selfiePreview || 'doc_selfie_verified',
+        admissionFilter: admissionFilter + ' | Contacto: ' + hostessContact,
       });
-      setIsSubmitting(false);
       setSuccessSubmitted(true);
-    }, 1000);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'No se pudo enviar la propuesta.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -141,7 +145,7 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
             <div className="flex items-center gap-2">
               <Flame className="w-4 h-4 text-pink-400" />
               <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300">
-                Colaboración Swinger / GangBang &bull; {region === 'MX' ? '🇲🇽 San Luis Potosí & México' : '🇺🇸 USA'}
+                Colaboración Swinger / GangBang · México
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
@@ -201,8 +205,8 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
             </div>
             <h3 className="text-xl font-bold text-white">¡Propuesta enviada con éxito!</h3>
             <p className="text-xs text-purple-200/80 max-w-sm mx-auto leading-relaxed">
-              Tu propuesta &ldquo;{title}&rdquo; ha sido registrada con el folio <strong className="text-pink-400">PROP-{region === 'MX' ? 'SLP' : 'USA'}-{Math.floor(1000 + Math.random() * 9000)}</strong>.
-              El equipo de auditoría legal en {region === 'MX' ? 'San Luis Potosí' : 'USA'} revisará los documentos INE y los protocolos de consentimiento.
+              Tu propuesta &ldquo;{title}&rdquo; ha sido registrada con el folio <strong className="text-pink-400">PROP-MX-{Math.floor(1000 + Math.random() * 9000)}</strong>.
+              El equipo de revisión en México revisará la propuesta y los protocolos de consentimiento.
             </p>
             <div className="p-3 rounded-2xl bg-white/5 border border-white/10 text-xs text-white/70 max-w-xs mx-auto">
               Tarifa de revisión cubierta: <strong className="text-emerald-400">{currencyString}</strong>
@@ -218,14 +222,14 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
           /* Structured Form with Clear Schema Points */
           <form onSubmit={handleCompleteSubmission} className="space-y-4 text-xs">
             
-            {/* Banner de Precio de Revisión Dinámico ($350 MXN o $80 USD) */}
+            {/* Tarifa de revisión para México */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/80 via-pink-950/80 to-purple-950/80 border border-pink-500/40 flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
                   Tarifa de Revisión y Validación Oficial
                 </span>
                 <span className="text-xs text-white/80">
-                  {region === 'MX' ? 'Revisión por comité en San Luis Potosí, SLP' : 'Compliance & safety review fee in the US'}
+                  Revisión de seguridad en México
                 </span>
               </div>
               <div className="text-right">
@@ -312,19 +316,15 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                       type="text"
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
-                      placeholder={region === 'MX' ? 'San Luis Potosí, SLP' : 'Miami / Houston'}
+                      placeholder="Ciudad o municipio en México"
                       className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="text-white/80 font-semibold block mb-1">Fecha tentativa:</label>
-                    <input
-                      type="text"
-                      value={date}
-                      onChange={(e) => setDate(e.target.value)}
-                      placeholder="Próximo fin de semana"
-                      className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none"
-                    />
+                    <label className="text-white/80 font-semibold block mb-1">Fecha del evento:</label>
+                    <input type="date" required min={new Date().toISOString().slice(0,10)} value={date} onChange={e => setDate(e.target.value)} className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none" />
+                    <label className="text-white/80 font-semibold block mb-1 mt-2">Hora local:</label>
+                    <input type="time" required value={time} onChange={e => setTime(e.target.value)} className="w-full p-2.5 rounded-xl bg-neutral-950 border border-purple-500/30 text-white text-xs focus:outline-none" />
                   </div>
                 </div>
 
@@ -545,76 +545,13 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                   />
                 </div>
 
-                {/* 3 Upload slots: INE Front, INE Back, and Selfie */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
-                  
-                  {/* INE Frontal */}
-                  <label className="p-3 rounded-2xl bg-neutral-950/80 border border-dashed border-purple-500/40 hover:border-pink-400 cursor-pointer flex flex-col items-center text-center transition group">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, setIneFrontPreview)}
-                      className="hidden"
-                    />
-                    {ineFrontPreview ? (
-                      <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1">
-                        <img src={ineFrontPreview} alt="INE Frente" className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 p-0.5 rounded-full bg-emerald-500 text-white">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      </div>
-                    ) : (
-                      <Upload className="w-5 h-5 text-purple-400 group-hover:text-pink-400 mb-1" />
-                    )}
-                    <span className="text-[11px] font-bold text-white">INE (Frente)</span>
-                    <span className="text-[9px] text-white/50">{ineFrontPreview ? 'Cargado' : 'Subir imagen'}</span>
-                  </label>
-
-                  {/* INE Reverso */}
-                  <label className="p-3 rounded-2xl bg-neutral-950/80 border border-dashed border-purple-500/40 hover:border-pink-400 cursor-pointer flex flex-col items-center text-center transition group">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, setIneBackPreview)}
-                      className="hidden"
-                    />
-                    {ineBackPreview ? (
-                      <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1">
-                        <img src={ineBackPreview} alt="INE Reverso" className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 p-0.5 rounded-full bg-emerald-500 text-white">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      </div>
-                    ) : (
-                      <Upload className="w-5 h-5 text-purple-400 group-hover:text-pink-400 mb-1" />
-                    )}
-                    <span className="text-[11px] font-bold text-white">INE (Reverso)</span>
-                    <span className="text-[9px] text-white/50">{ineBackPreview ? 'Cargado' : 'Subir imagen'}</span>
-                  </label>
-
-                  {/* Selfie con Documento */}
-                  <label className="p-3 rounded-2xl bg-neutral-950/80 border border-dashed border-purple-500/40 hover:border-pink-400 cursor-pointer flex flex-col items-center text-center transition group">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => handleFileUpload(e, setSelfiePreview)}
-                      className="hidden"
-                    />
-                    {selfiePreview ? (
-                      <div className="relative w-full h-16 rounded-xl overflow-hidden mb-1">
-                        <img src={selfiePreview} alt="Selfie" className="w-full h-full object-cover" />
-                        <span className="absolute top-1 right-1 p-0.5 rounded-full bg-emerald-500 text-white">
-                          <Check className="w-3 h-3" />
-                        </span>
-                      </div>
-                    ) : (
-                      <Camera className="w-5 h-5 text-purple-400 group-hover:text-pink-400 mb-1" />
-                    )}
-                    <span className="text-[11px] font-bold text-white">Selfie con ID</span>
-                    <span className="text-[9px] text-white/50">{selfiePreview ? 'Cargado' : 'Subir foto'}</span>
-                  </label>
+                <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3 text-xs leading-relaxed text-purple-100">
+                  No vuelvas a subir tu INE aquí. Primero verifica tu identidad desde Perfil con Didit (INE/documento mexicano, prueba de vida y comparación facial). El servidor no aceptará propuestas sin estado verificado.
                 </div>
-
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <label className="text-xs text-white/75">Estado<select required value={stateName} onChange={e => setStateName(e.target.value)} className="mt-1 w-full rounded-xl bg-neutral-950 border border-purple-500/30 p-2.5 text-white">{mexicanStates.map(state => <option key={state} value={state}>{state}</option>)}</select></label>
+                  <label className="text-xs text-white/75">Ciudad o municipio<input required value={city} onChange={e => setCity(e.target.value)} placeholder="Ciudad o municipio" className="mt-1 w-full rounded-xl bg-neutral-950 border border-purple-500/30 p-2.5 text-white" /></label>
+                </div>
                 {/* Terminos y condiciones de auditoria */}
                 <label className="flex items-start gap-2.5 p-3 rounded-2xl bg-neutral-950/60 border border-purple-500/20 cursor-pointer mt-2">
                   <input
@@ -624,7 +561,7 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                     className="mt-0.5 rounded accent-pink-500"
                   />
                   <span className="text-[11px] text-white/80 leading-snug">
-                    Confirmo que soy mujer o parte de una pareja responsable, que los datos son verídicos y acepto la auditoría legal de {currencyString} para la revisión y publicación oficial del evento en San Luis Potosí o USA.
+                    Confirmo que soy mujer o parte de una pareja responsable, que los datos son verídicos y acepto la auditoría legal de {currencyString} para la revisión y publicación oficial del evento en México.
                   </span>
                 </label>
 

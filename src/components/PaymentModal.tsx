@@ -16,8 +16,8 @@ export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPay
 
   if (!isOpen || !item) return null;
 
-  const isMx = region === 'MX';
-  const currencyCode = isMx ? 'MXN' : 'USD';
+  const isMx = true;
+  const currencyCode = 'MXN';
   const currencySymbol = isMx ? '$' : '$';
 
   // Mexican IVA is shown separately. Other jurisdictions require tax configuration before launch.

@@ -1,5 +1,5 @@
 export type Language = 'es' | 'en';
-export type AppRegion = 'MX' | 'US';
+export type AppRegion = 'MX';
 
 export interface Translations {
   appName: string;
@@ -77,7 +77,7 @@ export interface Translations {
 
 export const DICTIONARY: Record<Language, Translations> = {
   es: {
-    appName: 'AppSwinguer Ultra Plus',
+    appName: 'AppSwinger',
     tagline: 'Conexiones exclusivas & experiencias para adultos',
     regionLabel: 'San Luis Potosí, México',
     slpBadge: 'SLP & México',
@@ -147,8 +147,8 @@ export const DICTIONARY: Record<Language, Translations> = {
   en: {
     appName: 'AppSwinguer Ultra Plus',
     tagline: 'Exclusive connections & adult lifestyle experiences',
-    regionLabel: 'United States',
-    slpBadge: 'USA & Global',
+    regionLabel: 'México',
+    slpBadge: 'México',
 
     tabMatch: 'Match',
     tabProposals: 'Proposals',
@@ -192,7 +192,7 @@ export const DICTIONARY: Record<Language, Translations> = {
     collabBannerBadge: 'Women / Couples',
     collabModalTitle: 'Swinger or GangBang Event Proposal',
     collabReviewFeeLabel: 'Review & Safety Audit Fee',
-    collabReviewFeeAmount: '$80 USD',
+    collabReviewFeeAmount: '$500 MXN',
     collabRequirementTitle: 'Mandatory Safety Requirement',
     collabRequirementDesc: 'Event proposals must be submitted strictly by a Woman or a Couple.',
     collabEligibleOnly: 'Only Female or Couple accounts can submit Swinger or GangBang proposals.',
@@ -203,7 +203,7 @@ export const DICTIONARY: Record<Language, Translations> = {
     collabStep4Title: '4. Health & Hygiene Protocols (Testing & Protection)',
     collabStep5Title: '5. Official ID & Selfie Verification',
     collabStep6Title: '6. Review Fee Payment & Proposal Submission',
-    collabSubmitBtn: 'Submit proposal & pay review fee $80 USD',
+    collabSubmitBtn: 'Submit proposal for review · $500 MXN',
 
     ineFrontLabel: 'Official ID / Driver License (Front)',
     ineBackLabel: 'Official ID / Driver License (Back)',

@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, Proposal, SwipeAction } from './types';
+import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, Proposal, SwipeAction, ClubEvent, CollaborationProposal } from './types';
 import { supabase } from './supabase';
 
 export interface ProfileEditorData {
@@ -11,6 +11,14 @@ export interface ProfileEditorData {
   ages: string[];
   maxKm: number;
   locationCity?: string;
+  locationState?: string;
+}
+
+export async function fetchUserLocation(userId: string): Promise<{ city: string; state: string } | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase.from('profiles').select('city,state').eq('id', userId).maybeSingle();
+  if (error || !data?.city || !data?.state) return null;
+  return { city: data.city, state: data.state };
 }
 
 export async function testConnection(): Promise<boolean> {
@@ -55,7 +63,8 @@ export async function saveUserProfile(userId: string, data: ProfileEditorData, r
     profile_kind: data.kind,
     bio: data.bio.trim().slice(0, 1200),
     city: data.locationCity?.trim().slice(0, 100) || null,
-    country_code: region,
+    state: data.locationState?.trim().slice(0, 80) || null,
+    country_code: 'MX',
     interests: data.interests.slice(0, 40),
     seeking: data.seeking.slice(0, 20),
     preferred_age_ranges: data.ages.slice(0, 10),
@@ -74,6 +83,7 @@ interface DiscoverableProfile {
   profile_kind: ProfileKind;
   bio: string;
   city: string | null;
+  state: string | null;
   country_code: string;
   interests: string[];
   seeking: string[];
@@ -109,7 +119,9 @@ export async function fetchDiscoverableProfiles(limit = 30): Promise<Profile[]> 
       age: row.age ?? undefined,
       km: 0,
       distance: 'Distancia no disponible',
-      country: row.country_code === 'US' ? 'US' : 'MX',
+      country: 'MX',
+      city: row.city ?? undefined,
+      state: row.state ?? undefined,
       verify: 'verificado',
       status: 'activo',
       hue: 270,
@@ -180,7 +192,7 @@ export async function fetchUserMatches(userId: string): Promise<MatchItem[]> {
       age: row.age ?? undefined,
       km: 0,
       distance: 'Distancia no disponible',
-      country: row.country_code === 'US' ? 'US' : 'MX',
+      country: 'MX',
       verify: 'verificado',
       status: 'activo',
       hue: 270,
@@ -337,18 +349,97 @@ const proposalCategoryFromDb = (category: string): string => ({
   other: 'Otra propuesta',
 }[category] || 'Otra propuesta');
 
+export async function fetchApprovedEvents(userId: string): Promise<ClubEvent[]> {
+  if (!userId) return [];
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('city,state').eq('id', userId).maybeSingle();
+  if (profileError || !profile?.state || !profile.city) return [];
+  const { data, error } = await supabase.from('event_proposals')
+    .select('id,title,venue_name,city,state,event_date,schedule,expected_attendees,status')
+    .eq('status', 'approved')
+    .eq('country_code', 'MX')
+    .eq('state', profile.state)
+    .eq('city', profile.city)
+    .gte('event_date', new Date().toISOString())
+    .order('event_date', { ascending: true })
+    .limit(100);
+  if (error) {
+    console.warn('Supabase local events load failed:', error.code);
+    return [];
+  }
+  return (data ?? []).map(row => {
+    const schedule = Array.isArray(row.schedule) ? row.schedule[0] : row.schedule;
+    const time = schedule && typeof schedule === 'object' && 'start_time' in schedule ? String((schedule as { start_time: unknown }).start_time) : 'Horario por confirmar';
+    return {
+      id: row.id,
+      title: row.title,
+      theme: 'Evento local aprobado',
+      date: new Date(row.event_date).toLocaleDateString('es-MX'),
+      time,
+      zone: row.city,
+      city: row.city,
+      state: row.state ?? undefined,
+      organizer: 'Organizador verificado',
+      own: false,
+      cap: row.expected_attendees,
+      sold: 0,
+      reqs: [],
+      paid: false,
+      published: true,
+      promoted: false,
+      hue: 280,
+    } satisfies ClubEvent;
+  });
+}
+
+export async function createEventProposal(userId: string, proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>): Promise<string> {
+  if (!userId) throw new Error('Inicia sesión antes de enviar una propuesta.');
+  const eventDate = new Date(proposal.eventDate + 'T' + proposal.schedule + ':00');
+  if (!Number.isFinite(eventDate.getTime()) || eventDate.getTime() <= Date.now()) throw new Error('Selecciona una fecha y hora futuras.');
+  if (proposal.title.trim().length < 8 || proposal.city.trim().length < 2 || !proposal.state) throw new Error('Completa el título, estado y ciudad del evento.');
+  const description = ('Tipo: ' + proposal.eventType + '. ' + proposal.consentRules + ' Ratio: ' + proposal.attendeeRatio).slice(0, 4000);
+  const safetyPlan = ('Reglas: ' + proposal.consentRules + ' Salud e higiene: ' + proposal.healthProtocols).slice(0, 3000);
+  const invitePlan = ('Filtro de admisión: ' + proposal.admissionFilter).slice(0, 2000);
+  const { data, error } = await supabase.from('event_proposals').insert({
+    organizer_user_id: userId,
+    title: proposal.title.trim().slice(0, 140),
+    description,
+    venue_name: null,
+    city: proposal.city.trim().slice(0, 100),
+    state: proposal.state,
+    country_code: 'MX',
+    event_date: eventDate.toISOString(),
+    schedule: [{ start_time: proposal.schedule, timezone: 'America/Mexico_City' }],
+    safety_plan: safetyPlan,
+    invite_plan: invitePlan,
+    expected_attendees: Math.max(2, Math.min(200, Math.round(proposal.capacity))),
+    contribution_label: 'none',
+    contribution_details: 'No se procesa ningún pago en este paso.',
+    organizer_compensation_model: 'none',
+    status: 'pending',
+  }).select('id').single();
+  if (error || !data) {
+    console.warn('Supabase event proposal failed:', error?.code);
+    throw new Error('No se pudo enviar la propuesta. Verifica identidad Didit, foto de perfil y permisos de la cuenta.');
+  }
+  return data.id;
+}
+
 export async function fetchExperienceProposals(userId: string): Promise<Proposal[]> {
   if (!userId) return [];
+  const { data: ownProfile } = await supabase.from('profiles').select('state,city').eq('id', userId).maybeSingle();
+  if (!ownProfile?.state) return [];
   const { data, error } = await supabase
     .from('experience_proposals')
-    .select('id,owner_user_id,title,description,category,city,status,created_at')
+    .select('id,owner_user_id,title,description,category,city,state,status,created_at')
+    .eq('country_code', 'MX')
+    .eq('state', ownProfile.state)
     .order('created_at', { ascending: false })
     .limit(100);
   if (error) {
     console.warn('Supabase proposals load failed:', error.code);
     return [];
   }
-  return (data ?? []).map(row => ({
+  return (data ?? []).filter(row => !ownProfile.city || row.city?.toLocaleLowerCase('es-MX') === ownProfile.city.toLocaleLowerCase('es-MX')).map(row => ({
     id: row.id,
     title: row.title,
     cat: proposalCategoryFromDb(row.category),
@@ -357,6 +448,8 @@ export async function fetchExperienceProposals(userId: string): Promise<Proposal
     apps: 0,
     status: row.status === 'active' ? 'publicada' : row.status === 'rejected' ? 'rechazada' : row.status === 'closed' || row.status === 'paused' ? 'retirada' : 'en revisión',
     body: row.description,
+    city: row.city ?? undefined,
+    state: row.state ?? undefined,
     mine: row.owner_user_id === userId,
   }));
 }
@@ -365,6 +458,7 @@ export async function createExperienceProposal(
   userId: string,
   proposal: { title: string; cat: string; body: string; limited: boolean },
   city?: string,
+  state?: string,
   region: AppRegion = 'MX',
 ): Promise<Proposal> {
   const title = proposal.title.trim().slice(0, 120);
@@ -388,9 +482,11 @@ export async function createExperienceProposal(
       boundaries: proposal.limited ? 'Identidad y datos personales limitados hasta aceptación mutua.' : 'Consentimiento explícito, respeto y límites acordados.',
       location_mode: 'city_only',
       city: city?.trim().slice(0, 100) || null,
+      state: state?.trim().slice(0, 80) || null,
+      country_code: 'MX',
       status: 'pending',
     })
-    .select('id,owner_user_id,title,description,category,city,status,created_at')
+    .select('id,owner_user_id,title,description,category,city,state,status,created_at')
     .single();
 
   if (error || !data) {
@@ -406,6 +502,8 @@ export async function createExperienceProposal(
     apps: 0,
     status: 'en revisión',
     body: data.description,
+    city: data.city ?? undefined,
+    state: data.state ?? undefined,
     mine: true,
   };
 }

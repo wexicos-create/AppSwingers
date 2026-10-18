@@ -3,6 +3,9 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import {
   syncUserProfile,
+  fetchUserLocation,
+  fetchApprovedEvents,
+  createEventProposal,
   recordSwipe,
   fetchUserMatches,
   fetchDiscoverableProfiles,
@@ -80,7 +83,7 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isBackendConnected, setIsBackendConnected] = useState(false);
 
-  // Region and Language Detection (Default San Luis Potosí, México with USA option)
+  // Mercado fijo México; descubrimiento separado por estado y ciudad.
   const [region, setRegion] = useState<AppRegion>('MX');
   const [lang, setLang] = useState<Language>('es');
   const [locationGranted, setLocationGranted] = useState(false);
@@ -99,6 +102,7 @@ export default function App() {
     ages: string[];
     maxKm: number;
     locationCity: string;
+    locationState: string;
   }>({
     alias: 'Pareja Fuego',
     kind: 'Pareja',
@@ -107,7 +111,8 @@ export default function App() {
     seeking: ['Parejas', 'Mujeres'],
     ages: ['26–39'],
     maxKm: 30,
-    locationCity: 'San Luis Potosí, SLP',
+    locationCity: 'San Luis Potosí',
+    locationState: 'San Luis Potosí',
   });
 
   // Active navigation tab & subscription tier
@@ -224,10 +229,13 @@ export default function App() {
           // Mexico geographical bounds: lat 14 to 33, lng -119 to -85
           if (lat >= 14 && lat <= 33 && lng >= -119 && lng <= -85) {
             setRegion('MX');
-            setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
           } else {
-            setRegion('US');
-            setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
+            setLocationGranted(false);
+            setPushToast({
+              title: 'AppSwinger opera en México',
+              body: 'Selecciona manualmente tu estado y ciudad de México para ver resultados locales.'
+            });
+            return;
           }
           if (isManualClick) {
             setPushToast({
@@ -244,8 +252,7 @@ export default function App() {
           if (isManualClick) {
             setLocationGranted(true);
             setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
+            const cityName = `${userProfile.locationCity}, ${userProfile.locationState}`;
             setPushToast({
               title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
               body: isEs 
@@ -263,8 +270,7 @@ export default function App() {
       if (isManualClick) {
         setLocationGranted(true);
         setLocationBannerDismissed(true);
-        const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-        setUserProfile(prev => ({ ...prev, locationCity: cityName }));
+        const cityName = `${userProfile.locationCity}, ${userProfile.locationState}`;
         setPushToast({
           title: isEs ? 'Ubicación Activada' : 'Location Activated',
           body: isEs ? `Ubicación configurada en ${cityName}.` : `Location set in ${cityName}.`
@@ -279,6 +285,11 @@ export default function App() {
     return () => {
       delete (window as any).__openCollaborationModal;
     };
+  }, []);
+
+  // Return to the identity status panel after the hosted Didit flow.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('verification') === 'return') setActiveTab('perfil');
   }, []);
 
   // Supabase Auth & backend connectivity
@@ -299,13 +310,19 @@ export default function App() {
       // Keep this callback synchronous to avoid Supabase auth-lock deadlocks.
       void syncUserProfile(currentUser)
         .then(async savedAlias => {
-          const [remoteMatches, discoveredProfiles, remoteProposals] = await Promise.all([
+          const [remoteMatches, discoveredProfiles, remoteProposals, userLocation, remoteEvents] = await Promise.all([
             fetchUserMatches(currentUser.id),
             fetchDiscoverableProfiles(),
             fetchExperienceProposals(currentUser.id),
+            fetchUserLocation(currentUser.id),
+            fetchApprovedEvents(currentUser.id),
           ]);
-          if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles);
-          if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals);
+          const activeState = userLocation?.state || 'San Luis Potosí';
+          const activeCity = userLocation?.city || 'San Luis Potosí';
+          setUserProfile(prev => ({ ...prev, locationState: activeState, locationCity: activeCity }));
+          if (!import.meta.env.DEV || discoveredProfiles.length > 0) setProfiles(discoveredProfiles.filter(profile => profile.state === activeState && (profile.city || '').toLocaleLowerCase('es-MX') === activeCity.toLocaleLowerCase('es-MX')));
+          if (!import.meta.env.DEV || remoteProposals.length > 0) setProposals(remoteProposals.filter(proposal => proposal.state === activeState && (proposal.city || '').toLocaleLowerCase('es-MX') === activeCity.toLocaleLowerCase('es-MX')));
+          if (!import.meta.env.DEV || remoteEvents.length > 0) setEvents(remoteEvents);
           if (remoteMatches.length > 0) {
             setMatches(prev => {
               const combined = [...remoteMatches, ...prev];
@@ -360,11 +377,8 @@ export default function App() {
     }
   };
 
-  // Regional & Distance filtered profiles (México vs USA)
-  const visibleProfiles = profiles.filter(p => {
-    const profileCountry = p.country || 'MX';
-    return profileCountry === region && (p.distance === 'Distancia no disponible' || p.km <= maxDistance);
-  });
+  // México únicamente: no mezclar perfiles de estados ni ciudades distintas.
+  const visibleProfiles = profiles.filter(p => p.country === 'MX' && p.state === userProfile.locationState && (p.city || '').toLocaleLowerCase('es-MX') === userProfile.locationCity.toLocaleLowerCase('es-MX') && (p.distance === 'Distancia no disponible' || p.km <= maxDistance));
   const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
 
   const handleSwipe = async (action: SwipeAction) => {
@@ -520,7 +534,7 @@ export default function App() {
   const handleCreateProposal = async (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
     if (user) {
       try {
-        const created = await createExperienceProposal(user.id, newProp, userProfile.locationCity, region);
+        const created = await createExperienceProposal(user.id, newProp, userProfile.locationCity, userProfile.locationState, 'MX');
         setProposals(prev => [created, ...prev.filter(p => p.id !== created.id)]);
         alert(isEs ? 'Propuesta enviada a revisión y guardada en Supabase.' : 'Proposal sent for review and saved to Supabase.');
       } catch (error) {
@@ -547,28 +561,15 @@ export default function App() {
     alert(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
   };
 
-  // Collaboration Proposal (Swinger/Gangbang $350 MXN / $80 USD)
-  const handleSubmitCollaboration = (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
-    const fullProposal: CollaborationProposal = {
-      ...proposal,
-      id: `collab_${Date.now()}`,
-      status: 'en revisión',
-      paid: false,
-      createdAt: Date.now(),
-    };
-    // Also insert as a public proposal
-    const asProp: Proposal = {
-      id: fullProposal.id,
-      title: fullProposal.title,
-      cat: fullProposal.eventType,
-      author: `${fullProposal.organizerName} (${fullProposal.organizerType} Verificada)`,
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: `Ciudad: ${fullProposal.city} | Ratio: ${fullProposal.attendeeRatio} | Reglas: ${fullProposal.consentRules} | Salud: ${fullProposal.healthProtocols}`,
-      mine: true,
-    };
-    setProposals(prev => [asProp, ...prev]);
+  // Event proposals require server-recorded Didit identity, age, and face-match verification.
+  const handleSubmitCollaboration = async (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
+    if (!user) throw new Error('Inicia sesión para enviar una propuesta.');
+    const { data: identity, error } = await supabase.from('profiles').select('identity_verification_status,age_verified_at,identity_verified_at,face_match_status,profile_photo_match_status').eq('id', user.id).maybeSingle();
+    if (error || !identity || identity.identity_verification_status !== 'verified' || !identity.age_verified_at || !identity.identity_verified_at || identity.face_match_status !== 'matched' || identity.profile_photo_match_status !== 'matched') {
+      throw new Error('Completa primero la verificación INE + rostro + prueba de vida con Didit y la revisión de foto de perfil.');
+    }
+    await createEventProposal(user.id, proposal);
+    setPushToast({ title: 'Propuesta enviada a revisión', body: proposal.city + ', ' + proposal.state + '. Solo se publicará después de la aprobación administrativa.' });
   };
 
   // Creator subscriptions
@@ -647,42 +648,11 @@ export default function App() {
               >
                 APPSWINGUER
               </span>
-              {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
+              {/* Mercado único: México; selector de estado y ciudad en el perfil. */}
               <div className="flex items-center gap-1 ml-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const nextReg = region === 'MX' ? 'US' : 'MX';
-                    setRegion(nextReg);
-                    setCurrentIndex(0);
-                    setPushToast({
-                      title: nextReg === 'MX' ? '🇲🇽 Región: México' : '🇺🇸 Region: United States',
-                      body: nextReg === 'MX' 
-                        ? 'Catálogo regional de México activado (distancias en KM).' 
-                        : 'US lifestyle catalog activated (distances in MI).'
-                    });
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-purple-900/90 hover:bg-pink-900/90 text-[10px] font-black tracking-wider uppercase text-pink-300 border border-pink-400/50 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
-                  title={isEs ? 'Cambiar región: México / Estados Unidos' : 'Switch region: Mexico / United States'}
-                  aria-label="Selector de país o región"
-                >
-                  <span>{region === 'MX' ? '🇲🇽 MX' : '🇺🇸 US'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const nextLang = lang === 'es' ? 'en' : 'es';
-                    setLang(nextLang);
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-purple-950 text-[10px] font-black tracking-wider uppercase text-purple-200 border border-purple-500/30 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
-                  title={isEs ? 'Cambiar idioma: Español / English' : 'Switch language: Spanish / English'}
-                  aria-label="Selector de idioma"
-                >
-                  <Globe className="w-2.5 h-2.5 text-pink-400" />
-                  <span>{lang.toUpperCase()}</span>
+                <span className="px-1.5 py-0.5 rounded bg-purple-900/90 text-[10px] font-black tracking-wider uppercase text-pink-300 border border-pink-400/50">🇲🇽 MX</span>
+                <button type="button" onClick={(e) => { e.stopPropagation(); setLang(lang === 'es' ? 'en' : 'es'); }} className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-purple-950 text-[10px] font-black tracking-wider uppercase text-purple-200 border border-purple-500/30 flex items-center gap-0.5 active:scale-95 transition shadow-sm" title={isEs ? 'Cambiar idioma: Español / English' : 'Switch language: Spanish / English'} aria-label="Selector de idioma">
+                  <Globe className="w-2.5 h-2.5 text-pink-400" /><span>{lang.toUpperCase()}</span>
                 </button>
               </div>
             </div>
@@ -909,7 +879,9 @@ export default function App() {
           {/* TAB 2: PROPUESTAS */}
           {activeTab === 'propuestas' && (
             <ProposalsView
-              proposals={proposals}
+              city={userProfile.locationCity}
+              stateName={userProfile.locationState}
+              proposals={proposals.filter(item => item.state === userProfile.locationState && (item.city || '').toLocaleLowerCase('es-MX') === userProfile.locationCity.toLocaleLowerCase('es-MX'))}
               appliedIds={appliedProposalIds}
               savedIds={savedProposalIds}
               onApply={handleApplyProposal}
@@ -927,7 +899,9 @@ export default function App() {
           {/* TAB 3: EVENTOS */}
           {activeTab === 'eventos' && (
             <EventsView
-              events={events}
+              city={userProfile.locationCity}
+              stateName={userProfile.locationState}
+              events={events.filter(item => item.state === userProfile.locationState && (item.city || '').toLocaleLowerCase('es-MX') === userProfile.locationCity.toLocaleLowerCase('es-MX'))}
               reservations={reservations}
               onReserve={handleReserveEvent}
               onCancelReservation={handleCancelReservation}
@@ -1138,7 +1112,7 @@ export default function App() {
             if (!user) {
               throw new Error(isEs ? 'Inicia sesión antes de guardar tu perfil.' : 'Sign in before saving your profile.');
             }
-            await saveUserProfile(user.id, data, region);
+            await saveUserProfile(user.id, data, 'MX');
             setUserProfile({
               alias: data.alias,
               kind: data.kind,
@@ -1147,8 +1121,13 @@ export default function App() {
               seeking: data.seeking,
               ages: data.ages,
               maxKm: data.maxKm,
-              locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
+              locationCity: data.locationCity || 'San Luis Potosí',
+              locationState: data.locationState || 'San Luis Potosí',
             });
+            const refreshedProfiles = await fetchDiscoverableProfiles();
+            setProfiles(refreshedProfiles.filter(p => p.state === (data.locationState || 'San Luis Potosí') && (p.city || '').toLocaleLowerCase('es-MX') === (data.locationCity || 'San Luis Potosí').toLocaleLowerCase('es-MX')));
+            setEvents(await fetchApprovedEvents(user.id));
+            setCurrentIndex(0);
             setMaxDistance(data.maxKm);
             alert(isEs
               ? 'Perfil guardado en Supabase. Permanecerá privado hasta completar la verificación de edad, identidad y foto.'
@@ -1240,7 +1219,7 @@ export default function App() {
             </div>
             <div className="flex-1 min-w-0 pr-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
-                {region === 'MX' ? 'Notificación Push México (SLP)' : 'Push Notification USA'}
+                Notificación Push México
               </span>
               <h4 className="font-bold text-xs text-white truncate mt-0.5">{pushToast.title}</h4>
               <p className="text-[11px] text-purple-200/90 leading-tight mt-0.5">{pushToast.body}</p>

@@ -2,7 +2,7 @@ export type ProfileKind = 'Pareja' | 'Dama' | 'Caballero' | 'Individual';
 export type VerifyStatus = 'sin iniciar' | 'en revisión' | 'verificado' | 'rechazado';
 export type AccountStatus = 'activo' | 'suspendido' | 'eliminado';
 export type SwipeAction = 'like' | 'pass' | 'dislike' | 'superlike';
-export type AppRegion = 'MX' | 'US';
+export type AppRegion = 'MX';
 
 export interface VoiceNote {
   duration: string;
@@ -19,6 +19,8 @@ export interface Profile {
   km: number;
   distance?: string;
   location?: string;
+  city?: string;
+  state?: string;
   country?: AppRegion;
   likesYou?: boolean;
   verify: VerifyStatus;
@@ -62,6 +64,8 @@ export interface ClubEvent {
   date: string;
   time: string;
   zone: string;
+  city?: string;
+  state?: string;
   organizer: string;
   own: boolean;
   cap: number;
@@ -92,6 +96,8 @@ export interface Proposal {
   apps: number;
   status: 'publicada' | 'en revisión' | 'rechazada' | 'retirada';
   body: string;
+  city?: string;
+  state?: string;
   mine?: boolean;
 }
 
@@ -102,7 +108,10 @@ export interface CollaborationProposal {
   organizerType: 'Mujer' | 'Pareja';
   organizerName: string;
   region: AppRegion;
-  feeAmount: number; // $350 MXN or $80 USD
+  state?: string;
+  eventDate: string;
+  schedule: string;
+  feeAmount: number; // MXN
   city: string; // e.g. San Luis Potosí, CDMX, Texas, etc.
   consentRules: string;
   attendeeRatio: string;
