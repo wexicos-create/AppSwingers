@@ -47,12 +47,14 @@ Deno.serve(async (req) => {
   const { error: upsertError } = await admin.from("identity_verifications").upsert({
     user_id: user.id,
     provider: "didit",
-    didit_session_id: didit.session_id,
+    provider_session_id: didit.session_id,
     status: "pending",
-    age_verified: false,
-    face_match_status: "pending",
+    age_verified_at: null,
+    document_match_verified_at: null,
+    selfie_match_verified_at: null,
+    verified_at: null,
     updated_at: new Date().toISOString(),
-  }, { onConflict: "didit_session_id" });
+  }, { onConflict: "user_id" });
   if (upsertError) {
     console.error("Could not persist Didit session", upsertError.code);
     return Response.json({ error: "No se pudo guardar la sesión de verificación." }, { status: 500, headers: corsHeaders });
