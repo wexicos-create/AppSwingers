@@ -485,7 +485,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   {currentTier === 'plus' || currentTier === 'silver' ? (isEs ? 'Plan Activo' : 'Active Plan') : (isEs ? 'Siguiente Plan' : 'Next Tier')}
                 </span>
                 <span className="text-sm font-mono font-black text-pink-300">
-                  {region === 'MX' ? '$199 MXN' : '$12 USD'}
+                  $199 MXN
                 </span>
               </div>
 
@@ -543,7 +543,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? 'Plan Activo' : 'Active Plan') : 'Ultra VIP'}
                 </span>
                 <span className="text-sm font-mono font-black text-amber-300">
-                  {region === 'MX' ? '$400 MXN' : '$25 USD'}
+                  $400 MXN
                 </span>
               </div>
 
