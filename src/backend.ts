@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, Proposal, SwipeAction } from './types';
+import type { AppRegion, ChatMessage, MatchItem, Profile, ProfileKind, Proposal, SwipeAction, ClubEvent, CollaborationProposal } from './types';
 import { supabase } from './supabase';
 
 export interface ProfileEditorData {
