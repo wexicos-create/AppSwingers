@@ -215,8 +215,8 @@ export function MonetizationExtrasModal({
             </h4>
             <p className="text-xs text-white/70">
               {isEs 
-                ? `Promociona tu club swinger, agencia o evento destacado. Incluye base ${sponsorBase} + 16% IVA (${sponsorTax}).`
-                : `Promote your swinger club, agency, or featured event. Includes base ${sponsorBase} + 16% Tax (${sponsorTax}).`}
+                ? `Paquete para agencias y creadoras: 4 publicaciones de eventos, máximo 25 postulaciones por evento, vigencia de 30 días. Base ${sponsorBase} + 16% IVA (${sponsorTax}).`
+                : `Agency/creator package: 4 event publications, up to 25 applications per event, valid for 30 days. Base ${sponsorBase} + 16% IVA (${sponsorTax}).`}
             </p>
           </div>
           <button
