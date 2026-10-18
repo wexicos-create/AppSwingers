@@ -349,6 +349,81 @@ const proposalCategoryFromDb = (category: string): string => ({
   other: 'Otra propuesta',
 }[category] || 'Otra propuesta');
 
+export async function fetchApprovedEvents(userId: string): Promise<ClubEvent[]> {
+  if (!userId) return [];
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('city,state').eq('id', userId).maybeSingle();
+  if (profileError || !profile?.state || !profile.city) return [];
+  const { data, error } = await supabase.from('event_proposals')
+    .select('id,title,venue_name,city,state,event_date,schedule,expected_attendees,status')
+    .eq('status', 'approved')
+    .eq('country_code', 'MX')
+    .eq('state', profile.state)
+    .eq('city', profile.city)
+    .gte('event_date', new Date().toISOString())
+    .order('event_date', { ascending: true })
+    .limit(100);
+  if (error) {
+    console.warn('Supabase local events load failed:', error.code);
+    return [];
+  }
+  return (data ?? []).map(row => {
+    const schedule = Array.isArray(row.schedule) ? row.schedule[0] : row.schedule;
+    const time = schedule && typeof schedule === 'object' && 'start_time' in schedule ? String((schedule as { start_time: unknown }).start_time) : 'Horario por confirmar';
+    return {
+      id: row.id,
+      title: row.title,
+      theme: 'Evento local aprobado',
+      date: new Date(row.event_date).toLocaleDateString('es-MX'),
+      time,
+      zone: row.city,
+      city: row.city,
+      state: row.state ?? undefined,
+      organizer: 'Organizador verificado',
+      own: false,
+      cap: row.expected_attendees,
+      sold: 0,
+      reqs: [],
+      paid: false,
+      published: true,
+      promoted: false,
+      hue: 280,
+    } satisfies ClubEvent;
+  });
+}
+
+export async function createEventProposal(userId: string, proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>): Promise<string> {
+  if (!userId) throw new Error('Inicia sesión antes de enviar una propuesta.');
+  const eventDate = new Date(proposal.eventDate + 'T' + proposal.schedule + ':00');
+  if (!Number.isFinite(eventDate.getTime()) || eventDate.getTime() <= Date.now()) throw new Error('Selecciona una fecha y hora futuras.');
+  if (proposal.title.trim().length < 8 || proposal.city.trim().length < 2 || !proposal.state) throw new Error('Completa el título, estado y ciudad del evento.');
+  const description = ('Tipo: ' + proposal.eventType + '. ' + proposal.consentRules + ' Ratio: ' + proposal.attendeeRatio).slice(0, 4000);
+  const safetyPlan = ('Reglas: ' + proposal.consentRules + ' Salud e higiene: ' + proposal.healthProtocols).slice(0, 3000);
+  const invitePlan = ('Filtro de admisión: ' + proposal.admissionFilter).slice(0, 2000);
+  const { data, error } = await supabase.from('event_proposals').insert({
+    organizer_user_id: userId,
+    title: proposal.title.trim().slice(0, 140),
+    description,
+    venue_name: null,
+    city: proposal.city.trim().slice(0, 100),
+    state: proposal.state,
+    country_code: 'MX',
+    event_date: eventDate.toISOString(),
+    schedule: [{ start_time: proposal.schedule, timezone: 'America/Mexico_City' }],
+    safety_plan: safetyPlan,
+    invite_plan: invitePlan,
+    expected_attendees: Math.max(2, Math.min(200, Math.round(proposal.capacity))),
+    contribution_label: 'none',
+    contribution_details: 'No se procesa ningún pago en este paso.',
+    organizer_compensation_model: 'none',
+    status: 'pending',
+  }).select('id').single();
+  if (error || !data) {
+    console.warn('Supabase event proposal failed:', error?.code);
+    throw new Error('No se pudo enviar la propuesta. Verifica identidad Didit, foto de perfil y permisos de la cuenta.');
+  }
+  return data.id;
+}
+
 export async function fetchExperienceProposals(userId: string): Promise<Proposal[]> {
   if (!userId) return [];
   const { data: ownProfile } = await supabase.from('profiles').select('state,city').eq('id', userId).maybeSingle();
