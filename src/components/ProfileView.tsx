@@ -92,6 +92,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [identityStatus, setIdentityStatus] = useState('not_started');
   const [identityBusy, setIdentityBusy] = useState(false);
   const [identityError, setIdentityError] = useState('');
+  const [identityConsent, setIdentityConsent] = useState(false);
+  const [identityTerms, setIdentityTerms] = useState(false);
 
   React.useEffect(() => {
     let active = true;
@@ -105,7 +107,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     if (!user || identityBusy) return;
     setIdentityBusy(true); setIdentityError('');
     try {
-      const { data, error } = await supabase.functions.invoke('didit-session', { body: {} });
+      const { data, error } = await supabase.functions.invoke('didit-session', { body: { identityConsent, termsAccepted: identityTerms } });
       if (error) throw error;
       if (!data?.url || typeof data.url !== 'string' || !data.url.startsWith('https://')) throw new Error('Didit no devolvió un enlace seguro.');
       setIdentityStatus('pending');
@@ -200,7 +202,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {user && <div className="mb-5 rounded-3xl border border-purple-500/30 bg-neutral-900/80 p-4 space-y-3">
         <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-pink-300"/><div><h3 className="text-sm font-bold text-white">INE, rostro y prueba de vida</h3><p className="text-[10px] text-purple-200/70">Verificación segura con Didit</p></div></div>
         <p className="text-xs text-white/65">Estado: <strong className={identityStatus === 'verified' ? 'text-emerald-300' : identityStatus === 'rejected' ? 'text-rose-300' : 'text-amber-200'}>{identityStatus === 'verified' ? 'Verificada' : identityStatus === 'pending' || identityStatus === 'review' ? 'En revisión' : identityStatus === 'rejected' ? 'Rechazada' : 'Pendiente'}</strong></p>
-        {identityStatus !== 'verified' && <button onClick={() => void startIdentityVerification()} disabled={identityBusy} className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 p-3 text-xs font-bold text-white disabled:opacity-50">{identityBusy ? 'Preparando sesión segura…' : identityStatus === 'pending' || identityStatus === 'review' ? 'Continuar verificación Didit' : 'Verificar INE y rostro'}</button>}
+        {identityStatus !== 'verified' && <div className="space-y-2">
+          <label className="flex items-start gap-2 text-[10px] leading-relaxed text-white/65"><input type="checkbox" checked={identityConsent} onChange={e => setIdentityConsent(e.target.checked)} className="mt-0.5 accent-pink-500"/><span>Autorizo expresamente la verificación de identidad y biométrica mediante Didit para comprobar mayoría de edad, documento y coincidencia facial. AppSwinger guardará el estado de verificación, no copias del documento en su base de datos.</span></label>
+          <label className="flex items-start gap-2 text-[10px] leading-relaxed text-white/65"><input type="checkbox" checked={identityTerms} onChange={e => setIdentityTerms(e.target.checked)} className="mt-0.5 accent-pink-500"/><span>Confirmo que leí el aviso de privacidad y acepto los términos aplicables a la verificación de identidad.</span></label>
+          <button onClick={() => void startIdentityVerification()} disabled={identityBusy || !identityConsent || !identityTerms} className="w-full rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 p-3 text-xs font-bold text-white disabled:opacity-50">{identityBusy ? 'Preparando sesión segura…' : identityStatus === 'pending' || identityStatus === 'review' ? 'Continuar verificación Didit' : 'Verificar INE y rostro'}</button>
+        </div>}
         {identityError && <p role="alert" className="text-xs text-rose-300">{identityError}</p>}
         <p className="text-[10px] leading-relaxed text-white/45">Didit debe tener un flujo publicado con identificación mexicana, prueba de vida y comparación facial. La cuenta no se habilita hasta recibir el resultado firmado.</p>
       </div>}
