@@ -77,10 +77,10 @@ export interface Translations {
 
 export const DICTIONARY: Record<Language, Translations> = {
   es: {
-    appName: 'AppSwinguer Ultra Plus',
+    appName: 'AppSwinger',
     tagline: 'Conexiones exclusivas & experiencias para adultos',
-    regionLabel: 'San Luis Potosí, México',
-    slpBadge: 'SLP & México',
+    regionLabel: 'México',
+    slpBadge: 'México',
 
     tabMatch: 'Match',
     tabProposals: 'Propuestas',
@@ -145,10 +145,10 @@ export const DICTIONARY: Record<Language, Translations> = {
   },
 
   en: {
-    appName: 'AppSwinguer Ultra Plus',
+    appName: 'AppSwinger',
     tagline: 'Exclusive connections & adult lifestyle experiences',
-    regionLabel: 'United States',
-    slpBadge: 'USA & Global',
+    regionLabel: 'Mexico',
+    slpBadge: 'Mexico',
 
     tabMatch: 'Match',
     tabProposals: 'Proposals',
@@ -192,7 +192,7 @@ export const DICTIONARY: Record<Language, Translations> = {
     collabBannerBadge: 'Women / Couples',
     collabModalTitle: 'Swinger or GangBang Event Proposal',
     collabReviewFeeLabel: 'Review & Safety Audit Fee',
-    collabReviewFeeAmount: '$80 USD',
+    collabReviewFeeAmount: '$350 MXN',
     collabRequirementTitle: 'Mandatory Safety Requirement',
     collabRequirementDesc: 'Event proposals must be submitted strictly by a Woman or a Couple.',
     collabEligibleOnly: 'Only Female or Couple accounts can submit Swinger or GangBang proposals.',
