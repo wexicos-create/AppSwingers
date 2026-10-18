@@ -4,6 +4,8 @@ import { Plus, Bookmark, Flag, Check, Clock, Sparkles, Zap, ChevronRight } from 
 
 interface ProposalsViewProps {
   proposals: Proposal[];
+  city?: string;
+  stateName?: string;
   appliedIds: string[];
   savedIds: string[];
   onApply: (proposal: Proposal) => void;
@@ -19,6 +21,8 @@ interface ProposalsViewProps {
 
 export const ProposalsView: React.FC<ProposalsViewProps> = ({
   proposals,
+  city = 'San Luis Potosí',
+  stateName = 'San Luis Potosí',
   appliedIds,
   savedIds,
   onApply,
@@ -58,7 +62,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
           <h2 className="text-2xl font-black bg-gradient-to-r from-purple-300 via-pink-300 to-indigo-300 bg-clip-text text-transparent">
             Propuestas
           </h2>
-          <p className="text-xs text-purple-200/70">Planes con reglas claras y consentimiento</p>
+          <p className="text-xs text-purple-200/70">Propuestas locales: {city}, {stateName}, México</p>
         </div>
         <button
           onClick={() => setModalOpen(true)}
@@ -137,7 +141,7 @@ export const ProposalsView: React.FC<ProposalsViewProps> = ({
 
       {/* Proposals List */}
       <div className="space-y-3.5">
-        {proposals.map((item) => {
+        {proposals.length === 0 ? <div className="rounded-3xl border border-purple-500/20 bg-white/5 p-6 text-center"><h3 className="text-sm font-bold text-white">Aún no hay propuestas en {city}, {stateName}</h3><p className="mt-2 text-xs leading-relaxed text-white/60">Solo se mostrarán propuestas de tu ciudad y estado. Activa avisos para enterarte cuando haya actividad local.</p></div> : proposals.map((item) => {
           const isApplied = appliedIds.includes(item.id);
           const isSaved = savedIds.includes(item.id);
           const isExpanded = expandedId === item.id;
