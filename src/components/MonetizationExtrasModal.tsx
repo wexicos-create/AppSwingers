@@ -37,6 +37,10 @@ export function MonetizationExtrasModal({
   const goldTax = calculateMexicanIva(goldBase).ivaAmount;
   const goldTotal = calculateMexicanIva(goldBase).totalAmount;
 
+  const ultraPlusBase = 599; // Ultra Plus, 30 days
+  const ultraPlusTax = calculateMexicanIva(ultraPlusBase).ivaAmount;
+  const ultraPlusTotal = calculateMexicanIva(ultraPlusBase).totalAmount;
+
   const sponsorBase = 2500; // Four event publications, 25 applications per event, 30 days
   const sponsorTax = calculateMexicanIva(sponsorBase).ivaAmount;
   const sponsorTotal = calculateMexicanIva(sponsorBase).totalAmount;
@@ -150,7 +154,7 @@ export function MonetizationExtrasModal({
 
           {/* Ultra / Gold Plan */}
           <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition ${
-            currentTier === 'ultra' || currentTier === 'gold' ? 'bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-600/30' : 'bg-black/40 border-amber-500/30'
+            currentTier === 'ultra' ? 'bg-amber-950/40 border-amber-500/60 shadow-lg shadow-amber-600/30' : 'bg-black/40 border-amber-500/30'
           }`}>
             <div>
               <div className="flex justify-between items-center mb-2">
@@ -173,9 +177,30 @@ export function MonetizationExtrasModal({
               onClick={() => handleCheckout('ultra')}
               className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-600 text-black font-black text-xs shadow-lg shadow-amber-600/30 hover:opacity-95 transition"
             >
-              {currentTier === 'ultra' || currentTier === 'gold' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Black Gold VIP Elite · 30 días' : 'Black Gold VIP Elite · 30 days')}
+              {currentTier === 'ultra' ? (isEs ? '✓ Plan Activo' : '✓ Active Plan') : (isEs ? 'Black Gold VIP Elite · 30 días' : 'Black Gold VIP Elite · 30 days')}
             </button>
           </div>
+        </div>
+
+
+        {/* Ultra Plus monthly plan */}
+        <div className={`p-5 rounded-2xl border flex flex-col justify-between gap-4 transition ${currentTier === 'gold' ? 'bg-violet-950/40 border-violet-400/70 shadow-lg shadow-violet-600/30' : 'bg-black/40 border-violet-500/30'}`}>
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <span className="font-bold text-violet-300">Ultra Plus</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-violet-500/20 text-violet-200">30 {isEs ? 'días' : 'days'}</span>
+            </div>
+            <div className="text-2xl font-black text-white mb-0.5">{currencySymbol}{ultraPlusTotal} <span className="text-xs text-white/60">{currencyCode}</span></div>
+            <div className="text-[10px] text-white/50 mb-3">{isEs ? `Base: ${ultraPlusBase} + 16% IVA (${ultraPlusTax})` : `Base: ${ultraPlusBase} + 16% IVA (${ultraPlusTax})`}</div>
+            <ul className="text-xs text-white/70 flex flex-col gap-2">
+              <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-violet-300" /> {isEs ? 'Postulaciones ilimitadas' : 'Unlimited applications'}</li>
+              <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-violet-300" /> {isEs ? 'Herramientas de visibilidad avanzada' : 'Advanced visibility tools'}</li>
+              <li className="flex items-center gap-1.5"><Check className="w-3.5 h-3.5 text-violet-300" /> {isEs ? 'Vigencia mensual' : 'Monthly validity'}</li>
+            </ul>
+          </div>
+          <button onClick={() => handleCheckout('gold')} className="w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-500 text-white font-bold text-xs shadow-lg shadow-violet-600/30 hover:opacity-95 transition">
+            {currentTier === 'gold' ? (isEs ? '✓ Plan Actual' : '✓ Current Plan') : (isEs ? 'Ultra Plus · 30 días' : 'Ultra Plus · 30 days')}
+          </button>
         </div>
 
         {/* Sponsored Profile Ad Tier */}
