@@ -46,6 +46,7 @@ interface UserProfileData {
   ages: string[];
   maxKm: number;
   locationCity?: string;
+  locationState?: string;
 }
 
 interface RegistrationModalProps {
@@ -85,9 +86,9 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     initialData?.ages || ['26–39']
   );
   const [maxKm, setMaxKm] = useState<number>(initialData?.maxKm || 25);
-  const [city, setCity] = useState(
-    initialData?.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX')
-  );
+  const [city, setCity] = useState(initialData?.locationCity || 'San Luis Potosí');
+  const [stateName, setStateName] = useState(initialData?.locationState || 'San Luis Potosí');
+  const mexicanStates = ['Aguascalientes','Baja California','Baja California Sur','Campeche','Chiapas','Chihuahua','Ciudad de México','Coahuila','Colima','Durango','Estado de México','Guanajuato','Guerrero','Hidalgo','Jalisco','Michoacán','Morelos','Nayarit','Nuevo León','Oaxaca','Puebla','Querétaro','Quintana Roo','San Luis Potosí','Sinaloa','Sonora','Tabasco','Tamaulipas','Tlaxcala','Veracruz','Yucatán','Zacatecas'];
   const [acceptedConsent, setAcceptedConsent] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -125,6 +126,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
       ages,
       maxKm,
       locationCity: city.trim(),
+      locationState: stateName,
       });
       onClose();
     } catch (error) {
@@ -293,6 +295,12 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
             </div>
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-2xl border border-purple-500/25 bg-neutral-950/70 p-3.5">
+            <label className="block text-white/80 font-bold text-[11px] tracking-wider uppercase">Estado de México<select value={stateName} onChange={e => setStateName(e.target.value)} className="mt-1 w-full rounded-xl border border-purple-500/30 bg-neutral-950 p-3 text-xs text-white">{mexicanStates.map(state => <option key={state} value={state}>{state}</option>)}</select></label>
+            <label className="block text-white/80 font-bold text-[11px] tracking-wider uppercase">Ciudad o municipio<input type="text" required maxLength={80} value={city} onChange={e => setCity(e.target.value)} placeholder="Ej. San Luis Potosí" className="mt-1 w-full rounded-xl border border-purple-500/30 bg-neutral-950 p-3 text-xs text-white" /></label>
+            <p className="sm:col-span-2 text-[10px] text-purple-200/70">Match, propuestas y eventos se separan por estado y ciudad. No se mostrarán resultados de otras entidades.</p>
+          </div>
+
           {/* 5. RADIO DE DISTANCIA EN KM */}
           <div className="p-3.5 rounded-2xl bg-neutral-950/70 border border-purple-500/25 space-y-2">
             <div className="flex items-center justify-between">
@@ -314,7 +322,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
             <div className="flex justify-between text-[10px] text-white/40">
               <span>2 km ({isEs ? 'Mismo barrio' : 'Nearby'})</span>
-              <span>25 km (San Luis Potosí)</span>
+              <span>25 km (tu zona)</span>
               <span>100 km ({isEs ? 'Región' : 'Regional'})</span>
             </div>
           </div>
@@ -329,8 +337,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                 </span>
                 <span className="text-[10px] text-purple-200/70 block">
                   {isEs 
-                    ? `Zona: ${city} (SLP / CDMX)` 
-                    : `Zone: ${city}`}
+                    ? `Zona: ${city}, ${stateName}` 
+                    : `Zone: ${city}, ${stateName}`}
                 </span>
               </div>
             </div>
