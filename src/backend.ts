@@ -14,6 +14,13 @@ export interface ProfileEditorData {
   locationState?: string;
 }
 
+export async function fetchUserLocation(userId: string): Promise<{ city: string; state: string } | null> {
+  if (!userId) return null;
+  const { data, error } = await supabase.from('profiles').select('city,state').eq('id', userId).maybeSingle();
+  if (error || !data?.city || !data?.state) return null;
+  return { city: data.city, state: data.state };
+}
+
 export async function testConnection(): Promise<boolean> {
   const { error } = await supabase.from('profiles').select('id', { head: true, count: 'exact' }).limit(1);
   if (error) {
