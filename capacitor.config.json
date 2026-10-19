@@ -1,0 +1,8 @@
+{
+  "appId": "live.appswinger.app",
+  "appName": "AppSwinger",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}
