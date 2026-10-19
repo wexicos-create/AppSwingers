@@ -11,12 +11,10 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Administrator access must come from a trusted server-issued custom claim.
+    // Never trust a client-editable profile field or a hardcoded UID as an admin role.
     function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.admin == true || 
-         request.auth.uid == "admin" ||
-         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
+      return isAuthenticated() && request.auth.token.admin == true;
     }
 
     // Test connection rule
@@ -26,7 +24,8 @@ service cloud.firestore {
 
     // Users collection with RBAC and privilege escalation prevention
     match /users/{userId} {
-      allow read: if isAuthenticated();
+      // Keep private account records private; public discovery should use a separate sanitized profile collection.
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false);
       allow update: if isOwner(userId) && (
         // Prevent regular users from elevating themselves to admin
