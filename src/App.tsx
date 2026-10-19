@@ -47,6 +47,7 @@ import { AdminModal } from './components/AdminModal';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
+import { AccountAccessModal } from './components/AccountAccessModal';
 import { IdentityVerificationModal } from './components/IdentityVerificationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
@@ -188,6 +189,7 @@ export default function App() {
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
+  const [accountAccessOpen, setAccountAccessOpen] = useState(false);
   const [identityVerificationOpen, setIdentityVerificationOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
@@ -921,7 +923,7 @@ export default function App() {
           {activeTab === 'perfil' && (
             <ProfileView
               user={user}
-              onSignIn={handleGoogleSignIn}
+              onSignIn={() => setAccountAccessOpen(true)}
               onSignOut={handleSignOut}
               stats={{
                 swipesCount: swipedHistory.length,
@@ -1069,6 +1071,16 @@ export default function App() {
           </div>
         )}
 
+        <AccountAccessModal
+          isOpen={accountAccessOpen}
+          onClose={() => setAccountAccessOpen(false)}
+          isEs={isEs}
+          onSuccess={(created) => {
+            setAccountAccessOpen(false);
+            if (created) setRegistrationModalOpen(true);
+          }}
+        />
+
         {/* MODAL 1: REGISTRATION & SEXUAL TASTES / FANTASIES */}
         <RegistrationModal
           isOpen={registrationModalOpen}
@@ -1077,7 +1089,7 @@ export default function App() {
           region={region}
           initialData={userProfile}
           onSave={(data) => {
-            setUserProfile({
+            const savedProfile = {
               alias: data.alias,
               kind: data.kind,
               bio: data.bio,
@@ -1086,9 +1098,21 @@ export default function App() {
               ages: data.ages,
               maxKm: data.maxKm,
               locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
-            });
+              onboardingCompleted: true,
+              adultConsentDeclaredAt: new Date().toISOString(),
+              profileUpdatedAt: new Date().toISOString(),
+            };
+            setUserProfile(savedProfile);
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            if (user) {
+              void syncUserProfile(user, savedProfile).then(() => {
+                alert(isEs ? `Perfil guardado en tu cuenta: ${data.alias}. Recuerda que la declaración 18+ no sustituye la validación de identidad.` : `Profile saved to your account: ${data.alias}. The 18+ declaration does not replace identity verification.`);
+              }).catch(() => {
+                alert(isEs ? 'El perfil cambió en esta sesión, pero no se pudo guardar en el servidor. Revisa la conexión e inténtalo de nuevo.' : 'Profile changed in this session but could not be saved to the server. Check your connection and retry.');
+              });
+            } else {
+              alert(isEs ? 'Perfil editado solo en esta sesión. Inicia sesión para guardarlo en tu cuenta.' : 'Profile edited for this session only. Sign in to save it to your account.');
+            }
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
