@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -23,6 +24,12 @@ import firebaseConfig from '../firebase-applet-config.json';
 import { SwipeAction, Profile, MatchItem } from './types';
 
 const app = initializeApp(firebaseConfig);
+// App Check is required by the SPEI callable functions. Configure this site key in the
+// hosting environment; if it is absent, protected payment calls intentionally fail closed.
+const appCheckSiteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY || firebaseConfig.recaptchaSiteKey;
+if (appCheckSiteKey) {
+  initializeAppCheck(app, { provider: new ReCaptchaV3Provider(appCheckSiteKey), isTokenAutoRefreshEnabled: true });
+}
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
