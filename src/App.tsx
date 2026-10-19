@@ -1224,7 +1224,7 @@ export default function App() {
             setUserProfile(savedProfile);
             setMaxDistance(data.maxKm);
             if (user) {
-              void syncUserProfile(user, savedProfile).then(() => {
+              void syncUserProfile(user, { ...savedProfile, ages: savedProfile.ages.join(', ') }).then(() => {
                 alert(isEs ? `Perfil guardado en tu cuenta: ${data.alias}. Recuerda que la declaración 18+ no sustituye la validación de identidad.` : `Profile saved to your account: ${data.alias}. The 18+ declaration does not replace identity verification.`);
               }).catch(() => {
                 alert(isEs ? 'El perfil cambió en esta sesión, pero no se pudo guardar en el servidor. Revisa la conexión e inténtalo de nuevo.' : 'Profile changed in this session but could not be saved to the server. Check your connection and retry.');
