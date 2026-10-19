@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut as fbSignOut, User } from 'firebase/auth';
-import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { 
   auth, 
     syncUserProfile, 
@@ -52,6 +52,8 @@ import { AccountAccessModal } from './components/AccountAccessModal';
 import { IdentityVerificationModal } from './components/IdentityVerificationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { BenefitNotificationsModal } from './components/BenefitNotificationsModal';
+import { ApprovedEntitlement, entitlementState } from './lib/benefitLifecycle';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -195,6 +197,10 @@ export default function App() {
   const [identityVerificationOpen, setIdentityVerificationOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
+  const [benefitNotificationsOpen, setBenefitNotificationsOpen] = useState(false);
+  const [approvedEntitlement, setApprovedEntitlement] = useState<ApprovedEntitlement | null>(null);
+  const [benefitLoading, setBenefitLoading] = useState(false);
+  const [benefitError, setBenefitError] = useState<string | null>(null);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
@@ -314,6 +320,78 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+
+  // Read only the server-approved entitlement record. The client never grants paid access.
+  useEffect(() => {
+    let cancelled = false;
+    const loadApprovedBenefit = async () => {
+      if (!user) {
+        setApprovedEntitlement(null);
+        setBenefitError(null);
+        setBenefitLoading(false);
+        return;
+      }
+      setBenefitLoading(true);
+      setBenefitError(null);
+      try {
+        const snapshot = await getDoc(doc(db, 'subscriptions', user.uid));
+        if (cancelled) return;
+        if (!snapshot.exists()) {
+          setApprovedEntitlement(null);
+          return;
+        }
+        const data = snapshot.data() as Record<string, unknown>;
+        const dateValue = (value: unknown): string | null => {
+          if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
+            return ((value as { toDate: () => Date }).toDate()).toISOString();
+          }
+          if (value instanceof Date) return value.toISOString();
+          if (typeof value === 'string' || typeof value === 'number') return String(value);
+          return null;
+        };
+        const validKeys = ['vip_plus', 'ultra_vip', 'event_listing', 'featured_campaign', 'profile_boost', 'host_tools'];
+        if (data.userId !== user.uid || !validKeys.includes(String(data.benefitKey)) ||
+            !['active', 'expired', 'revoked'].includes(String(data.status)) ||
+            !['pending', 'approved', 'rejected'].includes(String(data.paymentStatus)) || !dateValue(data.activatedAt)) {
+          setApprovedEntitlement(null);
+          setBenefitError(isEs
+            ? 'El registro de beneficios del servidor no tiene un formato válido; no se habilitó ningún permiso.'
+            : 'The server benefit record is invalid; no entitlement was enabled.');
+          return;
+        }
+        const entitlement = {
+          userId: user.uid,
+          benefitKey: data.benefitKey as ApprovedEntitlement['benefitKey'],
+          status: data.status as ApprovedEntitlement['status'],
+          paymentStatus: data.paymentStatus as ApprovedEntitlement['paymentStatus'],
+          activatedAt: dateValue(data.activatedAt) as string,
+          expiresAt: dateValue(data.expiresAt),
+          approvalReference: typeof data.approvalReference === 'string' ? data.approvalReference : undefined,
+        };
+        setApprovedEntitlement(entitlement);
+        const expiry = entitlementState(entitlement);
+        if (expiry.shouldNotify) {
+          setPushToast({
+            title: isEs ? 'Tu beneficio está por vencer' : 'Your benefit is about to expire',
+            body: isEs
+              ? `Quedan ${expiry.daysRemaining} día(s) de tu beneficio pagado.`
+              : `${expiry.daysRemaining} day(s) remain on your paid benefit.`,
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setApprovedEntitlement(null);
+          setBenefitError(isEs
+            ? 'No se pudo consultar el beneficio aprobado. No se concedieron permisos de pago.'
+            : 'Could not read approved benefit. No paid access was granted.');
+        }
+      } finally {
+        if (!cancelled) setBenefitLoading(false);
+      }
+    };
+    void loadApprovedBenefit();
+    return () => { cancelled = true; };
+  }, [user, isEs]);
 
   const handleSignOut = async () => {
     try {
@@ -693,6 +771,17 @@ export default function App() {
 
             <button type="button" onClick={() => setIdentityVerificationOpen(true)} className="p-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/30 text-white transition active:scale-95" title={isEs ? 'Verificar INE e identidad' : 'Verify ID and identity'} aria-label={isEs ? 'Verificación de identidad' : 'Identity verification'}>
               <ShieldCheck className="w-4 h-4 text-emerald-300" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBenefitNotificationsOpen(true)}
+              className="relative p-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 border border-amber-400/30 text-white transition active:scale-95"
+              title={isEs ? 'Notificaciones y vencimiento de beneficios' : 'Benefit notifications and expiry'}
+              aria-label={isEs ? 'Notificaciones de beneficios' : 'Benefit notifications'}
+            >
+              <Bell className="w-4 h-4 text-amber-300" />
+              {approvedEntitlement && entitlementState(approvedEntitlement).shouldNotify && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-300 ring-2 ring-amber-950" />}
             </button>
 
             {/* User Profile / Registration Pill */}
@@ -1220,6 +1309,15 @@ export default function App() {
         )}
 
         {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
+        <BenefitNotificationsModal
+          isOpen={benefitNotificationsOpen}
+          onClose={() => setBenefitNotificationsOpen(false)}
+          isEs={isEs}
+          entitlement={approvedEntitlement}
+          loading={benefitLoading}
+          error={benefitError}
+        />
+
         <PushLookupModal
           isOpen={pushLookupOpen}
           onClose={() => setPushLookupOpen(false)}
