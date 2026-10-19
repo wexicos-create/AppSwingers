@@ -156,6 +156,33 @@ service cloud.firestore {
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
       allow write: if false;
     }
+
+    // SPEI orders and entitlements are server-created. Users may only read their own
+    // order/benefit records; only trusted custom-claim admins may inspect review queue.
+    match /paymentOrders/{orderId} {
+      allow get, list: if signedIn() && (resource.data.userId == request.auth.uid || admin());
+      allow create, update, delete: if false;
+    }
+    match /entitlements/{entitlementId} {
+      allow get, list: if signedIn() && (resource.data.userId == request.auth.uid || admin());
+      allow create, update, delete: if false;
+    }
+    match /adminReviewQueue/{caseId} {
+      allow get, list: if admin();
+      allow create, update, delete: if false;
+    }
+    match /userNotifications/{uid}/items/{notificationId} {
+      allow get, list: if owner(uid) || admin();
+      allow update: if owner(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && request.resource.data.read is bool;
+      allow create, delete: if false;
+    }
+    match /auditLogs/{logId} {
+      allow read: if admin();
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
