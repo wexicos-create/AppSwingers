@@ -21,8 +21,7 @@ import {
   Zap,
   CheckCircle2,
   RefreshCw,
-  BadgeCheck,
-  LifeBuoy
+  BadgeCheck
 } from 'lucide-react';
 
 interface AdminModalProps {
@@ -74,6 +73,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         return;
       }
       setIsLoggedIn(true);
+      void loadReviewQueue();
     } catch {
       setError(isEs ? 'No se pudo verificar la sesión. Inténtalo de nuevo.' : 'Could not verify session. Please retry.');
     }
