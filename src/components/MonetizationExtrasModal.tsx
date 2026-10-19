@@ -121,7 +121,7 @@ export function MonetizationExtrasModal({
                   <p className="mt-2 min-h-[42px] text-xs leading-relaxed text-white/60">{offer.description}</p>
                   <p className="my-4 text-xl font-black text-white">{price}</p>
                   {isMx && index > 0 && (() => {
-                    const total = index === 1 ? 399 : 699;
+                    const total = index === 1 ? 406 : 754;
                     const subtotal = Math.round((total / 1.16) * 100) / 100;
                     const vat = Math.round((total - subtotal) * 100) / 100;
                     return <p className="-mt-2 mb-4 text-[10px] leading-relaxed text-white/50">{t(`Incluye IVA (16%): subtotal ${money(subtotal, subtotal)} + IVA ${money(vat, vat)}`, `Includes 16% VAT: subtotal ${money(subtotal, subtotal)} + VAT ${money(vat, vat)}`)}</p>;
