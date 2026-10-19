@@ -91,6 +91,14 @@ service cloud.firestore {
       allow read, update, delete: if admin();
     }
 
+    // Identity verification results are server-owned. Clients may read only their own
+    // minimal status; raw INE images, selfies, face templates, and provider payloads
+    // must never be stored in Firestore by the client.
+    match /identityVerifications/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
     // Billing records and entitlement grants are server-only.
     match /payments/{paymentId} {
       allow read: if signedIn() && resource.data.userId == request.auth.uid;
