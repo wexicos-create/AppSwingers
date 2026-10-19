@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { AppRegion, StoryPost, ForumPost } from '../types';
 import { BookOpen, HelpCircle, MapPin, MessageSquare, ShieldCheck, Heart, Sparkles, Send, Plus, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
 
@@ -6,48 +8,9 @@ interface CommunityViewProps {
   region: AppRegion;
   isEs: boolean;
   userPhoneVerified?: boolean;
+  userId?: string;
+  displayName?: string;
 }
-
-const getInitialStories = (isEs: boolean): StoryPost[] => [
-  {
-    id: 's1',
-    title: isEs ? 'Nuestra primera noche en un club liberal de San Luis' : 'Our first night at a liberal club in SLP',
-    author: 'Pareja Fuego SLP',
-    category: 'historia',
-    body: isEs 
-      ? 'Llegamos con algo de nervios pero la recepción fue impecable. Protocolos claros, respeto absoluto y una atmósfera increíble que superó nuestras expectativas.'
-      : 'We arrived a bit nervous but the reception was flawless. Clear protocols, absolute respect, and an incredible atmosphere that exceeded our expectations.',
-    likes: 142,
-    date: 'Hace 2 días',
-    region: 'MX',
-    sensualConsentTag: true,
-  },
-  {
-    id: 's2',
-    title: isEs ? 'Consejos clave para parejas primerizas en fiestas privadas' : 'Key tips for beginner couples at private parties',
-    author: 'Dama Nocturna',
-    category: 'consejo',
-    body: isEs
-      ? 'La regla de oro es la comunicación previa y el código rojo. Acuerden límites claros antes de salir y disfruten sin presiones.'
-      : 'The golden rule is prior communication and code red. Agree on clear limits before going out and enjoy without pressure.',
-    likes: 215,
-    date: 'Hace 4 días',
-    region: 'MX',
-    sensualConsentTag: true,
-  },
-  {
-    id: 's3',
-    title: isEs ? 'Espacios y salones recomendados en México & USA' : 'Recommended venues and lounges in Mexico & USA',
-    author: 'Admin AppSwinguer',
-    category: 'donde_buscar',
-    body: isEs
-      ? 'En San Luis Potosí y CDMX existen salones privados exclusivos con filtros estrictos de INE y registro de parejas. En USA destacan clubs en Texas y California con membresía verificada.'
-      : 'In San Luis Potosí and CDMX there are exclusive private lounges with strict INE filters and couple registration. In USA, clubs in Texas and California feature verified memberships.',
-    likes: 320,
-    date: 'Hace 1 semana',
-    region: 'MX',
-  }
-];
 
 const getInitialForums = (isEs: boolean): ForumPost[] => [
   {
@@ -75,9 +38,11 @@ const getInitialForums = (isEs: boolean): ForumPost[] => [
   }
 ];
 
-export function CommunityView({ region, isEs }: CommunityViewProps) {
+export function CommunityView({ region, isEs, userId, displayName }: CommunityViewProps) {
   const [tab, setTab] = useState<'historias' | 'tips' | 'donde' | 'faq' | 'foros'>('historias');
-  const [stories, setStories] = useState<StoryPost[]>(() => getInitialStories(isEs));
+  const [stories, setStories] = useState<StoryPost[]>([]);
+  const [storyError, setStoryError] = useState('');
+  const [storySaving, setStorySaving] = useState(false);
   const [forums, setForums] = useState<ForumPost[]>(() => getInitialForums(isEs));
   const [activeForum, setActiveForum] = useState<ForumPost | null>(null);
   const [newMsgText, setNewMsgText] = useState('');
@@ -88,24 +53,71 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
   const [storyBody, setStoryBody] = useState('');
   const [storyCat, setStoryCat] = useState<'historia' | 'consejo' | 'donde_buscar'>('historia');
 
-  const handlePostStory = (e: React.FormEvent) => {
+  // Public feed reads only posts that passed the moderation queue.
+  useEffect(() => {
+    const storiesQuery = query(
+      collection(db, 'communityStories'),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+    return onSnapshot(storiesQuery, snapshot => {
+      const approved = snapshot.docs
+        .filter(item => item.data().status === 'published')
+        .map(item => {
+          const data = item.data();
+          return {
+            id: item.id,
+            title: String(data.title || ''),
+            author: String(data.authorAlias || 'Miembro'),
+            category: data.category as StoryPost['category'],
+            body: String(data.body || ''),
+            likes: 0,
+            date: isEs ? 'Reciente' : 'Recent',
+            region: (data.region === 'US' ? 'US' : 'MX') as AppRegion,
+            sensualConsentTag: data.consentConfirmed === true,
+          };
+        });
+      setStories(approved);
+    }, error => {
+      console.error('Community stories feed unavailable', error);
+      setStoryError(isEs ? 'No se pudo cargar el feed. Intenta de nuevo más tarde.' : 'The feed could not load. Please try again later.');
+    });
+  }, [isEs]);
+
+  const handlePostStory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!storyTitle || !storyBody) return;
-    const newS: StoryPost = {
-      id: 's_' + Date.now(),
-      title: storyTitle,
-      author: isEs ? 'Usuario Verificado' : 'Verified User',
-      category: storyCat,
-      body: storyBody,
-      likes: 1,
-      date: isEs ? 'Hace un momento' : 'Just now',
-      region: region,
-      sensualConsentTag: true,
-    };
-    setStories([newS, ...stories]);
-    setStoryTitle('');
-    setStoryBody('');
-    setShowNewStoryModal(false);
+    setStoryError('');
+    if (!userId) {
+      setStoryError(isEs ? 'Inicia sesión para publicar una historia.' : 'Sign in to publish a story.');
+      return;
+    }
+    if (storyTitle.trim().length < 4 || storyTitle.trim().length > 100 || storyBody.trim().length < 20 || storyBody.trim().length > 3000) {
+      setStoryError(isEs ? 'Usa un título de 4–100 caracteres y un texto de 20–3000 caracteres.' : 'Use a 4–100 character title and a 20–3000 character story.');
+      return;
+    }
+    setStorySaving(true);
+    try {
+      await addDoc(collection(db, 'communityStories'), {
+        authorId: userId,
+        authorAlias: (displayName || (isEs ? 'Miembro' : 'Member')).slice(0, 40),
+        title: storyTitle.trim(),
+        body: storyBody.trim(),
+        category: storyCat,
+        region,
+        consentConfirmed: true,
+        status: 'pending_review',
+        createdAt: serverTimestamp(),
+      });
+      setStoryTitle('');
+      setStoryBody('');
+      setShowNewStoryModal(false);
+      setStoryError(isEs ? 'Historia enviada a revisión. Se publicará cuando moderación la apruebe.' : 'Story submitted for review. It will be published after moderator approval.');
+    } catch (error) {
+      console.error('Story submission failed', error);
+      setStoryError(isEs ? 'No se pudo enviar. Verifica tu sesión e inténtalo de nuevo.' : 'Submission failed. Check your session and try again.');
+    } finally {
+      setStorySaving(false);
+    }
   };
 
   const handleSendForumMsg = (e: React.FormEvent) => {
@@ -125,6 +137,8 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
 
   return (
     <div className="w-full max-w-4xl mx-auto px-4 py-6 flex flex-col gap-6 pb-28">
+      {storyError && <div role="status" className="p-3 rounded-xl border border-amber-400/30 bg-amber-500/10 text-amber-100 text-sm">{storyError}</div>}
+
       {/* Moderation Banner */}
       <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-200 text-xs sm:text-sm">
         <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
@@ -204,6 +218,11 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
       {/* Tab Contents */}
       {tab === 'historias' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {stories.filter(s => s.category === 'historia').length === 0 && (
+            <div className="md:col-span-2 p-6 rounded-2xl border border-white/10 bg-white/5 text-center text-sm text-white/65">
+              {isEs ? 'Aún no hay historias aprobadas. Sé de las primeras personas en compartir una experiencia respetuosa.' : 'No approved stories yet. Be among the first to share a respectful experience.'}
+            </div>
+          )}
           {stories.filter(s => s.category === 'historia').map(story => (
             <div key={story.id} className="p-5 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-xl flex flex-col justify-between gap-4">
               <div>
@@ -231,6 +250,11 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
 
       {tab === 'tips' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {stories.filter(s => s.category === 'consejo').length === 0 && (
+            <div className="md:col-span-2 p-6 rounded-2xl border border-white/10 bg-white/5 text-center text-sm text-white/65">
+              {isEs ? 'Todavía no hay consejos publicados.' : 'No tips have been published yet.'}
+            </div>
+          )}
           {stories.filter(s => s.category === 'consejo').map(story => (
             <div key={story.id} className="p-5 rounded-2xl bg-black/40 border border-white/10 backdrop-blur-xl flex flex-col justify-between gap-4">
               <div>
@@ -420,6 +444,7 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
                   className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-sm resize-none"
                 />
               </div>
+              <p className="text-xs text-amber-200/90">{isEs ? 'Las publicaciones no aparecen públicamente hasta ser revisadas. No incluyas datos personales ni imágenes íntimas de terceros. Al enviar, confirmas que tienes derechos sobre el texto y consentimiento de las personas identificables mencionadas.' : 'Posts remain private until reviewed. Do not include personal data or intimate images of others. Submission confirms you have rights to the text and consent from identifiable people mentioned.'}</p>
               <div className="flex gap-2 pt-2">
                 <button
                   type="button"
@@ -430,9 +455,10 @@ export function CommunityView({ region, isEs }: CommunityViewProps) {
                 </button>
                 <button
                   type="submit"
+                  disabled={storySaving || !userId}
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-500 transition shadow-lg shadow-rose-600/30"
                 >
-                  {isEs ? 'Publicar' : 'Publish'}
+                  {storySaving ? (isEs ? 'Enviando…' : 'Submitting…') : (isEs ? 'Enviar a revisión' : 'Submit for review')}
                 </button>
               </div>
             </form>
