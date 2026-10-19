@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -51,7 +52,7 @@ export const createSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
   const subtotalMxn = item.subtotal;
   const ivaMxn = Math.round(subtotalMxn * IVA * 100) / 100;
   const totalMxn = Math.round((subtotalMxn + ivaMxn) * 100) / 100;
-  const reference = `AS${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  const reference = `AS${Date.now().toString(36).toUpperCase()}${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
   const now = Timestamp.now();
   const expiresAt = Timestamp.fromMillis(now.toMillis() + 24 * 60 * 60 * 1000);
   const order = {
@@ -187,7 +188,18 @@ export const processBenefitLifecycle = onSchedule({ schedule: "every 60 minutes"
   const now = Timestamp.now();
   const nowMs = now.toMillis();
   const active = await db.collection("entitlements").where("status", "==", "active").get();
-  const batchLimit = 400;
+  const expiredOrders = await db.collection("paymentOrders").where("status", "in", ["awaiting_payment", "payment_reported"]).where("expiresAt", "<=", now).get();
+  for (let offset = 0; offset < expiredOrders.docs.length; offset += 400) {
+    const orderBatch = db.batch();
+    for (const order of expiredOrders.docs.slice(offset, offset + 400)) {
+      const data = order.data();
+      if (data.status === "paid" || data.status === "rejected") continue;
+      orderBatch.update(order.ref, { status: "expired", updatedAt: now });
+      orderBatch.set(db.collection("adminReviewQueue").doc(order.id), { status: "expired", expiredAt: now }, { merge: true });
+    }
+    await orderBatch.commit();
+  }
+  const batchLimit = 200;
   for (let offset = 0; offset < active.docs.length; offset += batchLimit) {
     const batch = db.batch();
     for (const snap of active.docs.slice(offset, offset + batchLimit)) {
