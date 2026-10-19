@@ -943,8 +943,14 @@ export default function App() {
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                if (tier === 'free') {
+                  setSubscriptionTier('free');
+                  alert(isEs ? 'Sigues en el plan gratuito.' : 'You are on the free plan.');
+                  return;
+                }
+                alert(isEs
+                  ? 'Los planes de pago aún no están conectados a la conciliación SPEI. No se activó ningún beneficio ni se realizó ningún cobro.'
+                  : 'Paid plans are not yet connected to SPEI reconciliation. No benefits were activated and no charge was made.');
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
