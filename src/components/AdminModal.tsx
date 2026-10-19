@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getIdTokenResult } from 'firebase/auth';
+import { auth } from '../firebase';
 import { 
   X, 
   ShieldAlert, 
@@ -29,17 +31,11 @@ interface AdminModalProps {
 
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
-  const [isChangingCreds, setIsChangingCreds] = useState(false);
-  const [newPass, setNewPass] = useState('');
-  const [newPin, setNewPin] = useState('');
+  const [isCheckingAdmin, setIsCheckingAdmin] = useState(false);
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
@@ -53,36 +49,35 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
-      return;
-    }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
-      return;
-    }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
-    }
-    setIsLoggedIn(true);
-  };
+    setIsCheckingAdmin(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser || currentUser.email?.toLowerCase() !== email.trim().toLowerCase()) {
+        setError(isEs
+          ? 'Inicia sesión con la cuenta autorizada mediante Firebase antes de entrar al panel.'
+          : 'Sign in with the authorized Firebase account before accessing the admin panel.');
+        return;
+      }
 
-  const handleUpdateCreds = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
+      // Only a server-issued Firebase custom claim can authorize administrator access.
+      const tokenResult = await getIdTokenResult(currentUser, true);
+      if (tokenResult.claims.admin !== true) {
+        setError(isEs
+          ? 'Esta cuenta no tiene el permiso administrativo asignado en el servidor.'
+          : 'This account does not have the server-assigned administrator permission.');
+        return;
+      }
+      setIsLoggedIn(true);
+    } catch {
+      setError(isEs
+        ? 'No se pudo verificar el permiso administrativo. Inténtalo de nuevo.'
+        : 'Could not verify administrator permission. Please try again.');
+    } finally {
+      setIsCheckingAdmin(false);
     }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
-    }
-    setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -104,8 +99,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
-    setBroadcastSuccess(true);
-    setTimeout(() => setBroadcastSuccess(false), 4000);
+    setBroadcastSuccess(false);
   };
 
   return (
@@ -151,40 +145,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Key className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Contraseña' : 'Password'}
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                required
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
-              />
-            </div>
             <button
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition mt-1 active:scale-95"
             >
-              {isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System'}
+              {isCheckingAdmin ? (isEs ? 'Verificando permiso…' : 'Verifying permission…') : (isEs ? 'Verificar permiso administrativo' : 'Verify administrator permission')}
             </button>
           </form>
         ) : (
@@ -240,42 +205,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
             {/* TAB 1: MONETIZACIÓN & FINANZAS */}
             {activeAdminTab === 'monetizacion' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
-                    <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos México (MXN)' : 'Mexico Revenue'}</span>
-                    <span className="text-xl font-black text-emerald-400 mt-1 block">$148,450 MXN</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% IVA ($20,475)</span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
-                    <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos USA (USD)' : 'USA Revenue'}</span>
-                    <span className="text-xl font-black text-pink-400 mt-1 block">$12,380 USD</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% Tax Rate</span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-xs">
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Plan Silver ($408 MXN / $100 USD 15d):' : 'Silver Plan:'}</span>
-                    <span className="font-bold text-white">312 suscriptores</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Plan Gold ($800 MXN / $180 USD mes):' : 'Gold Plan:'}</span>
-                    <span className="font-bold text-amber-300">184 miembros VIP</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Sponsored Profiles ($1,500 MXN / $800 USD):' : 'Sponsored Profiles:'}</span>
-                    <span className="font-bold text-pink-400">18 agencias / clubes</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Propuestas Colaboración ($350 MXN / $80 USD):' : 'Collab Proposals:'}</span>
-                    <span className="font-bold text-emerald-300">42 revisadas</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/80">{isEs ? 'Comisión Creadoras (15% neta + 10% cobro):' : 'Creator Net Commission:'}</span>
-                    <span className="font-bold text-purple-300">15% retenido activo</span>
-                  </div>
-                </div>
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <h3 className="font-bold text-amber-200 text-sm">
+                  {isEs ? 'Analítica comercial no conectada' : 'Commercial analytics not connected'}
+                </h3>
+                <p className="text-xs text-amber-100/80">
+                  {isEs
+                    ? 'No se muestran ingresos, suscriptores ni comisiones porque todavía no existe una fuente de datos comerciales verificada. Las cifras de demostración se retiraron para evitar confundirlas con datos reales.'
+                    : 'Revenue, subscriber and commission figures are hidden because no verified commercial data source is connected. Demo figures were removed to avoid presenting them as real.'}
+                </p>
               </div>
             )}
 
@@ -319,11 +257,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                     />
                   </div>
 
-                  {broadcastSuccess && (
-                    <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold text-center">
-                      {isEs ? '¡Alerta enviada exitosamente a los 1,842 dispositivos en México y USA!' : 'Alert broadcasted to 1,842 devices!'}
-                    </div>
-                  )}
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] text-center">
+                    {isEs
+                      ? 'Envío push no conectado. El botón no transmite notificaciones.'
+                      : 'Push delivery is not connected. This button does not send notifications.'}
+                  </div>
 
                   <button
                     type="submit"
@@ -338,70 +276,16 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {/* TAB 3: SEGURIDAD, CIBERSEGURIDAD & COOKIES */}
             {activeAdminTab === 'seguridad' && (
               <div className="space-y-3">
-                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-                  <span className="text-xs font-bold text-white block">{isEs ? 'Ciberseguridad del APK' : 'APK Cybersecurity'}</span>
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cifrado TLS 1.3 & Tokens con expiración segura</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Validación biométrica facial e INE contra duplicados</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cero tolerancia a extorsión o estafas financieras</span>
-                  </div>
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                  <span className="text-xs font-bold text-amber-200 block">
+                    {isEs ? 'Estado de seguridad verificado' : 'Verified security status'}
+                  </span>
+                  <p className="text-[11px] text-amber-100/80">
+                    {isEs
+                      ? 'El panel exige una reclamación admin emitida por Firebase. Aún falta configurar y desplegar las reglas de Firestore en el proyecto activo, comprobar los permisos de Storage y conectar las funciones administrativas al servidor. No se afirma que exista verificación biométrica ni entrega push hasta que se implemente y pruebe.'
+                      : 'The panel requires a Firebase-issued admin claim. Firestore rules still need to be deployed to the active project, Storage permissions checked, and admin actions connected to the server. Biometric verification and push delivery are not claimed until implemented and tested.'}
+                  </p>
                 </div>
-
-                {isChangingCreds ? (
-                  <form onSubmit={handleUpdateCreds} className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">{isEs ? 'Cambiar Credenciales Admin' : 'Change Admin Credentials'}</h4>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nueva Contraseña' : 'New Password'}</label>
-                      <input
-                        type="password"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="Nueva contraseña"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nuevo NIP (6 dígitos)' : 'New PIN (6 digits)'}</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Nuevo NIP"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs tracking-widest text-center"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsChangingCreds(false)}
-                        className="flex-1 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Cancelar' : 'Cancel'}
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Guardar Cambios' : 'Save Changes'}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => setIsChangingCreds(true)}
-                    className="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-white/20 transition"
-                  >
-                    {isEs ? 'Modificar Contraseña o NIP de Verificación' : 'Modify Password or Verification PIN'}
-                  </button>
-                )}
 
                 {/* Purge cookies and local data */}
                 <button
