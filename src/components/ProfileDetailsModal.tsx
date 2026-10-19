@@ -17,6 +17,8 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
   lang = 'es',
   onClose,
   onSwipe,
+  onReport,
+  onBlock,
 }) => {
   if (!profile) return null;
 
