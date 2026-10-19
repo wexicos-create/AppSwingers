@@ -47,6 +47,7 @@ import { AdminModal } from './components/AdminModal';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
+import { IdentityVerificationModal } from './components/IdentityVerificationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
@@ -67,7 +68,8 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function App() {
@@ -186,6 +188,7 @@ export default function App() {
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
+  const [identityVerificationOpen, setIdentityVerificationOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
@@ -651,6 +654,10 @@ export default function App() {
               <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-purple-950 animate-pulse" />
             </button>
 
+            <button type="button" onClick={() => setIdentityVerificationOpen(true)} className="p-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/30 text-white transition active:scale-95" title={isEs ? 'Verificar INE e identidad' : 'Verify ID and identity'} aria-label={isEs ? 'Verificación de identidad' : 'Identity verification'}>
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+            </button>
+
             {/* User Profile / Registration Pill */}
             <button
               type="button"
@@ -1078,6 +1085,8 @@ export default function App() {
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
         />
+
+        <IdentityVerificationModal isOpen={identityVerificationOpen} onClose={() => setIdentityVerificationOpen(false)} user={user} isEs={isEs} />
 
         {/* MODAL 2: MONETIZATION EXTRAS (from script!) */}
         <MonetizationExtrasModal
