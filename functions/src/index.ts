@@ -83,7 +83,6 @@ export const reportSpeiTransfer = onCall({ region: REGION, enforceAppCheck: true
     if (order.userId !== auth.uid) throw new HttpsError("permission-denied", "El pedido no pertenece a tu cuenta.");
     if (order.status !== "awaiting_payment") throw new HttpsError("failed-precondition", "El pedido ya no acepta reportes de pago.");
     if (order.expiresAt?.toMillis?.() <= Date.now()) {
-      tx.update(ref, { status: "expired", updatedAt: FieldValue.serverTimestamp() });
       throw new HttpsError("deadline-exceeded", "El pedido venció. Genera uno nuevo.");
     }
     tx.update(ref, { status: "payment_reported", transferReference, reportedAt: FieldValue.serverTimestamp() });
@@ -188,12 +187,12 @@ export const processBenefitLifecycle = onSchedule({ schedule: "every 60 minutes"
   const now = Timestamp.now();
   const nowMs = now.toMillis();
   const active = await db.collection("entitlements").where("status", "==", "active").get();
-  const expiredOrders = await db.collection("paymentOrders").where("status", "in", ["awaiting_payment", "payment_reported"]).where("expiresAt", "<=", now).get();
-  for (let offset = 0; offset < expiredOrders.docs.length; offset += 400) {
+  const candidateOrders = await db.collection("paymentOrders").where("status", "in", ["awaiting_payment", "payment_reported"]).get();
+  const expiredOrders = candidateOrders.docs.filter(order => (order.data().expiresAt?.toMillis?.() ?? Infinity) <= now.toMillis());
+  for (let offset = 0; offset < expiredOrders.length; offset += 400) {
     const orderBatch = db.batch();
-    for (const order of expiredOrders.docs.slice(offset, offset + 400)) {
+    for (const order of expiredOrders.slice(offset, offset + 400)) {
       const data = order.data();
-      if (data.status === "paid" || data.status === "rejected") continue;
       orderBatch.update(order.ref, { status: "expired", updatedAt: now });
       orderBatch.set(db.collection("adminReviewQueue").doc(order.id), { status: "expired", expiredAt: now }, { merge: true });
     }
