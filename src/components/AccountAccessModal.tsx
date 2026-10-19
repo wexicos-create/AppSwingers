@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
-import { Eye, EyeOff, Mail, ShieldCheck, X } from 'lucide-react';
+import { Eye, Mail, ShieldCheck, X } from 'lucide-react';
 
 interface AccountAccessModalProps {
   isOpen: boolean;
