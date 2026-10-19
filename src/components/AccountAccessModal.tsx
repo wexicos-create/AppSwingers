@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createUserWithEmailAndPassword, sendEmailVerification, signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebase';
 import { Eye, Mail, ShieldCheck, X } from 'lucide-react';
@@ -7,11 +7,13 @@ interface AccountAccessModalProps {
   isOpen: boolean;
   onClose: () => void;
   isEs: boolean;
+  initialMode?: 'register' | 'login';
   onSuccess: (created: boolean) => void;
 }
 
-export function AccountAccessModal({ isOpen, onClose, isEs, onSuccess }: AccountAccessModalProps) {
-  const [mode, setMode] = useState<'register' | 'login'>('register');
+export function AccountAccessModal({ isOpen, onClose, isEs, initialMode = 'register', onSuccess }: AccountAccessModalProps) {
+  const [mode, setMode] = useState<'register' | 'login'>(initialMode);
+  useEffect(() => { if (isOpen) { setMode(initialMode); setError(''); setMessage(''); } }, [isOpen, initialMode]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
