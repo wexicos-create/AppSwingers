@@ -297,7 +297,7 @@ export const requestCreatorWithdrawal = onCall({ region: REGION, enforceAppCheck
   const creatorRef = db.collection("creators").doc(auth.uid);
   const payoutRef = db.collection("creatorPayoutProfiles").doc(auth.uid);
   const withdrawalRef = db.collection("creatorWithdrawals").doc();
-  await db.runTransaction(async (tx) => {
+  const withdrawalAllowed = await db.runTransaction(async (tx) => {
     const creatorSnap = await tx.get(creatorRef);
     const payoutSnap = await tx.get(payoutRef);
     const ledgerSnap = await tx.get(db.collection("creatorLedger").where("creatorUid", "==", auth.uid));
@@ -314,7 +314,7 @@ export const requestCreatorWithdrawal = onCall({ region: REGION, enforceAppCheck
     const alreadyReserved = pendingSnap.docs.reduce((sum, row) => sum + Number(row.data().amountMxn || 0), 0);
     if (amountMxn > Math.round((available - alreadyReserved) * 100) / 100) {
       tx.set(db.collection("adminAlerts").doc(), { type: "creator_withdrawal_exceeds_balance", severity: "high", creatorUid: auth.uid, requestedAmountMxn: amountMxn, calculatedAvailableMxn: Math.round(available * 100) / 100, status: "open", createdAt: FieldValue.serverTimestamp() });
-      throw new HttpsError("failed-precondition", "El importe supera el saldo disponible. La operación fue bloqueada.");
+      return false;
     }
     const existing = payoutSnap.data();
     const normalizeName = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -329,7 +329,9 @@ export const requestCreatorWithdrawal = onCall({ region: REGION, enforceAppCheck
     tx.set(db.collection("adminAlerts").doc(), { type: "creator_withdrawal_requested", severity: "high", creatorUid: auth.uid, withdrawalId: withdrawalRef.id, amountMxn, currency: "MXN", status: "open", createdAt: FieldValue.serverTimestamp() });
     tx.set(db.collection("adminReviewQueue").doc("withdrawal-" + withdrawalRef.id), { type: "creator_withdrawal", status: "under_review", creatorUid: auth.uid, withdrawalId: withdrawalRef.id, amountMxn, currency: "MXN", createdAt: FieldValue.serverTimestamp() });
     tx.set(db.collection("auditLogs").doc(), { actorUid: auth.uid, action: "creator_withdrawal_requested", withdrawalId: withdrawalRef.id, amountMxn, createdAt: FieldValue.serverTimestamp() });
+    return true;
   });
+  if (!withdrawalAllowed) throw new HttpsError("failed-precondition", "El importe supera el saldo disponible. La operación fue bloqueada y se registró una alerta de seguridad.");
   return { success: true, withdrawalId: withdrawalRef.id, status: "under_review", message: "Solicitud registrada. No se ha transferido dinero; la liberación exige validación documental, bancaria y fiscal." };
 });
 
