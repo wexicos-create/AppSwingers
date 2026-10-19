@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { 
   auth, 
   googleProvider, 
   syncUserProfile, 
   recordSwipe, 
   fetchUserMatches, 
-  testConnection 
+  testConnection,
+  db
 } from './firebase';
 import { 
   Profile, 
@@ -181,6 +183,7 @@ export default function App() {
 
   // Matches & Chat (Pristine clean launch en 0)
   const [matches, setMatches] = useState<MatchItem[]>([]);
+  const [blockedProfileIds, setBlockedProfileIds] = useState<string[]>([]);
 
   // Modals & Drawers state
   const [matchModalProfile, setMatchModalProfile] = useState<Profile | null>(null);
@@ -336,10 +339,57 @@ export default function App() {
     }
   };
 
+  const handleReportProfile = async (profile: Profile) => {
+    if (!user) {
+      alert(isEs ? 'Inicia sesión para enviar una denuncia.' : 'Sign in to submit a report.');
+      setAccountAccessOpen(true);
+      return;
+    }
+    const reason = window.prompt(isEs
+      ? 'Motivo de denuncia: acoso, amenaza, identidad falsa, contenido no consentido, posible menor u otro. Describe hechos, no suposiciones.'
+      : 'Report reason: harassment, threat, fake identity, non-consensual content, possible minor or other. Describe facts, not assumptions.');
+    if (!reason?.trim()) return;
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterId: user.uid,
+        target: { type: 'usuario', id: profile.id, name: profile.name },
+        reason: reason.trim().slice(0, 120),
+        details: '',
+        createdAt: serverTimestamp(),
+        status: 'abierto',
+      });
+      alert(isEs ? 'Denuncia enviada para revisión. Si existe peligro inmediato, contacta a emergencias locales.' : 'Report submitted for review. If there is immediate danger, contact local emergency services.');
+    } catch {
+      alert(isEs ? 'No se pudo enviar la denuncia. Revisa la conexión e inténtalo de nuevo.' : 'Could not submit report. Check your connection and retry.');
+    }
+  };
+
+  const handleBlockProfile = async (profile: Profile) => {
+    if (!user) {
+      alert(isEs ? 'Inicia sesión para bloquear usuarios.' : 'Sign in to block users.');
+      setAccountAccessOpen(true);
+      return;
+    }
+    if (!window.confirm(isEs ? `¿Bloquear a ${profile.name}? Dejarás de ver su perfil en esta sesión.` : `Block ${profile.name}? Their profile will be hidden in this session.`)) return;
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'blocks', encodeURIComponent(profile.id)), {
+        targetUserId: profile.id,
+        targetName: profile.name.slice(0, 80),
+        createdAt: serverTimestamp(),
+      });
+      setBlockedProfileIds(prev => prev.includes(profile.id) ? prev : [...prev, profile.id]);
+      setMatches(prev => prev.filter(match => match.profile.id !== profile.id));
+      setDetailsProfile(null);
+      alert(isEs ? 'Usuario bloqueado en tu cuenta. El bloqueo entre dispositivos depende de sincronizar esta lista en todos los módulos.' : 'User blocked on your account. Cross-device blocking requires this list to be applied across all modules.');
+    } catch {
+      alert(isEs ? 'No se pudo guardar el bloqueo en el servidor.' : 'Could not save the block to the server.');
+    }
+  };
+
   // Regional & Distance filtered profiles (México vs USA)
   const visibleProfiles = profiles.filter(p => {
     const profileCountry = p.country || 'MX';
-    return profileCountry === region && p.km <= maxDistance;
+    return profileCountry === region && p.km <= maxDistance && !blockedProfileIds.includes(p.id);
   });
   const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
 
@@ -1163,6 +1213,8 @@ export default function App() {
             setDetailsProfile(null);
             handleSwipe(action);
           }}
+          onReport={handleReportProfile}
+          onBlock={handleBlockProfile}
         />
 
         {/* MODAL 6: ADMIN PANEL */}
