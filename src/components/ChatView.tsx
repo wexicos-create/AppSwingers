@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MatchItem, Profile, ChatMessage } from '../types';
+import { auth } from '../firebase';
 import { 
   Search, 
   Send, 
@@ -61,22 +62,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingTimerRef = useRef<any>(null);
 
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
-    try {
-      const saved = localStorage.getItem('appswinguer_chat_messages');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('appswinguer_chat_messages', JSON.stringify(chatMessages));
-    } catch (e) {
-      console.warn('LocalStorage save note:', e);
-    }
-  }, [chatMessages]);
+  // Messages are held in memory only until the authenticated chat API confirms delivery.
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({});
 
   // Real-Time Location Sharing State per Chat (Strict Privacy by Default)
   const [liveLocationChats, setLiveLocationChats] = useState<Record<string, boolean>>(() => {
@@ -134,25 +121,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, activeChat]);
-
-  // 3-second polling interval simulating recibir.php / backend sync
-  useEffect(() => {
-    const pollInterval = setInterval(() => {
-      try {
-        const stored = localStorage.getItem('appswinguer_chat_messages');
-        if (stored && activeChat) {
-          const parsed = JSON.parse(stored);
-          if (parsed[activeChat.profile.id]) {
-            setChatMessages(prev => ({ ...prev, [activeChat.profile.id]: parsed[activeChat.profile.id] }));
-          }
-        }
-      } catch (e) {
-        // ignore polling note
-      }
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
-  }, [activeChat]);
 
   // PeerJS Video Call State & WebRTC & Google Keep Sync
   const [videoCallOpen, setVideoCallOpen] = useState(false);
@@ -281,23 +249,40 @@ export const ChatView: React.FC<ChatViewProps> = ({
     e.target.value = '';
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const newMessage: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      t: inputText.trim(),
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newMessage]
-    }));
-    setInputText('');
+    const text = inputText.trim();
+    if (!text || !activeChat) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      showToast('Inicia sesión para enviar mensajes.');
+      return;
+    }
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) {
+        showToast(response.status === 404
+          ? 'Mensajería del servidor aún no está desplegada; el mensaje no se envió.'
+          : 'No se pudo enviar el mensaje. Inténtalo de nuevo.');
+        return;
+      }
+      const result = await response.json();
+      const message = result?.message as ChatMessage | undefined;
+      if (!message || typeof message.t !== 'string') {
+        showToast('El servidor no confirmó la entrega del mensaje.');
+        return;
+      }
+      const chatKey = activeChat.profile.id;
+      setChatMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), { ...message, me: true }] }));
+      setInputText('');
+    } catch {
+      showToast('No se pudo conectar con la mensajería; el mensaje no se envió.');
+    }
   };
 
   const handleConfirmReport = () => {
