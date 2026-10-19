@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut as fbSignOut, User } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { 
   auth, 
@@ -321,7 +322,7 @@ export default function App() {
   }, []);
 
 
-  // Read only the server-approved entitlement record. The client never grants paid access.
+  // Read benefits from the trusted backend; never infer activation from a client-writable field.
   useEffect(() => {
     let cancelled = false;
     const loadApprovedBenefit = async () => {
@@ -334,38 +335,32 @@ export default function App() {
       setBenefitLoading(true);
       setBenefitError(null);
       try {
-        const snapshot = await getDoc(doc(db, 'subscriptions', user.uid));
+        const functions = getFunctions(undefined, 'us-central1');
+        const getMyBenefits = httpsCallable(functions, 'getMyBenefits');
+        const response = await getMyBenefits({});
         if (cancelled) return;
-        if (!snapshot.exists()) {
-          setApprovedEntitlement(null);
-          return;
-        }
-        const data = snapshot.data() as Record<string, unknown>;
-        const dateValue = (value: unknown): string | null => {
-          if (value && typeof value === 'object' && 'toDate' in value && typeof (value as { toDate?: unknown }).toDate === 'function') {
-            return ((value as { toDate: () => Date }).toDate()).toISOString();
-          }
-          if (value instanceof Date) return value.toISOString();
-          if (typeof value === 'string' || typeof value === 'number') return String(value);
-          return null;
-        };
+        const payload = response.data as { items?: Array<Record<string, unknown>> };
         const validKeys = ['vip_plus', 'ultra_vip', 'event_listing', 'featured_campaign', 'profile_boost', 'host_tools'];
-        if (data.userId !== user.uid || !validKeys.includes(String(data.benefitKey)) ||
-            !['active', 'expired', 'revoked'].includes(String(data.status)) ||
-            !['pending', 'approved', 'rejected'].includes(String(data.paymentStatus)) || !dateValue(data.activatedAt)) {
+        const items = Array.isArray(payload.items) ? payload.items.filter(item =>
+          item.userId === undefined &&
+          validKeys.includes(String(item.benefitKey)) &&
+          ['active', 'expired', 'revoked'].includes(String(item.status)) &&
+          item.paymentStatus === 'approved' &&
+          typeof item.activatedAt === 'string'
+        ) : [];
+        items.sort((a, b) => Date.parse(String(b.activatedAt)) - Date.parse(String(a.activatedAt)));
+        const data = items[0];
+        if (!data) {
           setApprovedEntitlement(null);
-          setBenefitError(isEs
-            ? 'El registro de beneficios del servidor no tiene un formato válido; no se habilitó ningún permiso.'
-            : 'The server benefit record is invalid; no entitlement was enabled.');
           return;
         }
-        const entitlement = {
+        const entitlement: ApprovedEntitlement = {
           userId: user.uid,
           benefitKey: data.benefitKey as ApprovedEntitlement['benefitKey'],
           status: data.status as ApprovedEntitlement['status'],
-          paymentStatus: data.paymentStatus as ApprovedEntitlement['paymentStatus'],
-          activatedAt: dateValue(data.activatedAt) as string,
-          expiresAt: dateValue(data.expiresAt),
+          paymentStatus: 'approved',
+          activatedAt: String(data.activatedAt),
+          expiresAt: typeof data.expiresAt === 'string' ? data.expiresAt : null,
           approvalReference: typeof data.approvalReference === 'string' ? data.approvalReference : undefined,
         };
         setApprovedEntitlement(entitlement);
@@ -378,12 +373,12 @@ export default function App() {
               : `${expiry.daysRemaining} day(s) remain on your paid benefit.`,
           });
         }
-      } catch (e) {
+      } catch {
         if (!cancelled) {
           setApprovedEntitlement(null);
           setBenefitError(isEs
-            ? 'No se pudo consultar el beneficio aprobado. No se concedieron permisos de pago.'
-            : 'Could not read approved benefit. No paid access was granted.');
+            ? 'No se pudo consultar el beneficio seguro del servidor. No se concedieron permisos de pago.'
+            : 'Could not read the server benefit. No paid access was granted.');
         }
       } finally {
         if (!cancelled) setBenefitLoading(false);
