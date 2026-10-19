@@ -192,9 +192,9 @@ export const processBenefitLifecycle = onSchedule({ schedule: "every 60 minutes"
   const active = await db.collection("entitlements").where("status", "==", "active").get();
   const candidateOrders = await db.collection("paymentOrders").where("status", "in", ["awaiting_payment", "payment_reported"]).get();
   const expiredOrders = candidateOrders.docs.filter(order => (order.data().expiresAt?.toMillis?.() ?? Infinity) <= now.toMillis());
-  for (let offset = 0; offset < expiredOrders.length; offset += 400) {
+  for (let offset = 0; offset < expiredOrders.length; offset += 200) {
     const orderBatch = db.batch();
-    for (const order of expiredOrders.slice(offset, offset + 400)) {
+    for (const order of expiredOrders.slice(offset, offset + 200)) {
       const data = order.data();
       orderBatch.update(order.ref, { status: "expired", updatedAt: now });
       orderBatch.set(db.collection("adminReviewQueue").doc(order.id), { status: "expired", expiredAt: now }, { merge: true });
