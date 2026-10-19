@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { auth } from '../firebase';
+import { auth, db } from '../firebase';
+import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { 
   X, 
   ShieldAlert, 
@@ -37,7 +39,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'operaciones'>('operaciones');
-  type ReviewCase = { id: string; type: 'spei' | 'identity' | 'support'; status: string; userId?: string; createdAt?: string; amount?: number; currency?: string; reference?: string; productLabel?: string; summary?: string; riskSignals?: string[] };
+  type ReviewCase = { id: string; orderId?: string; type: 'spei' | 'identity' | 'support'; status: string; userId?: string; createdAt?: string; amount?: number; currency?: string; reference?: string; productLabel?: string; summary?: string; riskSignals?: string[] };
   const [reviewCases, setReviewCases] = useState<ReviewCase[]>([]);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
@@ -84,26 +86,43 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error(isEs ? 'La sesión expiró. Vuelve a iniciar sesión.' : 'Session expired. Sign in again.');
-      const token = await currentUser.getIdToken(true);
-      const response = await fetch('/api/admin/review-queue', { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !Array.isArray(payload.items)) throw new Error(payload.message || (isEs ? 'La cola de revisión no está conectada al servidor. No se muestran datos simulados.' : 'The review queue is not connected to the server. No mock data is shown.'));
-      setReviewCases(payload.items);
+      const token = await currentUser.getIdTokenResult(true);
+      if (token.claims.admin !== true) throw new Error(isEs ? 'Permiso de administrador no válido.' : 'Administrator permission is missing.');
+      const snapshot = await getDocs(query(collection(db, 'adminReviewQueue'), orderBy('createdAt', 'desc')));
+      setReviewCases(snapshot.docs.map(d => {
+        const data = d.data();
+        return { id: d.id, orderId: data.orderId || d.id, type: data.type || 'spei', status: data.status || 'under_review', userId: data.userId, amount: data.amount, currency: data.currency || 'MXN', reference: data.reference, productLabel: data.productLabel, createdAt: data.createdAt?.toDate?.().toISOString() };
+      }));
     } catch (e) { setReviewError(e instanceof Error ? e.message : 'Review queue unavailable'); }
     finally { setReviewLoading(false); }
   };
 
   const decideReviewCase = async (item: ReviewCase, decision: 'approve' | 'reject' | 'request_info') => {
-    const prompts = { approve: isEs ? '¿Confirmas aprobar este caso? Para SPEI, primero verifica el depósito en tu banco.' : 'Approve this case? For SPEI, verify the deposit in your bank first.', reject: isEs ? '¿Confirmas rechazar este caso?' : 'Reject this case?', request_info: isEs ? '¿Solicitar información adicional?' : 'Request additional information?' };
+    const prompts = { approve: isEs ? '¿Confirmas aprobar este caso? Primero compara el depósito real, el importe exacto y la referencia en tu banco.' : 'Approve this case? First verify the actual bank deposit, exact amount and reference.', reject: isEs ? '¿Confirmas rechazar este caso?' : 'Reject this case?', request_info: isEs ? '¿Solicitar información adicional?' : 'Request additional information?' };
     if (!window.confirm(prompts[decision])) return;
+    let bankTransactionId = '';
+    if (decision === 'approve' && item.type === 'spei') {
+      bankTransactionId = window.prompt(isEs ? 'Introduce el identificador real del movimiento bancario confirmado (no el folio que escribió el usuario).' : 'Enter the actual confirmed bank transaction ID (not the user-entered transfer reference).')?.trim() || '';
+      if (bankTransactionId.length < 5) {
+        setReviewError(isEs ? 'Aprobación cancelada: hace falta el identificador real del movimiento bancario.' : 'Approval cancelled: actual bank transaction ID is required.');
+        return;
+      }
+    }
     setReviewLoading(true); setReviewError(null); setReviewMessage(null);
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) throw new Error(isEs ? 'La sesión expiró.' : 'Session expired.');
-      const token = await currentUser.getIdToken(true);
-      const response = await fetch(`/api/admin/review/${encodeURIComponent(item.id)}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ decision, notes: reviewNotes[item.id] || '' }) });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || payload.success !== true) throw new Error(payload.message || (isEs ? 'El servidor no confirmó la decisión. No se modificaron los permisos.' : 'Server did not confirm the decision. Entitlements were not changed.'));
+      const functions = getFunctions(undefined, 'us-central1');
+      const review = httpsCallable(functions, 'reviewSpeiOrder');
+      const response = await review({
+        orderId: item.orderId || item.id,
+        decision,
+        notes: reviewNotes[item.id] || '',
+        bankConfirmed: decision === 'approve' && item.type === 'spei',
+        bankTransactionId,
+      });
+      const payload = response.data as { success?: boolean; status?: string };
+      if (payload.success !== true) throw new Error(isEs ? 'El servidor no confirmó la decisión.' : 'Server did not confirm the decision.');
       setReviewMessage(isEs ? 'Decisión registrada por el servidor.' : 'Decision recorded by server.');
       await loadReviewQueue();
     } catch (e) { setReviewError(e instanceof Error ? e.message : 'Review action failed'); }
@@ -232,7 +251,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   <textarea rows={2} value={reviewNotes[item.id] || ''} onChange={e => setReviewNotes(prev => ({ ...prev, [item.id]: e.target.value }))} placeholder={isEs ? 'Notas de revisión (opcional; no introduzcas datos biométricos)' : 'Review notes (optional; do not enter biometric data)'} className="w-full rounded-lg bg-black/60 border border-white/15 p-2 text-xs text-white" />
                   <div className="grid grid-cols-3 gap-2"><button type="button" disabled={reviewLoading} onClick={() => void decideReviewCase(item, 'approve')} className="rounded-lg bg-emerald-600/80 px-2 py-2 text-[11px] font-bold text-white disabled:opacity-40">{isEs ? 'Aprobar' : 'Approve'}</button><button type="button" disabled={reviewLoading} onClick={() => void decideReviewCase(item, 'request_info')} className="rounded-lg bg-amber-600/70 px-2 py-2 text-[11px] font-bold text-white disabled:opacity-40">{isEs ? 'Pedir datos' : 'Request info'}</button><button type="button" disabled={reviewLoading} onClick={() => void decideReviewCase(item, 'reject')} className="rounded-lg bg-rose-600/70 px-2 py-2 text-[11px] font-bold text-white disabled:opacity-40">{isEs ? 'Rechazar' : 'Reject'}</button></div>
                 </article>)}
-                <p className="text-[10px] text-white/45">{isEs ? 'El servidor debe exigir claim admin, validar el estado actual, evitar doble aprobación y registrar auditoría. Esta interfaz no sustituye esos endpoints.' : 'The server must enforce admin claims, validate current state, prevent duplicate approval, and write audit logs. This UI does not replace those endpoints.'}</p>
+                <p className="text-[10px] text-white/45">{isEs ? 'El servidor debe exigir claim admin, validar el estado actual, evitar doble aprobación y registrar auditoría. La función reviewSpeiOrder valida el claim, el estado, la referencia bancaria y la idempotencia en el servidor.' : 'The server must enforce admin claims, validate current state, prevent duplicate approval, and write audit logs. This UI does not replace those endpoints.'}</p>
               </div>
             )}
 
