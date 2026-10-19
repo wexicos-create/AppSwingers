@@ -354,29 +354,30 @@ export default function App() {
       }
     }
 
-    // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
-
-    if (isMatch) {
-      const newMatch: MatchItem = {
-        id: `match_${target.id}_${Date.now()}`,
-        profile: target,
-        matchedAt: new Date().toISOString(),
-        lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'Mutual match! Say hi first ✨',
-        unreadCount: 1,
-      };
-
-      setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.uid, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
+    // A local "like", superlike, profile score, or mock likesYou flag is NOT a mutual match.
+    // Only a trusted backend can confirm mutual consent and create a chat-enabled match.
+    if (user) {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/swipes/match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ targetUserId: target.id, action }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result?.match?.profile && result?.match?.id) {
+            const confirmedMatch = result.match as MatchItem;
+            setMatches(prev => prev.some(m => m.id === confirmedMatch.id) ? prev : [confirmedMatch, ...prev]);
+            setMatchModalProfile(confirmedMatch.profile);
+          }
+        } else if (response.status !== 404) {
+          console.warn('Match service rejected the swipe:', response.status);
         }
+      } catch (err) {
+        // Keep the swipe recorded; do not fabricate a match or open an unverified chat.
+        console.warn('Mutual-match service unavailable:', err);
       }
-
-      setMatchModalProfile(target);
     }
   };
 
@@ -412,21 +413,25 @@ export default function App() {
     setChatDrawerOpen(true);
   };
 
-  // Event reservation handler
+  // Reservation requests never count as paid tickets. A trusted payment webhook
+  // must confirm payment and issue a real ticket/access code before admission.
   const handleReserveEvent = (eventId: string, tierId: string | null) => {
-    const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+    const reservationId = `res_${Date.now()}`;
     const newReservation: Reservation = {
-      id: `res_${Date.now()}`,
+      id: reservationId,
       eventId,
       tier: tierId,
-      folio: `F-${Math.floor(100 + Math.random() * 900)}`,
-      code,
+      folio: reservationId,
+      code: '',
       ts: Date.now(),
-      status: 'pagado',
+      status: event.paid ? 'pendiente_pago' : 'solicitud',
     };
     setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+    alert(event.paid
+      ? (isEs ? 'Solicitud creada. Tu lugar no está pagado ni confirmado; el boleto se emitirá tras verificar el pago.' : 'Request created. Your place is not paid or confirmed; a ticket will be issued after payment verification.')
+      : (isEs ? 'Solicitud de reservación enviada. Espera la confirmación del organizador.' : 'Reservation request submitted. Wait for organizer confirmation.'));
   };
 
   const handleCancelReservation = (reservationId: string) => {
