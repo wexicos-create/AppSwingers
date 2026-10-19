@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { AppRegion, SubscriptionTier } from '../types';
+import { auth } from '../firebase';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info, Users, Ticket } from 'lucide-react';
 
 interface MonetizationExtrasModalProps {
@@ -28,6 +30,9 @@ export function MonetizationExtrasModal({
   currentTier,
 }: MonetizationExtrasModalProps) {
   const [notice, setNotice] = useState<string | null>(null);
+  const [order, setOrder] = useState<{orderId:string;reference:string;totalMxn:number;expiresAt:string;productLabel:string}|null>(null);
+  const [transferReference, setTransferReference] = useState('');
+  const [paymentBusy, setPaymentBusy] = useState(false);
   if (!isOpen) return null;
 
   const isMx = region === 'MX';
@@ -70,12 +75,48 @@ export function MonetizationExtrasModal({
     { icon: <Ticket className="w-5 h-5" />, title: t('Precio de acceso a cada evento', 'Admission price per event'), desc: t('Quien publica define entre $500 y $1,200 MXN + IVA: total de $580 a $1,392. Debe seleccionar cobro individual o por pareja y puede definir descuento para mujeres. El precio y el descuento se muestran antes de reservar.', 'The organizer sets $500–$1,200 MXN + VAT: $580–$1,392 total. They must choose individual or couple pricing and may offer a discount for women. Price and discount are shown before booking.'), badge: t('$500–$1,200 + IVA · $580–$1,392 total', '$500–$1,200 + VAT · $580–$1,392 total') },
   ];
 
-  const handlePlanClick = (tier: SubscriptionTier) => {
+  const handlePlanClick = async (tier: SubscriptionTier) => {
     if (tier === 'free') {
       setNotice(t('Ya puedes usar las funciones gratuitas. No necesitas pagar para seguir participando.', 'You can use the free features now. Payment is not required to keep participating.'));
       return;
     }
-    setNotice(t('Los beneficios solo deben activarse después de que un administrador apruebe y concilie el depósito. El backend SPEI aún no está conectado; no se ha realizado ningún cobro ni activado un plan desde esta pantalla.', 'Benefits must only activate after an administrator approves and reconciles the deposit. SPEI backend is not connected yet; this screen has not charged or activated a plan.'));
+    if (region !== 'MX') {
+      setNotice(t('El checkout SPEI solo admite MXN en esta fase. No se creó ningún pedido.', 'SPEI checkout currently supports MXN only. No order was created.'));
+      return;
+    }
+    if (!auth.currentUser) {
+      setNotice(t('Inicia sesión para generar una referencia SPEI segura. No se creó ningún pedido.', 'Sign in to create a secure SPEI reference. No order was created.'));
+      return;
+    }
+    setPaymentBusy(true); setNotice(null); setOrder(null); setTransferReference('');
+    try {
+      const functions = getFunctions(undefined, 'us-central1');
+      const createOrder = httpsCallable(functions, 'createSpeiOrder');
+      const result = await createOrder({ benefitKey: tier === 'plus' || tier === 'silver' ? 'vip_plus' : 'ultra_vip' });
+      const data = result.data as {orderId:string;reference:string;totalMxn:number;expiresAt:string;productLabel:string};
+      setOrder(data);
+      setNotice(t('Pedido creado por el servidor. Transfiere exactamente el total indicado; el beneficio no se activa hasta la conciliación bancaria y aprobación.', 'Order created by the server. Transfer the exact amount shown; benefits remain inactive until bank reconciliation and approval.'));
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : t('No se pudo crear el pedido SPEI. Verifica que las funciones del servidor estén desplegadas y la sesión sea válida.', 'Could not create the SPEI order. Verify server functions are deployed and your session is valid.'));
+    } finally { setPaymentBusy(false); }
+  };
+
+  const reportTransfer = async () => {
+    if (!order || transferReference.trim().length < 5) {
+      setNotice(t('Escribe la referencia real de la transferencia (mínimo 5 caracteres).', 'Enter the actual bank transfer reference (at least 5 characters).'));
+      return;
+    }
+    setPaymentBusy(true);
+    try {
+      const functions = getFunctions(undefined, 'us-central1');
+      const report = httpsCallable(functions, 'reportSpeiTransfer');
+      await report({ orderId: order.orderId, transferReference: transferReference.trim() });
+      setNotice(t('Reporte enviado a revisión. No se activó el plan; espera a que se confirme el abono real en el banco.', 'Report submitted for review. Your plan is not active; wait for the actual bank deposit to be confirmed.'));
+      setOrder(null);
+      setTransferReference('');
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : t('No se pudo reportar la transferencia. No se activó ningún beneficio.', 'Could not report the transfer. No benefit was activated.'));
+    } finally { setPaymentBusy(false); }
   };
 
   return (
@@ -102,6 +143,7 @@ export function MonetizationExtrasModal({
 
         <div className="p-4 sm:p-7 space-y-8">
           {notice && <div role="status" className="flex gap-3 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100"><Info className="h-5 w-5 shrink-0 text-amber-300" /><span>{notice}</span></div>}
+          {order && <div className="space-y-3 rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.06] p-4 text-sm text-white"><h3 className="font-bold">{t('Pedido SPEI pendiente','Pending SPEI order')}</h3><p>{order.productLabel} · <strong>${order.totalMxn.toLocaleString('es-MX')} MXN</strong> {t('(IVA incluido)','(VAT included)')}</p><p className="text-xs text-white/70">{t('Referencia para identificar el pedido','Order reference')}: <strong className="select-all">{order.reference}</strong></p><p className="text-xs text-white/50">{t('Vence','Expires')}: {new Date(order.expiresAt).toLocaleString('es-MX')}</p><label className="block text-xs text-white/75">{t('Referencia de la transferencia bancaria','Bank transfer reference')}<input value={transferReference} onChange={e=>setTransferReference(e.target.value)} maxLength={120} className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 p-2 text-white" placeholder={t('Referencia que aparece en tu banco','Reference shown by your bank')} /></label><button type="button" onClick={()=>void reportTransfer()} disabled={paymentBusy || transferReference.trim().length<5} className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-xs font-black text-black disabled:opacity-50">{paymentBusy ? t('Procesando…','Processing…') : t('Ya realicé la transferencia · reportar','I made the transfer · report it')}</button><p className="text-[10px] text-white/50">{t('No subas una captura como prueba definitiva. Reportar no activa el plan; el equipo debe verificar el abono en la banca real.','Do not treat a screenshot as definitive proof. Reporting does not activate the plan; staff must verify the actual bank deposit.')}</p></div>}
 
           <section>
             <div className="mb-4 flex items-end justify-between gap-3">
@@ -127,7 +169,7 @@ export function MonetizationExtrasModal({
                     return <p className="-mt-2 mb-4 text-[10px] leading-relaxed text-white/50">{t(`Incluye IVA (16%): subtotal ${money(subtotal, subtotal)} + IVA ${money(vat, vat)}`, `Includes 16% VAT: subtotal ${money(subtotal, subtotal)} + VAT ${money(vat, vat)}`)}</p>;
                   })()}
                   <ul className="mb-5 flex-1 space-y-2.5">{offer.features.map(feature => <li key={feature} className="flex gap-2 text-xs leading-relaxed text-white/75"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />{feature}</li>)}</ul>
-                  <button onClick={() => handlePlanClick(tier)} className={`w-full rounded-xl px-4 py-3 text-xs font-extrabold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-300 ${index === 1 ? 'bg-fuchsia-300 text-[#170b1d] hover:bg-fuchsia-200' : index === 2 ? 'bg-amber-300 text-black hover:bg-amber-200' : 'border border-white/15 bg-white/5 text-white hover:bg-white/10'}`}>{index === 0 ? t('Seguir gratis','Continue free') : t('Ver disponibilidad de pago','Check payment availability')}</button>
+                  <button onClick={() => void handlePlanClick(tier)} disabled={paymentBusy} className={`w-full rounded-xl px-4 py-3 text-xs font-extrabold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-300 ${index === 1 ? 'bg-fuchsia-300 text-[#170b1d] hover:bg-fuchsia-200' : index === 2 ? 'bg-amber-300 text-black hover:bg-amber-200' : 'border border-white/15 bg-white/5 text-white hover:bg-white/10'}`}>{index === 0 ? t('Seguir gratis','Continue free') : paymentBusy ? t('Procesando…','Processing…') : t('Generar referencia SPEI','Create SPEI reference')}</button>
                 </article>;
               })}
             </div>
