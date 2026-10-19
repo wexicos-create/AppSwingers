@@ -42,6 +42,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     isEs ? 'Cupo limitado para parejas verificadas. Revisa la sección de eventos.' : 'Limited capacity for verified couples. Check events tab.'
   );
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -88,8 +89,10 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
-    setBroadcastSuccess(true);
-    setTimeout(() => setBroadcastSuccess(false), 4000);
+    setBroadcastSuccess(false);
+    setBroadcastError(isEs
+      ? 'Notificaciones no configuradas: falta un servicio de envío en el servidor. No se envió ninguna alerta.'
+      : 'Notifications are not configured: a server-side delivery service is missing. No alert was sent.');
   };
 
   return (
@@ -179,36 +182,36 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
                     <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos México (MXN)' : 'Mexico Revenue'}</span>
-                    <span className="text-xl font-black text-emerald-400 mt-1 block">$148,450 MXN</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% IVA ($20,475)</span>
+                    <span className="text-xl font-black text-emerald-400 mt-1 block">—</span>
+                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Sin conexión a facturación real</span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
                     <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos USA (USD)' : 'USA Revenue'}</span>
-                    <span className="text-xl font-black text-pink-400 mt-1 block">$12,380 USD</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% Tax Rate</span>
+                    <span className="text-xl font-black text-pink-400 mt-1 block">—</span>
+                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Sin conexión a facturación real</span>
                   </div>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-xs">
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Plan Silver ($408 MXN / $100 USD 15d):' : 'Silver Plan:'}</span>
-                    <span className="font-bold text-white">312 suscriptores</span>
+                    <span className="font-bold text-white">—</span>
                   </div>
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Plan Gold ($800 MXN / $180 USD mes):' : 'Gold Plan:'}</span>
-                    <span className="font-bold text-amber-300">184 miembros VIP</span>
+                    <span className="font-bold text-amber-300">—</span>
                   </div>
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Sponsored Profiles ($1,500 MXN / $800 USD):' : 'Sponsored Profiles:'}</span>
-                    <span className="font-bold text-pink-400">18 agencias / clubes</span>
+                    <span className="font-bold text-pink-400">—</span>
                   </div>
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Propuestas Colaboración ($350 MXN / $80 USD):' : 'Collab Proposals:'}</span>
-                    <span className="font-bold text-emerald-300">42 revisadas</span>
+                    <span className="font-bold text-emerald-300">—</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-white/80">{isEs ? 'Comisión Creadoras (15% neta + 10% cobro):' : 'Creator Net Commission:'}</span>
-                    <span className="font-bold text-purple-300">15% retenido activo</span>
+                    <span className="font-bold text-purple-300">No verificado</span>
                   </div>
                 </div>
               </div>
@@ -219,11 +222,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <div className="p-3 rounded-2xl bg-black/50 border border-white/10">
-                    <span className="text-lg font-bold text-white">1,842</span>
+                    <span className="text-lg font-bold text-white">—</span>
                     <span className="text-[10px] text-white/50 block">{isEs ? 'Dispositivos Registrados' : 'Registered Devices'}</span>
                   </div>
                   <div className="p-3 rounded-2xl bg-black/50 border border-white/10">
-                    <span className="text-lg font-bold text-emerald-400">99.4%</span>
+                    <span className="text-lg font-bold text-emerald-400">—</span>
                     <span className="text-[10px] text-white/50 block">{isEs ? 'Tasa de Entrega Push' : 'Delivery Rate'}</span>
                   </div>
                 </div>
@@ -256,7 +259,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
                   {broadcastSuccess && (
                     <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold text-center">
-                      {isEs ? '¡Alerta enviada exitosamente a los 1,842 dispositivos en México y USA!' : 'Alert broadcasted to 1,842 devices!'}
+                      {isEs ? 'La solicitud fue aceptada por el servidor.' : 'The request was accepted by the server.'}
                     </div>
                   )}
 
@@ -277,15 +280,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   <span className="text-xs font-bold text-white block">{isEs ? 'Ciberseguridad del APK' : 'APK Cybersecurity'}</span>
                   <div className="flex items-center gap-2 text-[11px] text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cifrado TLS 1.3 & Tokens con expiración segura</span>
+                    <span>Estado TLS/tokens: requiere auditoría del despliegue</span>
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Validación biométrica facial e INE contra duplicados</span>
+                    <span>Verificación de identidad: no conectada</span>
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cero tolerancia a extorsión o estafas financieras</span>
+                    <span>Moderación y antifraude: requiere backend</span>
                   </div>
                 </div>
 
