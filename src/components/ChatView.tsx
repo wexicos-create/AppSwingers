@@ -83,29 +83,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [liveLocationChats]);
 
-  const toggleLiveLocation = (chatKey: string, partnerName: string) => {
-    const isCurrentlyShared = !!liveLocationChats[chatKey];
-    const willShare = !isCurrentlyShared;
-    setLiveLocationChats(prev => ({ ...prev, [chatKey]: willShare }));
-
-    const statusMsg: ChatMessage = {
-      id: `loc_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      t: willShare
-        ? `📍 Has activado la función de compartir ubicación en tiempo real con ${partnerName}. Ambos perfiles pueden ver coordenadas dinámicas de encuentro.`
-        : `🔒 Has apagado la ubicación en tiempo real. Tu posición física exacta ahora está completamente protegida y oculta.`,
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), statusMsg]
-    }));
-
-    showToast(willShare 
-      ? `Ubicación en tiempo real: ACTIVADA (Compartiendo con ${partnerName})` 
-      : `Ubicación en tiempo real: APAGADA (Modo Privado Seguro)`
-    );
+  const toggleLiveLocation = (_chatKey: string, _partnerName: string) => {
+    showToast('Compartir ubicación en tiempo real no está conectado. No se compartieron coordenadas.');
   };
 
   // Automatically select chat if initialChatUserId is provided (from Match modal or matches list)
