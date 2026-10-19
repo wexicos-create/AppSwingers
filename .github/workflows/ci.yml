@@ -29,10 +29,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: TypeScript check
         run: npm run lint
       - name: Production web build
+        run: npm run build
+      - name: Install Functions dependencies
+        working-directory: functions
+        run: npm install --no-audit --no-fund
+      - name: TypeScript check for backend
+        working-directory: functions
+        run: npm run lint
+      - name: Compile Firebase Functions
+        working-directory: functions
         run: npm run build
