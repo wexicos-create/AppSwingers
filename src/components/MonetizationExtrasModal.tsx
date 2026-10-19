@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AppRegion, SubscriptionTier } from '../types';
 import { auth } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info, Users, Ticket } from 'lucide-react';
+import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info, Users, Ticket, MessageCircle, ExternalLink, CheckCircle2 } from 'lucide-react';
 
 interface MonetizationExtrasModalProps {
   isOpen: boolean;
@@ -32,6 +32,7 @@ export function MonetizationExtrasModal({
   const [notice, setNotice] = useState<string | null>(null);
   const [order, setOrder] = useState<{orderId:string;reference:string;totalMxn:number;expiresAt:string;productLabel:string}|null>(null);
   const [transferReference, setTransferReference] = useState('');
+  const [submittedOrder, setSubmittedOrder] = useState<{orderId:string;reference:string;totalMxn:number;productLabel:string;trackingNumber:string}|null>(null);
   const [paymentBusy, setPaymentBusy] = useState(false);
   if (!isOpen) return null;
 
@@ -88,7 +89,7 @@ export function MonetizationExtrasModal({
       setNotice(t('Inicia sesión para generar una referencia SPEI segura. No se creó ningún pedido.', 'Sign in to create a secure SPEI reference. No order was created.'));
       return;
     }
-    setPaymentBusy(true); setNotice(null); setOrder(null); setTransferReference('');
+    setPaymentBusy(true); setNotice(null); setOrder(null); setSubmittedOrder(null); setTransferReference('');
     try {
       const functions = getFunctions(undefined, 'us-central1');
       const createOrder = httpsCallable(functions, 'createSpeiOrder');
@@ -102,16 +103,18 @@ export function MonetizationExtrasModal({
   };
 
   const reportTransfer = async () => {
-    if (!order || transferReference.trim().length < 5) {
-      setNotice(t('Escribe la referencia real de la transferencia (mínimo 5 caracteres).', 'Enter the actual bank transfer reference (at least 5 characters).'));
+    const trackingNumber = transferReference.trim();
+    if (!order || trackingNumber.length < 5) {
+      setNotice(t('Escribe la clave de rastreo SPEI o referencia bancaria (mínimo 5 caracteres).', 'Enter the SPEI tracking key or bank reference (at least 5 characters).'));
       return;
     }
     setPaymentBusy(true);
+    setNotice(null);
     try {
       const functions = getFunctions(undefined, 'us-central1');
       const report = httpsCallable(functions, 'reportSpeiTransfer');
-      await report({ orderId: order.orderId, transferReference: transferReference.trim() });
-      setNotice(t('Reporte enviado a revisión. No se activó el plan; espera a que se confirme el abono real en el banco.', 'Report submitted for review. Your plan is not active; wait for the actual bank deposit to be confirmed.'));
+      await report({ orderId: order.orderId, trackingNumber });
+      setSubmittedOrder({ orderId: order.orderId, reference: order.reference, totalMxn: order.totalMxn, productLabel: order.productLabel, trackingNumber });
       setOrder(null);
       setTransferReference('');
     } catch (e) {
@@ -121,6 +124,7 @@ export function MonetizationExtrasModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-3 sm:p-5 overflow-y-auto" role="dialog" aria-modal="true" aria-labelledby="monetization-title">
+      {submittedOrder && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/95 backdrop-blur-xl p-4" role="status" aria-live="polite"><div className="w-full max-w-md rounded-3xl border border-emerald-300/30 bg-[#09070e] p-6 sm:p-8 text-center shadow-2xl"><div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-300/30 bg-emerald-300/10 text-emerald-300"><CheckCircle2 className="h-8 w-8" /></div><p className="text-[10px] font-black uppercase tracking-[.2em] text-emerald-300">{t('Pedido registrado','Order registered')}</p><h2 className="mt-2 text-2xl font-black text-white">{t('Estamos validando tu depósito','We are validating your deposit')}</h2><p className="mt-3 text-sm leading-relaxed text-white/70">{t('En un plazo máximo de 24 horas revisaremos el rastreo y el abono bancario. Te informaremos si el pago queda aprobado o rechazado. Tu plan se activará únicamente cuando confirmemos el depósito real.','Within 24 hours, we will review the tracking information and bank credit. We will notify you whether payment is approved or rejected. Your plan activates only after the actual deposit is confirmed.')}</p><div className="my-5 space-y-2 rounded-2xl border border-white/10 bg-white/[.04] p-4 text-left"><p className="text-xs text-white/60">{t('Pedido','Order')}: <span className="font-mono text-white">{submittedOrder.orderId}</span></p><p className="text-xs text-white/60">{t('Concepto','Item')}: <span className="font-semibold text-white">{submittedOrder.productLabel}</span></p><p className="text-xs text-white/60">{t('Total','Total')}: <span className="font-bold text-white">${submittedOrder.totalMxn.toLocaleString('es-MX')} MXN</span></p><p className="text-xs text-white/60">{t('Referencia del pedido','Order reference')}: <span className="select-all font-mono text-white">{submittedOrder.reference}</span></p><p className="break-all text-xs text-white/60">{t('Clave de rastreo enviada','Tracking key submitted')}: <span className="select-all font-mono text-amber-200">{submittedOrder.trackingNumber}</span></p><span className="inline-flex rounded-full border border-amber-300/25 bg-amber-300/10 px-2.5 py-1 text-[10px] font-bold text-amber-200">{t('Pendiente de verificación bancaria','Awaiting bank verification')}</span></div><p className="mb-3 text-[11px] leading-relaxed text-white/50">{t('El número de rastreo por sí solo no demuestra el abono. La comprobación se completa con MI-SPEI/CEP y el estado de cuenta receptor.','A tracking number alone does not prove the deposit. Verification requires MI-SPEI/CEP and the receiving bank statement.')}</p><a href="https://wa.me/524443218418" target="_blank" rel="noreferrer" className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-black text-black hover:bg-emerald-400"><MessageCircle className="h-4 w-4" />{t('Enviar WhatsApp a administradores','WhatsApp the administrators')}</a><a href="https://www.banxico.org.mx/cep/" target="_blank" rel="noreferrer" className="mb-4 inline-flex items-center gap-1.5 text-xs text-fuchsia-200 underline underline-offset-4"><ExternalLink className="h-3.5 w-3.5" />{t('Consultar rastreo en Banxico','Check tracking on Banxico')}</a><button type="button" onClick={onClose} className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white hover:bg-white/10">{t('Cerrar','Close')}</button></div></div>}
       <div className="w-full max-w-5xl my-5 overflow-hidden rounded-[28px] border border-fuchsia-300/20 bg-[#09070e] shadow-[0_30px_120px_rgba(0,0,0,.7)]">
         <div className="relative overflow-hidden border-b border-white/10 px-5 py-7 sm:px-8 sm:py-9 bg-gradient-to-br from-fuchsia-950/80 via-[#151020] to-[#08070c]">
           <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-fuchsia-500/15 blur-3xl pointer-events-none" />
@@ -143,7 +147,7 @@ export function MonetizationExtrasModal({
 
         <div className="p-4 sm:p-7 space-y-8">
           {notice && <div role="status" className="flex gap-3 rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4 text-sm text-amber-100"><Info className="h-5 w-5 shrink-0 text-amber-300" /><span>{notice}</span></div>}
-          {order && <div className="space-y-3 rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.06] p-4 text-sm text-white"><h3 className="font-bold">{t('Pedido SPEI pendiente','Pending SPEI order')}</h3><p>{order.productLabel} · <strong>${order.totalMxn.toLocaleString('es-MX')} MXN</strong> {t('(IVA incluido)','(VAT included)')}</p><p className="text-xs text-white/70">{t('Referencia para identificar el pedido','Order reference')}: <strong className="select-all">{order.reference}</strong></p><p className="text-xs text-white/50">{t('Vence','Expires')}: {new Date(order.expiresAt).toLocaleString('es-MX')}</p><label className="block text-xs text-white/75">{t('Referencia de la transferencia bancaria','Bank transfer reference')}<input value={transferReference} onChange={e=>setTransferReference(e.target.value)} maxLength={120} className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 p-2 text-white" placeholder={t('Referencia que aparece en tu banco','Reference shown by your bank')} /></label><button type="button" onClick={()=>void reportTransfer()} disabled={paymentBusy || transferReference.trim().length<5} className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-xs font-black text-black disabled:opacity-50">{paymentBusy ? t('Procesando…','Processing…') : t('Ya realicé la transferencia · reportar','I made the transfer · report it')}</button><p className="text-[10px] text-white/50">{t('No subas una captura como prueba definitiva. Reportar no activa el plan; el equipo debe verificar el abono en la banca real.','Do not treat a screenshot as definitive proof. Reporting does not activate the plan; staff must verify the actual bank deposit.')}</p></div>}
+          {order && <div className="space-y-3 rounded-2xl border border-emerald-300/25 bg-emerald-300/[0.06] p-4 text-sm text-white"><h3 className="font-bold">{t('Datos de tu depósito SPEI','Your SPEI deposit details')}</h3><p>{order.productLabel} · <strong>${order.totalMxn.toLocaleString('es-MX')} MXN</strong> {t('(IVA incluido)','(VAT included)')}</p><p className="text-xs text-white/70">{t('Referencia para identificar el pedido','Order reference')}: <strong className="select-all">{order.reference}</strong></p><p className="text-xs text-white/50">{t('Vence','Expires')}: {new Date(order.expiresAt).toLocaleString('es-MX')}</p><a href="https://wa.me/524443218418" target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-xs font-bold text-emerald-200 hover:bg-emerald-500/25"><MessageCircle className="h-4 w-4" />{t('Contactar a administradores por WhatsApp','Contact administrators on WhatsApp')}</a><label className="block text-xs text-white/75">{t('Clave de rastreo de la transferencia SPEI','SPEI transfer tracking key')}<input value={transferReference} onChange={e=>setTransferReference(e.target.value)} maxLength={120} autoComplete="off" className="mt-1 w-full rounded-lg border border-white/15 bg-black/40 p-3 text-white" placeholder={t('Introduce la clave de rastreo del comprobante bancario','Enter the tracking key from your bank receipt')} aria-label={t('Clave de rastreo SPEI','SPEI tracking key')} /></label><button type="button" onClick={()=>void reportTransfer()} disabled={paymentBusy || transferReference.trim().length<5} className="w-full rounded-xl bg-emerald-300 px-4 py-3 text-xs font-black text-black disabled:opacity-50">{paymentBusy ? t('Enviando rastreo…','Submitting tracking…') : t('Enviar rastreo y solicitar validación','Submit tracking for verification')}</button><p className="text-[10px] text-white/50">{t('El sistema revisará duplicados y formato; el equipo validará la existencia de la transferencia en MI-SPEI/CEP y comprobará el abono. Enviar la clave no activa el beneficio.','The system checks duplicates and format; staff verifies the transfer in MI-SPEI/CEP and checks the receiving account credit. Submitting the key does not activate the benefit.')}</p></div>}
 
           <section>
             <div className="mb-4 flex items-end justify-between gap-3">
