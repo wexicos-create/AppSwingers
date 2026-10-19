@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { getIdTokenResult } from 'firebase/auth';
+import { auth } from '../firebase';
 import { 
   X, 
   ShieldAlert, 
@@ -35,11 +37,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [error, setError] = useState<string | null>(null);
 
   // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
-  const [isChangingCreds, setIsChangingCreds] = useState(false);
-  const [newPass, setNewPass] = useState('');
-  const [newPin, setNewPin] = useState('');
+  const [isCheckingAdmin, setIsCheckingAdmin] = useState(false);
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
@@ -53,36 +51,35 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
-      return;
-    }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
-      return;
-    }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
-    }
-    setIsLoggedIn(true);
-  };
+    setIsCheckingAdmin(true);
+    try {
+      const currentUser = auth.currentUser;
+      if (!currentUser || currentUser.email?.toLowerCase() !== email.trim().toLowerCase()) {
+        setError(isEs
+          ? 'Inicia sesión con la cuenta autorizada mediante Firebase antes de entrar al panel.'
+          : 'Sign in with the authorized Firebase account before accessing the admin panel.');
+        return;
+      }
 
-  const handleUpdateCreds = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
+      // Only a server-issued Firebase custom claim can authorize administrator access.
+      const tokenResult = await getIdTokenResult(currentUser, true);
+      if (tokenResult.claims.admin !== true) {
+        setError(isEs
+          ? 'Esta cuenta no tiene el permiso administrativo asignado en el servidor.'
+          : 'This account does not have the server-assigned administrator permission.');
+        return;
+      }
+      setIsLoggedIn(true);
+    } catch {
+      setError(isEs
+        ? 'No se pudo verificar el permiso administrativo. Inténtalo de nuevo.'
+        : 'Could not verify administrator permission. Please try again.');
+    } finally {
+      setIsCheckingAdmin(false);
     }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
-    }
-    setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -104,8 +101,10 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
-    setBroadcastSuccess(true);
-    setTimeout(() => setBroadcastSuccess(false), 4000);
+    setBroadcastSuccess(false);
+    setError(isEs
+      ? 'Las notificaciones push no están conectadas a un servicio de envío. No se envió ninguna alerta.'
+      : 'Push notifications are not connected to a delivery service. No alert was sent.');
   };
 
   return (
@@ -161,7 +160,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
+                autoComplete="current-password" placeholder={isEs ? "Contraseña de la cuenta Firebase" : "Firebase account password"}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
@@ -176,7 +175,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
+                autoComplete="one-time-code" placeholder={isEs ? "PIN no utilizado; se verifica el permiso del servidor" : "Unused PIN; server permission is verified"}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
               />
             </div>
@@ -184,7 +183,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition mt-1 active:scale-95"
             >
-              {isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System'}
+              {isCheckingAdmin ? (isEs ? 'Verificando permiso…' : 'Verifying permission…') : (isEs ? 'Verificar permiso administrativo' : 'Verify administrator permission')}
             </button>
           </form>
         ) : (
@@ -354,54 +353,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   </div>
                 </div>
 
-                {isChangingCreds ? (
-                  <form onSubmit={handleUpdateCreds} className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">{isEs ? 'Cambiar Credenciales Admin' : 'Change Admin Credentials'}</h4>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nueva Contraseña' : 'New Password'}</label>
-                      <input
-                        type="password"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="Nueva contraseña"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nuevo NIP (6 dígitos)' : 'New PIN (6 digits)'}</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Nuevo NIP"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs tracking-widest text-center"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsChangingCreds(false)}
-                        className="flex-1 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Cancelar' : 'Cancel'}
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Guardar Cambios' : 'Save Changes'}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => setIsChangingCreds(true)}
-                    className="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-white/20 transition"
-                  >
-                    {isEs ? 'Modificar Contraseña o NIP de Verificación' : 'Modify Password or Verification PIN'}
-                  </button>
-                )}
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px]">
+                  {isEs
+                    ? 'Las credenciales administrativas se gestionan en el proveedor de identidad y en el servidor. No se guardan contraseñas ni PIN de administrador en este dispositivo.'
+                    : 'Administrator credentials are managed by the identity provider and server. Admin passwords and PINs are not stored on this device.'}
+                </div>
 
                 {/* Purge cookies and local data */}
                 <button
