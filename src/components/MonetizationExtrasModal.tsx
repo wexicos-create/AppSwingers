@@ -63,10 +63,10 @@ export function MonetizationExtrasModal({
   ];
 
   const revenueOffers = [
-    { icon: <Video className="w-5 h-5" />, title: t('Contenido y membresías de plataforma', 'Platform content & memberships'), desc: t('Acceso premium y contenido autorizado de la plataforma desde $99 MXN/mes. No se realizan transferencias, propinas ni pagos a usuarios.', 'Premium access and authorized platform content from $5.99/month. No transfers, tips or payouts are made to users.'), badge: t('Desde $99 MXN/mes', 'From $5.99/month') },
-    { icon: <CalendarDays className="w-5 h-5" />, title: t('Eventos y entradas', 'Events & tickets'), desc: t('Entradas estándar desde $199 MXN y pase VIP desde $399 MXN; aforo, organizador y reglas visibles antes de solicitar acceso.', 'Standard tickets from $11.99 and VIP passes from $24.99; capacity, organizer and rules shown before access requests.'), badge: t('Desde $199 MXN', 'From $11.99') },
-    { icon: <Megaphone className="w-5 h-5" />, title: t('Clubes, agencias y patrocinios', 'Clubs, agencies & sponsorships'), desc: t('Perfil de club desde $1,499 MXN/mes y campaña destacada desde $799 MXN; siempre identificada como publicidad.', 'Club profile from $89/month and featured campaign from $49; always labeled as advertising.'), badge: t('Desde $799 MXN', 'From $49') },
-    { icon: <TrendingUp className="w-5 h-5" />, title: t('Impulsos y herramientas', 'Boosts & tools'), desc: t('Impulso de perfil de 24 h desde $79 MXN; herramientas de anfitrión desde $299 MXN/mes. No se garantizan coincidencias.', '24-hour profile boost from $4.99; host tools from $17.99/month. No matches are guaranteed.'), badge: t('Desde $79 MXN', 'From $4.99') },
+    { icon: <Video className="w-5 h-5" />, title: t('Contenido y membresías de plataforma', 'Platform content & memberships'), desc: t('Acceso premium y contenido autorizado de la plataforma desde $149 MXN/mes. No se realizan transferencias, propinas ni pagos a usuarios.', 'Premium access and authorized platform content from $8.99/month. No transfers, tips or payouts are made to users.'), badge: t('Desde $149 MXN/mes · IVA incluido', 'From $8.99/month · tax included') },
+    { icon: <CalendarDays className="w-5 h-5" />, title: t('Eventos y entradas', 'Events & tickets'), desc: t('Entradas estándar desde $399 MXN y pase VIP desde $799 MXN, IVA incluido; aforo, organizador y reglas visibles antes de solicitar acceso.', 'Standard tickets from $24.99 and VIP passes from $49.99, tax included; capacity, organizer and rules shown before access requests.'), badge: t('Desde $399 MXN · IVA incluido', 'From $24.99 · tax included') },
+    { icon: <Megaphone className="w-5 h-5" />, title: t('Clubes, agencias y patrocinios', 'Clubs, agencies & sponsorships'), desc: t('Perfil de club desde $2,999 MXN/mes y campaña destacada desde $1,499 MXN, IVA incluido; siempre identificada como publicidad.', 'Club profile from $179/month and featured campaign from $89, tax included; always labeled as advertising.'), badge: t('Desde $1,499 MXN · IVA incluido', 'From $89 · tax included') },
+    { icon: <TrendingUp className="w-5 h-5" />, title: t('Impulsos y herramientas', 'Boosts & tools'), desc: t('Impulso de perfil de 24 h desde $149 MXN; herramientas de anfitrión desde $599 MXN/mes, IVA incluido. No se garantizan coincidencias.', '24-hour profile boost from $8.99; host tools from $34.99/month, tax included. No matches are guaranteed.'), badge: t('Desde $149 MXN · IVA incluido', 'From $8.99 · tax included') },
   ];
 
   const handlePlanClick = (tier: SubscriptionTier) => {
@@ -93,7 +93,7 @@ export function MonetizationExtrasModal({
             <p className="mt-3 max-w-2xl text-sm sm:text-base leading-relaxed text-white/65">{t('AppSwinger combina comunidad gratuita, descubrimiento con privacidad y experiencias opcionales. Paga solo por herramientas adicionales que realmente quieras.', 'AppSwinger combines a free community, privacy-minded discovery and optional experiences. Pay only for extra tools you actually want.')}</p>
             <div className="mt-5 flex flex-wrap gap-2 text-xs text-white/70">
               <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5">{t('18+ y consentimiento obligatorio','18+ and consent required')}</span>
-              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{t('Precios claros antes de pagar','Clear pricing before checkout')}</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{t('IVA incluido y desglose fiscal visible','Tax-inclusive prices and clear tax breakdown')}</span>
               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{t('Sin cobros simulados','No simulated charges')}</span>
             </div>
           </div>
@@ -110,7 +110,7 @@ export function MonetizationExtrasModal({
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {offers.map((offer, index) => {
                 const tier: SubscriptionTier = index === 0 ? 'free' : index === 1 ? 'plus' : 'ultra';
-                const price = index === 0 ? t('Gratis', 'Free') : index === 1 ? money(249, 14.99) + t(' / mes', ' / month') : money(399, 24.99) + t(' / mes', ' / month');
+                const price = index === 0 ? t('Gratis', 'Free') : index === 1 ? money(699, 39.99) + t(' / mes', ' / month') : money(399, 24.99) + t(' / mes', ' / month');
                 const active = currentTier === tier || (tier === 'plus' && currentTier === 'silver') || (tier === 'ultra' && currentTier === 'gold');
                 return <article key={offer.title} className={`relative flex flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:border-white/25 ${offer.tone} ${index === 1 ? 'md:-translate-y-1 md:shadow-[0_16px_60px_rgba(217,70,239,.12)]' : ''}`}>
                   {index === 1 && <span className="absolute -top-2.5 left-5 rounded-full bg-fuchsia-300 px-3 py-1 text-[9px] font-black uppercase tracking-wider text-black">{t('Más elegido','Popular')}</span>}
@@ -124,7 +124,7 @@ export function MonetizationExtrasModal({
                 </article>;
               })}
             </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-white/40">{t('Tarifas propuestas de lanzamiento: VIP Plus $249 MXN/mes y Ultra VIP $399 MXN/mes (referencia USD: $14.99 y $24.99). Son precios comerciales definidos para validar la oferta, pero no se puede cobrar ni activar un plan hasta que el checkout y la conciliación SPEI estén implementados y probados. Impuestos y condiciones se mostrarán antes de contratar.', 'Proposed launch pricing: VIP Plus $14.99/month and Ultra VIP $24.99/month (Mexico reference: MXN $249 and $399). These are set commercial prices for offer validation, but plans cannot be charged or activated until checkout and SPEI reconciliation are implemented and tested. Taxes and terms must be shown before purchase.')}</p>
+            <p className="mt-3 text-[10px] leading-relaxed text-white/40">{t('Precios de lanzamiento propuestos para México: VIP Plus $399 MXN/mes y Ultra VIP $699 MXN/mes, IVA del 16% incluido en el precio final al consumidor. En el desglose fiscal, el precio total se separará en subtotal e IVA. Los precios USD son referencias comerciales, no conversiones en tiempo real. No se puede cobrar ni activar un plan hasta que el checkout y la conciliación SPEI estén implementados y probados.', 'Proposed launch pricing: VIP Plus $24.99/month and Ultra VIP $39.99/month. Mexico consumer prices include 16% VAT; the fiscal breakdown will show subtotal and VAT separately. USD prices are commercial references, not live currency conversion. Plans cannot be charged or activated until checkout and SPEI reconciliation are implemented and tested.')}</p>
           </section>
 
           <section>
