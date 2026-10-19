@@ -242,3 +242,117 @@ export const createCreatorCommerceCheckout = onCall({ region: REGION, enforceApp
   }
   throw new HttpsError("unimplemented", "El adaptador del procesador y la liquidación a creadoras deben integrarse y probarse antes de activar este módulo.");
 });
+
+
+/** Creator wallet is a server-derived ledger view, not a client-editable balance.
+ * The "virtual card" is a display-only wallet card, not an issued bank/payment card. */
+export const getCreatorWallet = onCall({ region: REGION, enforceAppCheck: true }, async (request) => {
+  const auth = requireUser(request);
+  const [creatorSnap, ledgerSnap, payoutSnap, withdrawalSnap] = await Promise.all([
+    db.collection("creators").doc(auth.uid).get(),
+    db.collection("creatorLedger").where("creatorUid", "==", auth.uid).get(),
+    db.collection("creatorPayoutProfiles").doc(auth.uid).get(),
+    db.collection("creatorWithdrawals").where("creatorUid", "==", auth.uid).get(),
+  ]);
+  if (!creatorSnap.exists) throw new HttpsError("failed-precondition", "Primero debes completar el alta de creadora.");
+  const creator = creatorSnap.data()!;
+  let availableMxn = 0, pendingMxn = 0, paidMxn = 0;
+  for (const row of ledgerSnap.docs) {
+    const e = row.data(), amount = typeof e.amountMxn === "number" && Number.isFinite(e.amountMxn) ? e.amountMxn : 0;
+    if (e.status === "available" && e.direction === "credit") availableMxn += amount;
+    if (e.status === "pending" && e.direction === "credit") pendingMxn += amount;
+    if (e.status === "paid" && e.direction === "debit") paidMxn += amount;
+  }
+  const withdrawals = withdrawalSnap.docs.map((d) => {
+    const w = d.data();
+    return { id: d.id, amountMxn: w.amountMxn, status: w.status, createdAt: w.createdAt?.toDate?.().toISOString() ?? null };
+  }).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")).slice(0, 10);
+  const payout = payoutSnap.data();
+  return {
+    currency: "MXN",
+    card: { label: "AppSwinger Wallet", maskedId: "AS-" + createHash("sha256").update(auth.uid).digest("hex").slice(0, 4).toUpperCase() + "-••••", kind: "internal_wallet_display_only", actualPaymentCardIssued: false },
+    balances: { availableMxn: Math.round(availableMxn * 100) / 100, pendingMxn: Math.round(pendingMxn * 100) / 100, paidMxn: Math.round(paidMxn * 100) / 100 },
+    payoutReadiness: {
+      creatorApproved: creator.status === "approved", identityVerified: creator.identityStatus === "verified",
+      taxDocumentVerified: payout?.taxDocumentStatus === "verified", bankStatementVerified: payout?.bankStatementStatus === "verified",
+      bankAccountVerified: payout?.bankAccountStatus === "verified", legalNameMatch: payout?.legalNameMatch === true,
+    }, withdrawals,
+  };
+});
+
+/** Request only; it never transfers money. Documents must be private Storage objects and verified by staff. */
+export const requestCreatorWithdrawal = onCall({ region: REGION, enforceAppCheck: true }, async (request) => {
+  const auth = requireUser(request);
+  const amountMxn = Number(request.data?.amountMxn);
+  const legalName = safeText(request.data?.legalName, 160);
+  const bankName = safeText(request.data?.bankName, 100);
+  const clabe = safeText(request.data?.clabe, 18).replace(/\s/g, "");
+  const taxDocumentRef = safeText(request.data?.taxDocumentRef, 500);
+  const bankStatementRef = safeText(request.data?.bankStatementRef, 500);
+  const taxId = safeText(request.data?.taxId, 20).toUpperCase();
+  if (!Number.isFinite(amountMxn) || amountMxn <= 0 || Math.round(amountMxn * 100) !== amountMxn * 100)
+    throw new HttpsError("invalid-argument", "Importe de retiro no válido.");
+  if (legalName.length < 5 || bankName.length < 2 || !/^\d{18}$/.test(clabe) || !taxDocumentRef || !bankStatementRef || taxId.length < 10)
+    throw new HttpsError("invalid-argument", "Se requiere nombre fiscal, banco, CLABE de 18 dígitos, constancia fiscal y estado de cuenta.");
+  const creatorRef = db.collection("creators").doc(auth.uid);
+  const payoutRef = db.collection("creatorPayoutProfiles").doc(auth.uid);
+  const withdrawalRef = db.collection("creatorWithdrawals").doc();
+  await db.runTransaction(async (tx) => {
+    const creatorSnap = await tx.get(creatorRef);
+    const payoutSnap = await tx.get(payoutRef);
+    const ledgerSnap = await tx.get(db.collection("creatorLedger").where("creatorUid", "==", auth.uid));
+    const pendingSnap = await tx.get(db.collection("creatorWithdrawals").where("creatorUid", "==", auth.uid).where("status", "in", ["requested", "under_review", "approved", "processing"]));
+    const creator = creatorSnap.data();
+    if (!creatorSnap.exists || creator?.status !== "approved" || creator?.identityStatus !== "verified")
+      throw new HttpsError("failed-precondition", "La cuenta de creadora y su identidad deben estar verificadas.");
+    let available = 0;
+    for (const row of ledgerSnap.docs) {
+      const e = row.data();
+      if (e.direction === "credit" && e.status === "available") available += Number(e.amountMxn || 0);
+      if (e.direction === "debit" && ["reserved", "paid"].includes(e.status)) available -= Number(e.amountMxn || 0);
+    }
+    const alreadyReserved = pendingSnap.docs.reduce((sum, row) => sum + Number(row.data().amountMxn || 0), 0);
+    if (amountMxn > Math.round((available - alreadyReserved) * 100) / 100) {
+      tx.set(db.collection("adminAlerts").doc(), { type: "creator_withdrawal_exceeds_balance", severity: "high", creatorUid: auth.uid, requestedAmountMxn: amountMxn, calculatedAvailableMxn: Math.round(available * 100) / 100, status: "open", createdAt: FieldValue.serverTimestamp() });
+      throw new HttpsError("failed-precondition", "El importe supera el saldo disponible. La operación fue bloqueada.");
+    }
+    const existing = payoutSnap.data();
+    const normalizeName = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    const nameMatches = Boolean(existing?.verifiedLegalName && normalizeName(existing.verifiedLegalName) === normalizeName(legalName));
+    tx.set(payoutRef, {
+      legalName, bankName, clabe, taxId, taxDocumentRef, bankStatementRef,
+      taxDocumentStatus: existing?.taxDocumentRef === taxDocumentRef ? existing.taxDocumentStatus : "pending_review",
+      bankStatementStatus: existing?.bankStatementRef === bankStatementRef ? existing.bankStatementStatus : "pending_review",
+      bankAccountStatus: "pending_review", legalNameMatch: nameMatches, submittedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+    tx.create(withdrawalRef, { creatorUid: auth.uid, amountMxn, currency: "MXN", status: "under_review", payoutProfileUid: auth.uid, taxWithholdingStatus: "pending_tax_review", nameMatchAtRequest: nameMatches, createdAt: FieldValue.serverTimestamp() });
+    tx.set(db.collection("adminAlerts").doc(), { type: "creator_withdrawal_requested", severity: "high", creatorUid: auth.uid, withdrawalId: withdrawalRef.id, amountMxn, currency: "MXN", status: "open", createdAt: FieldValue.serverTimestamp() });
+    tx.set(db.collection("adminReviewQueue").doc("withdrawal-" + withdrawalRef.id), { type: "creator_withdrawal", status: "under_review", creatorUid: auth.uid, withdrawalId: withdrawalRef.id, amountMxn, currency: "MXN", createdAt: FieldValue.serverTimestamp() });
+    tx.set(db.collection("auditLogs").doc(), { actorUid: auth.uid, action: "creator_withdrawal_requested", withdrawalId: withdrawalRef.id, amountMxn, createdAt: FieldValue.serverTimestamp() });
+  });
+  return { success: true, withdrawalId: withdrawalRef.id, status: "under_review", message: "Solicitud registrada. No se ha transferido dinero; la liberación exige validación documental, bancaria y fiscal." };
+});
+
+/** Admin-only integrity scan for malformed or non-server-approved ledger entries. */
+export const auditCreatorLedger = onCall({ region: REGION, enforceAppCheck: true }, async (request) => {
+  const admin = requireAdmin(request);
+  const ledger = await db.collection("creatorLedger").get();
+  const alerts: string[] = [];
+  for (const row of ledger.docs) {
+    const e = row.data(), amount = Number(e.amountMxn);
+    if (!e.creatorUid || !Number.isFinite(amount) || amount <= 0 ||
+        !["credit", "debit"].includes(e.direction) ||
+        !["pending", "available", "reserved", "paid", "reversed"].includes(e.status) ||
+        !e.sourceType || !e.sourceId || e.serverApproved !== true) {
+      await db.collection("adminAlerts").doc("ledger-" + row.id).set({
+        type: "creator_ledger_integrity", severity: "critical", ledgerEntryId: row.id,
+        creatorUid: e.creatorUid ?? null, status: "open",
+        reason: "Ledger entry missing valid amount, source, status or server approval",
+        detectedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+      alerts.push(row.id);
+    }
+  }
+  await db.collection("auditLogs").add({ actorUid: admin.uid, action: "creator_ledger_audit", flaggedCount: alerts.length, flaggedLedgerEntryIds: alerts.slice(0, 100), createdAt: FieldValue.serverTimestamp() });
+  return { scanned: ledger.size, flagged: alerts.length, alertIds: alerts.slice(0, 100) };
+});
