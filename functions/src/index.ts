@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
@@ -122,8 +122,10 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
     const order = snap.data()!;
     if (order.status !== "payment_reported" && order.status !== "under_review") throw new HttpsError("failed-precondition", "El pedido no está pendiente de revisión.");
     if (decision === "approve") {
-      const duplicate = await tx.get(db.collection("paymentOrders").where("bankTransactionId", "==", bankTransactionId).limit(1));
-      if (!duplicate.empty) throw new HttpsError("already-exists", "Ese movimiento bancario ya fue aplicado a otro pedido.");
+      const transactionKey = createHash("sha256").update(bankTransactionId).digest("hex");
+      const bankLedgerRef = db.collection("bankTransactionLedger").doc(transactionKey);
+      const duplicate = await tx.get(bankLedgerRef);
+      if (duplicate.exists) throw new HttpsError("already-exists", "Ese movimiento bancario ya fue aplicado a otro pedido.");
       if (order.currency !== "MXN" || typeof order.totalMxn !== "number") throw new HttpsError("failed-precondition", "Importe o moneda del pedido no válido.");
       const item = catalogItem(order.benefitKey);
       const now = Timestamp.now();
@@ -137,6 +139,7 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
       if ("quota" in item) entitlement.remainingQuota = item.quota;
       if ("maxGuests" in item) entitlement.maxGuests = item.maxGuests;
       tx.create(entitlementRef, entitlement);
+      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId, amountMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
       tx.update(orderRef, {
         status: "paid", bankTransactionId, bankConfirmed: true,
         reviewedBy: admin.uid, reviewedAt: now, reviewNotes: notes,
