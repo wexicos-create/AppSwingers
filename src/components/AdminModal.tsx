@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { auth } from '../firebase';
 import { 
   X, 
   ShieldAlert, 
@@ -28,18 +29,9 @@ interface AdminModalProps {
 }
 
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
-  const [isChangingCreds, setIsChangingCreds] = useState(false);
-  const [newPass, setNewPass] = useState('');
-  const [newPin, setNewPin] = useState('');
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
@@ -53,36 +45,28 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setError(isEs
+        ? 'Inicia sesión primero con tu cuenta de Firebase autorizada.'
+        : 'Sign in first with your authorized Firebase account.');
       return;
     }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
-      return;
+    try {
+      const token = await currentUser.getIdTokenResult(true);
+      if (token.claims.admin !== true) {
+        setError(isEs
+          ? 'Acceso denegado. Un administrador debe asignar el permiso admin en el servidor.'
+          : 'Access denied. An administrator must grant the admin claim server-side.');
+        return;
+      }
+      setIsLoggedIn(true);
+    } catch {
+      setError(isEs ? 'No se pudo verificar la sesión. Inténtalo de nuevo.' : 'Could not verify session. Please retry.');
     }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
-    }
-    setIsLoggedIn(true);
-  };
-
-  const handleUpdateCreds = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
-    }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
-    }
-    setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -132,59 +116,10 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
         {!isLoggedIn ? (
           <form onSubmit={handleLogin} className="flex flex-col gap-3.5">
-            {error && (
-              <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold text-center">
-                {error}
-              </div>
-            )}
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Mail className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Correo Electrónico Admin' : 'Admin Email'}
-              </label>
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="jocervantes99@gmail.com"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Key className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Contraseña' : 'Password'}
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                required
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition mt-1 active:scale-95"
-            >
-              {isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System'}
+            {error && <div role="alert" className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold text-center">{error}</div>}
+            <p className="text-xs text-white/70">{isEs ? 'El panel exige una sesión de Firebase y el claim admin=true asignado de forma segura desde un entorno de servidor. No existen credenciales predeterminadas.' : 'The panel requires a Firebase session and admin=true claim securely assigned server-side. No default credentials exist.'}</p>
+            <button type="submit" className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg">
+              {isEs ? 'Verificar sesión de administrador' : 'Verify administrator session'}
             </button>
           </form>
         ) : (
@@ -354,54 +289,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   </div>
                 </div>
 
-                {isChangingCreds ? (
-                  <form onSubmit={handleUpdateCreds} className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">{isEs ? 'Cambiar Credenciales Admin' : 'Change Admin Credentials'}</h4>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nueva Contraseña' : 'New Password'}</label>
-                      <input
-                        type="password"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="Nueva contraseña"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nuevo NIP (6 dígitos)' : 'New PIN (6 digits)'}</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Nuevo NIP"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs tracking-widest text-center"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsChangingCreds(false)}
-                        className="flex-1 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Cancelar' : 'Cancel'}
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Guardar Cambios' : 'Save Changes'}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => setIsChangingCreds(true)}
-                    className="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-white/20 transition"
-                  >
-                    {isEs ? 'Modificar Contraseña o NIP de Verificación' : 'Modify Password or Verification PIN'}
-                  </button>
-                )}
+                <p className="text-[11px] text-white/60">{isEs ? 'Los permisos de administrador se gestionan fuera del cliente mediante Firebase Admin SDK. Este panel no permite cambiar credenciales locales.' : 'Admin permissions are managed outside the client using Firebase Admin SDK. This panel cannot change local credentials.'}</p>
 
                 {/* Purge cookies and local data */}
                 <button
