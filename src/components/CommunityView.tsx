@@ -237,7 +237,7 @@ export function CommunityView({ region, isEs, userId, displayName }: CommunityVi
               <div className="flex items-center justify-between pt-3 border-t border-white/15 text-xs text-white/60">
                 <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-300">
                   <ShieldCheck className="w-3.5 h-3.5" />
-                  {isEs ? 'Consentimiento verificado' : 'Consent verified'}
+                  {isEs ? 'Consentimiento declarado' : 'Consent declared'}
                 </span>
                 <button className="flex items-center gap-1.5 text-rose-400 hover:text-rose-300 transition">
                   <Heart className="w-4 h-4 fill-rose-500 text-rose-500" />
