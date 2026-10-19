@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut as fbSignOut, User } from 'firebase/auth';
 import { addDoc, collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { 
   auth, 
-  googleProvider, 
-  syncUserProfile, 
+    syncUserProfile, 
   recordSwipe, 
   fetchUserMatches, 
   testConnection,
@@ -315,20 +314,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Google sign in
-  const handleGoogleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncUserProfile(result.user);
-        if (result.user.displayName) {
-          setUserProfile(prev => ({ ...prev, alias: result.user.displayName || prev.alias }));
-        }
-      }
-    } catch (e: any) {
-      console.warn('Sign In error:', e);
-    }
-  };
 
   const handleSignOut = async () => {
     try {
