@@ -912,6 +912,8 @@ export default function App() {
             <CommunityView
               region={region}
               isEs={isEs}
+              userId={user?.uid}
+              displayName={userProfile.alias || user?.displayName || undefined}
             />
           )}
 
