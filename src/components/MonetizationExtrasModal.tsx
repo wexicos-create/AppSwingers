@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppRegion, SubscriptionTier } from '../types';
-import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info } from 'lucide-react';
+import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info, Users, Ticket } from 'lucide-react';
 
 interface MonetizationExtrasModalProps {
   isOpen: boolean;
@@ -47,26 +47,27 @@ export function MonetizationExtrasModal({
     {
       eyebrow: t('PARA DESCUBRIR MÁS', 'DISCOVER MORE'),
       title: 'VIP Plus',
-      description: t('Más herramientas para organizar conexiones y destacar con control.', 'More tools to organize connections and stand out with control.'),
-      features: [t('Filtros avanzados y más acciones diarias', 'Advanced filters and more daily actions'), t('Prioridad configurable en descubrimiento', 'Configurable discovery priority'), t('Estadísticas personales de actividad', 'Personal activity insights')],
+      description: t('Acceso VIP Plus durante 10 días desde su activación aprobada.', 'VIP Plus access for 10 days after approved activation.'),
+      features: [t('Filtros avanzados y 15 postulaciones por semana', 'Advanced filters and 15 applications per week'), t('Prioridad configurable en descubrimiento', 'Configurable discovery priority'), t('Estadísticas personales de actividad', 'Personal activity insights')],
       icon: <Sparkles className="w-5 h-5" />,
       tone: 'border-fuchsia-400/35 bg-gradient-to-br from-fuchsia-950/65 to-black/60',
     },
     {
       eyebrow: t('EXPERIENCIA COMPLETA', 'FULL EXPERIENCE'),
       title: 'Ultra VIP',
-      description: t('Herramientas de privacidad y personalización para miembros frecuentes.', 'Privacy and personalization tools for frequent members.'),
-      features: [t('Modo discreto con controles claros', 'Discreet mode with clear controls'), t('Más filtros y preferencias guardadas', 'More filters and saved preferences'), t('Beneficios VIP sujetos a disponibilidad', 'VIP benefits subject to availability')],
+      description: t('Acceso Ultra VIP durante 20 días desde su activación aprobada.', 'Ultra VIP access for 20 days after approved activation.'),
+      features: [t('Modo discreto con controles claros', 'Discreet mode with clear controls'), t('Postulaciones ilimitadas mientras esté activo', 'Unlimited applications while active'), t('Más filtros y preferencias guardadas', 'More filters and saved preferences')],
       icon: <Crown className="w-5 h-5" />,
       tone: 'border-amber-400/40 bg-gradient-to-br from-amber-950/55 to-black/70',
     },
   ];
 
   const revenueOffers = [
-    { icon: <Video className="w-5 h-5" />, title: t('Contenido y membresías de plataforma', 'Platform content & memberships'), desc: t('Acceso premium y contenido autorizado de la plataforma desde $149 MXN/mes. No se realizan transferencias, propinas ni pagos a usuarios.', 'Premium access and authorized platform content from $8.99/month. No transfers, tips or payouts are made to users.'), badge: t('Desde $149 MXN/mes · IVA incluido', 'From $8.99/month · tax included') },
-    { icon: <CalendarDays className="w-5 h-5" />, title: t('Eventos y entradas', 'Events & tickets'), desc: t('Entradas estándar desde $399 MXN y pase VIP desde $799 MXN, IVA incluido; aforo, organizador y reglas visibles antes de solicitar acceso.', 'Standard tickets from $24.99 and VIP passes from $49.99, tax included; capacity, organizer and rules shown before access requests.'), badge: t('Desde $399 MXN · IVA incluido', 'From $24.99 · tax included') },
-    { icon: <Megaphone className="w-5 h-5" />, title: t('Clubes, agencias y patrocinios', 'Clubs, agencies & sponsorships'), desc: t('Perfil de club desde $2,999 MXN/mes y campaña destacada desde $1,499 MXN, IVA incluido; siempre identificada como publicidad.', 'Club profile from $179/month and featured campaign from $89, tax included; always labeled as advertising.'), badge: t('Desde $1,499 MXN · IVA incluido', 'From $89 · tax included') },
-    { icon: <TrendingUp className="w-5 h-5" />, title: t('Impulsos y herramientas', 'Boosts & tools'), desc: t('Impulso de perfil de 24 h desde $149 MXN; herramientas de anfitrión desde $599 MXN/mes, IVA incluido. No se garantizan coincidencias.', '24-hour profile boost from $8.99; host tools from $34.99/month, tax included. No matches are guaranteed.'), badge: t('Desde $149 MXN · IVA incluido', 'From $8.99 · tax included') },
+    { icon: <CalendarDays className="w-5 h-5" />, title: t('Publicación de evento (perfil comercial por uso)', 'Event listing (commercial profile, per use)'), desc: t('Cada publicación cuesta $1,500 MXN + IVA ($1,740 total). Aforo máximo: 40 invitados. El evento debe indicar claramente precio, reglas, consentimiento y si la entrada se cobra por persona o por pareja.', 'Each listing costs $1,500 MXN + VAT ($1,740 total). Maximum capacity: 40 guests. The event must clearly state price, rules, consent and whether admission is per person or couple.'), badge: t('$1,500 + IVA · $1,740 total', '$1,500 + VAT · $1,740 total') },
+    { icon: <Megaphone className="w-5 h-5" />, title: t('Campaña destacada', 'Featured campaign'), desc: t('Por campaña: $2,500 MXN + IVA ($2,900 total). Máximo 40 invitados. El distintivo destacado identifica publicidad y no garantiza asistencia.', 'Per campaign: $2,500 MXN + VAT ($2,900 total). Maximum 40 guests. Featured placement is labeled as advertising and does not guarantee attendance.'), badge: t('$2,500 + IVA · $2,900 total', '$2,500 + VAT · $2,900 total') },
+    { icon: <TrendingUp className="w-5 h-5" />, title: t('Impulso de perfil', 'Profile boost'), desc: t('Un impulso dura 15 días: $300 MXN + IVA ($348 total). Mejora la exposición durante el plazo, sin prometer coincidencias ni resultados.', 'A boost lasts 15 days: $300 MXN + VAT ($348 total). It increases exposure for the term without promising matches or results.'), badge: t('15 días · $300 + IVA', '15 days · $300 + VAT') },
+    { icon: <Users className="w-5 h-5" />, title: t('Herramientas para anfitriones', 'Host tools'), desc: t('$1,500 MXN + IVA ($1,740 total). Incluye la publicación de dos eventos en el panel de eventos. Cada evento admite hasta 40 invitados y debe pasar las reglas de publicación.', '$1,500 MXN + VAT ($1,740 total). Includes publishing two events in the events panel. Each event allows up to 40 guests and must pass listing rules.'), badge: t('2 eventos incluidos · $1,740 total', '2 events included · $1,740 total') },
+    { icon: <Ticket className="w-5 h-5" />, title: t('Precio de acceso a cada evento', 'Admission price per event'), desc: t('Quien publica define entre $500 y $1,200 MXN + IVA: total de $580 a $1,392. Debe seleccionar cobro individual o por pareja y puede definir descuento para mujeres. El precio y el descuento se muestran antes de reservar.', 'The organizer sets $500–$1,200 MXN + VAT: $580–$1,392 total. They must choose individual or couple pricing and may offer a discount for women. Price and discount are shown before booking.'), badge: t('$500–$1,200 + IVA · $580–$1,392 total', '$500–$1,200 + VAT · $580–$1,392 total') },
   ];
 
   const handlePlanClick = (tier: SubscriptionTier) => {
@@ -74,7 +75,7 @@ export function MonetizationExtrasModal({
       setNotice(t('Ya puedes usar las funciones gratuitas. No necesitas pagar para seguir participando.', 'You can use the free features now. Payment is not required to keep participating.'));
       return;
     }
-    setNotice(t('La contratación y activación de planes de pago todavía no está conectada a una conciliación SPEI real. No se ha realizado ningún cobro ni se ha activado un plan. Esta oferta queda como catálogo hasta completar el backend de pagos.', 'Paid plan checkout is not yet connected to real SPEI reconciliation. No charge has been made and no plan has been activated. This offer remains a catalog until the payment backend is complete.'));
+    setNotice(t('Los beneficios solo deben activarse después de que un administrador apruebe y concilie el depósito. El backend SPEI aún no está conectado; no se ha realizado ningún cobro ni activado un plan desde esta pantalla.', 'Benefits must only activate after an administrator approves and reconciles the deposit. SPEI backend is not connected yet; this screen has not charged or activated a plan.'));
   };
 
   return (
@@ -110,7 +111,7 @@ export function MonetizationExtrasModal({
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {offers.map((offer, index) => {
                 const tier: SubscriptionTier = index === 0 ? 'free' : index === 1 ? 'plus' : 'ultra';
-                const price = index === 0 ? t('Gratis', 'Free') : index === 1 ? money(399, 24.99) + t(' / mes', ' / month') : money(699, 39.99) + t(' / mes', ' / month');
+                const price = index === 0 ? t('Gratis', 'Free') : index === 1 ? money(406, 24.99) + t(' / 10 días', ' / 10 days') : money(754, 39.99) + t(' / 20 días', ' / 20 days');
                 const active = currentTier === tier || (tier === 'plus' && currentTier === 'silver') || (tier === 'ultra' && currentTier === 'gold');
                 return <article key={offer.title} className={`relative flex flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:border-white/25 ${offer.tone} ${index === 1 ? 'md:-translate-y-1 md:shadow-[0_16px_60px_rgba(217,70,239,.12)]' : ''}`}>
                   {index === 1 && <span className="absolute -top-2.5 left-5 rounded-full bg-fuchsia-300 px-3 py-1 text-[9px] font-black uppercase tracking-wider text-black">{t('Más elegido','Popular')}</span>}
@@ -130,7 +131,7 @@ export function MonetizationExtrasModal({
                 </article>;
               })}
             </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-white/40">{t('Precios de lanzamiento propuestos para México: VIP Plus $399 MXN/mes y Ultra VIP $699 MXN/mes, IVA del 16% incluido en el precio final al consumidor. En el desglose fiscal, el precio total se separará en subtotal e IVA. Los precios USD son referencias comerciales, no conversiones en tiempo real. No se puede cobrar ni activar un plan hasta que el checkout y la conciliación SPEI estén implementados y probados.', 'Proposed launch pricing: VIP Plus $24.99/month and Ultra VIP $39.99/month. Mexico consumer prices include 16% VAT; the fiscal breakdown will show subtotal and VAT separately. USD prices are commercial references, not live currency conversion. Plans cannot be charged or activated until checkout and SPEI reconciliation are implemented and tested.')}</p>
+            <p className="mt-3 text-[10px] leading-relaxed text-white/40">{t('Precios de lanzamiento propuestos para México: VIP Plus: $350 MXN + IVA = $406 MXN por 10 días. Ultra VIP: $650 MXN + IVA = $754 MXN por 20 días. Los precios mostrados para México incluyen el total con IVA del 16% desglosado. Los precios USD son referencias comerciales, no conversiones en tiempo real. No se puede cobrar ni activar un plan hasta que el checkout y la conciliación SPEI estén implementados y probados.', 'Proposed launch pricing: VIP Plus $350 MXN + 16% VAT = $406 for 10 days; Ultra VIP $650 + VAT = $754 for 20 days. The displayed Mexican total includes VAT and should show its breakdown. USD prices are commercial references, not live currency conversion. Plans cannot be charged or activated until checkout and SPEI reconciliation are implemented and tested.')}</p>
           </section>
 
           <section>
