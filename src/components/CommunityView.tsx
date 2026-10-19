@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp } from 'firebase/firestore';
+import { addDoc, collection, limit, onSnapshot, orderBy, query, serverTimestamp, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AppRegion, StoryPost, ForumPost } from '../types';
 import { BookOpen, HelpCircle, MapPin, MessageSquare, ShieldCheck, Heart, Sparkles, Send, Plus, Lock, CheckCircle2, AlertTriangle } from 'lucide-react';
@@ -57,6 +57,7 @@ export function CommunityView({ region, isEs, userId, displayName }: CommunityVi
   useEffect(() => {
     const storiesQuery = query(
       collection(db, 'communityStories'),
+      where('status', '==', 'published'),
       orderBy('createdAt', 'desc'),
       limit(50)
     );
