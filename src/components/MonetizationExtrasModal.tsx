@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppRegion, SubscriptionTier } from '../types';
-import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, CircleDollarSign, Info } from 'lucide-react';
+import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info } from 'lucide-react';
 
 interface MonetizationExtrasModalProps {
   isOpen: boolean;
