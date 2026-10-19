@@ -206,6 +206,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
         ] }
       ]
     }
+  ];
 
   const activeTopicData = topics.find(t => t.id === selectedTopic);
 
