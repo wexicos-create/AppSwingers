@@ -205,42 +205,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
             {/* TAB 1: MONETIZACIÓN & FINANZAS */}
             {activeAdminTab === 'monetizacion' && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
-                    <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos México (MXN)' : 'Mexico Revenue'}</span>
-                    <span className="text-xl font-black text-emerald-400 mt-1 block">$148,450 MXN</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% IVA ($20,475)</span>
-                  </div>
-                  <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
-                    <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos USA (USD)' : 'USA Revenue'}</span>
-                    <span className="text-xl font-black text-pink-400 mt-1 block">$12,380 USD</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% Tax Rate</span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-xs">
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Plan Silver ($408 MXN / $100 USD 15d):' : 'Silver Plan:'}</span>
-                    <span className="font-bold text-white">312 suscriptores</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Plan Gold ($800 MXN / $180 USD mes):' : 'Gold Plan:'}</span>
-                    <span className="font-bold text-amber-300">184 miembros VIP</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Sponsored Profiles ($1,500 MXN / $800 USD):' : 'Sponsored Profiles:'}</span>
-                    <span className="font-bold text-pink-400">18 agencias / clubes</span>
-                  </div>
-                  <div className="flex items-center justify-between pb-1 border-b border-white/5">
-                    <span className="text-white/80">{isEs ? 'Propuestas Colaboración ($350 MXN / $80 USD):' : 'Collab Proposals:'}</span>
-                    <span className="font-bold text-emerald-300">42 revisadas</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-white/80">{isEs ? 'Comisión Creadoras (15% neta + 10% cobro):' : 'Creator Net Commission:'}</span>
-                    <span className="font-bold text-purple-300">15% retenido activo</span>
-                  </div>
-                </div>
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <h3 className="font-bold text-amber-200 text-sm">
+                  {isEs ? 'Analítica comercial no conectada' : 'Commercial analytics not connected'}
+                </h3>
+                <p className="text-xs text-amber-100/80">
+                  {isEs
+                    ? 'No se muestran ingresos, suscriptores ni comisiones porque todavía no existe una fuente de datos comerciales verificada. Las cifras de demostración se retiraron para evitar confundirlas con datos reales.'
+                    : 'Revenue, subscriber and commission figures are hidden because no verified commercial data source is connected. Demo figures were removed to avoid presenting them as real.'}
+                </p>
               </div>
             )}
 
@@ -303,26 +276,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {/* TAB 3: SEGURIDAD, CIBERSEGURIDAD & COOKIES */}
             {activeAdminTab === 'seguridad' && (
               <div className="space-y-3">
-                <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2">
-                  <span className="text-xs font-bold text-white block">{isEs ? 'Ciberseguridad del APK' : 'APK Cybersecurity'}</span>
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cifrado TLS 1.3 & Tokens con expiración segura</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Validación biométrica facial e INE contra duplicados</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-emerald-300">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cero tolerancia a extorsión o estafas financieras</span>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px]">
-                  {isEs
-                    ? 'Las credenciales administrativas se gestionan en el proveedor de identidad y en el servidor. No se guardan contraseñas ni PIN de administrador en este dispositivo.'
-                    : 'Administrator credentials are managed by the identity provider and server. Admin passwords and PINs are not stored on this device.'}
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                  <span className="text-xs font-bold text-amber-200 block">
+                    {isEs ? 'Estado de seguridad verificado' : 'Verified security status'}
+                  </span>
+                  <p className="text-[11px] text-amber-100/80">
+                    {isEs
+                      ? 'El panel exige una reclamación admin emitida por Firebase. Aún falta configurar y desplegar las reglas de Firestore en el proyecto activo, comprobar los permisos de Storage y conectar las funciones administrativas al servidor. No se afirma que exista verificación biométrica ni entrega push hasta que se implemente y pruebe.'
+                      : 'The panel requires a Firebase-issued admin claim. Firestore rules still need to be deployed to the active project, Storage permissions checked, and admin actions connected to the server. Biometric verification and push delivery are not claimed until implemented and tested.'}
+                  </p>
                 </div>
 
                 {/* Purge cookies and local data */}
