@@ -69,13 +69,18 @@ export const createSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
   return { orderId: docRef.id, reference, currency: "MXN", subtotalMxn, ivaMxn, totalMxn, expiresAt: expiresAt.toDate().toISOString(), productLabel: item.label };
 });
 
-/** User reports a transfer; this never activates a benefit. */
+/** User submits an SPEI tracking key; submission never proves the transfer or activates a benefit. */
 export const reportSpeiTransfer = onCall({ region: REGION, enforceAppCheck: true }, async (request) => {
   const auth = requireUser(request);
   const orderId = safeText(request.data?.orderId, 128);
-  const transferReference = safeText(request.data?.transferReference, 120);
-  if (!orderId || transferReference.length < 5) throw new HttpsError("invalid-argument", "Falta el pedido o la referencia bancaria.");
+  const trackingNumber = safeText(request.data?.trackingNumber ?? request.data?.transferReference, 120);
+  if (!orderId || trackingNumber.length < 5) {
+    throw new HttpsError("invalid-argument", "Falta el pedido o la clave de rastreo (mínimo 5 caracteres).");
+  }
   const ref = db.collection("paymentOrders").doc(orderId);
+  const trackingHash = createHash("sha256").update(trackingNumber.trim().toUpperCase()).digest("hex");
+  const trackingRef = db.collection("speiTrackingSubmissions").doc(trackingHash);
+  let duplicateTrackingDetected = false;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) throw new HttpsError("not-found", "Pedido no encontrado.");
@@ -85,18 +90,47 @@ export const reportSpeiTransfer = onCall({ region: REGION, enforceAppCheck: true
     if (order.expiresAt?.toMillis?.() <= Date.now()) {
       throw new HttpsError("deadline-exceeded", "El pedido venció. Genera uno nuevo.");
     }
-    tx.update(ref, { status: "payment_reported", transferReference, reportedAt: FieldValue.serverTimestamp() });
+    // This anti-fraud check detects reuse across orders; it does NOT query Banxico
+    // and must never be displayed as proof that a transfer exists.
+    const trackingSnap = await tx.get(trackingRef);
+    duplicateTrackingDetected = trackingSnap.exists && trackingSnap.data()?.orderId !== orderId;
+    const trackingStatus = duplicateTrackingDetected ? "duplicate_needs_review" : "submitted_unverified";
+    const now = FieldValue.serverTimestamp();
+    tx.update(ref, {
+      status: "payment_reported",
+      transferReference: trackingNumber,
+      transferTrackingNumber: trackingNumber,
+      trackingStatus,
+      trackingSubmittedAt: now,
+      reportedAt: now,
+    });
     tx.set(db.collection("adminReviewQueue").doc(orderId), {
       orderId, userId: auth.uid, type: "spei", status: "under_review",
       amount: order.totalMxn, currency: "MXN", reference: order.reference,
-      transferReference, productLabel: order.productLabel, createdAt: FieldValue.serverTimestamp(),
+      transferReference: trackingNumber, transferTrackingNumber: trackingNumber,
+      trackingStatus, duplicateTrackingDetected,
+      riskSignals: duplicateTrackingDetected ? ["La misma clave de rastreo ya fue reportada en otro pedido; verificar antes de aprobar."] : [],
+      productLabel: order.productLabel, createdAt: now,
     });
+    if (!trackingSnap.exists) {
+      tx.create(trackingRef, {
+        trackingHash, orderId, userId: auth.uid,
+        trackingNumber, submittedAt: now,
+      });
+    }
     tx.set(db.collection("auditLogs").doc(), {
       actorUid: auth.uid, action: "spei_transfer_reported", orderId,
-      createdAt: FieldValue.serverTimestamp(),
+      trackingHash, duplicateTrackingDetected, createdAt: now,
     });
   });
-  return { success: true, status: "under_review", message: "Reporte recibido. No se activa el beneficio hasta confirmar el depósito real." };
+  return {
+    success: true,
+    status: "under_review",
+    trackingStatus: duplicateTrackingDetected ? "duplicate_needs_review" : "submitted_unverified",
+    message: duplicateTrackingDetected
+      ? "Rastreo recibido, pero la clave ya aparece en otro pedido. Se requiere revisión reforzada."
+      : "Rastreo recibido. El dato no confirma por sí solo la existencia del pago; falta validar MI-SPEI/CEP y el abono en la cuenta receptora.",
+  };
 });
 
 /**
