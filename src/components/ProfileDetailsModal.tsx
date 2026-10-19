@@ -1,13 +1,15 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Profile, SwipeAction } from '../types';
-import { X, MapPin, CheckCircle2, Heart, Star, Sparkles, Briefcase, Calendar, Ruler } from 'lucide-react';
+import { X, MapPin, CheckCircle2, Heart, Star, Sparkles, Briefcase, Calendar, Ruler, ShieldAlert, Ban } from 'lucide-react';
 
 interface ProfileDetailsModalProps {
   profile: Profile | null;
   lang?: 'es' | 'en';
   onClose: () => void;
   onSwipe: (action: SwipeAction) => void;
+  onReport?: (profile: Profile) => void;
+  onBlock?: (profile: Profile) => void;
 }
 
 export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
@@ -149,6 +151,15 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
                 </div>
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+              <button type="button" onClick={() => onReport?.(profile)} className="flex items-center justify-center gap-2 rounded-xl border border-amber-300/25 bg-amber-300/5 px-3 py-2.5 text-xs font-bold text-amber-200 hover:bg-amber-300/10">
+                <ShieldAlert className="h-4 w-4" /> {isEs ? 'Denunciar perfil' : 'Report profile'}
+              </button>
+              <button type="button" onClick={() => onBlock?.(profile)} className="flex items-center justify-center gap-2 rounded-xl border border-rose-300/25 bg-rose-300/5 px-3 py-2.5 text-xs font-bold text-rose-200 hover:bg-rose-300/10">
+                <Ban className="h-4 w-4" /> {isEs ? 'Bloquear usuario' : 'Block user'}
+              </button>
+            </div>
 
             {/* Bottom floating swipe actions */}
             <div className="pt-4 pb-2 flex items-center justify-center gap-4">
