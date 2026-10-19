@@ -43,19 +43,27 @@ export function MonetizationExtrasModal({
 
   const handleCheckout = (tier: SubscriptionTier | 'sponsored') => {
     if (tier === 'sponsored') {
-      setSuccessMsg(isEs ? '¡Solicitud de patrocinio enviada! El equipo comercial se pondrá en contacto.' : 'Sponsored request sent! Our commercial team will contact you.');
-      setTimeout(() => {
-        setSuccessMsg(null);
-        onClose();
-      }, 3000);
+      setSuccessMsg(
+        isEs
+          ? 'El sistema de solicitudes de patrocinio aún no está conectado. No se envió ninguna solicitud.'
+          : 'The sponsorship request system is not connected yet. No request was sent.'
+      );
       return;
     }
-    onSelectTier(tier);
-    setSuccessMsg(isEs ? `¡Suscripción ${tier.toUpperCase()} activada con éxito!` : `${tier.toUpperCase()} subscription successfully activated!`);
-    setTimeout(() => {
-      setSuccessMsg(null);
-      onClose();
-    }, 2500);
+
+    if (tier === 'free') {
+      onSelectTier('free');
+      setSuccessMsg(isEs ? 'Plan Gratis seleccionado.' : 'Free plan selected.');
+      return;
+    }
+
+    // Paid tiers must never be enabled by a client-side button click.
+    // Until a trusted payment provider/webhook is integrated, fail closed.
+    setSuccessMsg(
+      isEs
+        ? 'Los pagos todavía no están conectados. No se realizó ningún cobro ni se activó el plan.'
+        : 'Payments are not connected yet. No charge was made and the plan was not activated.'
+    );
   };
 
   return (
