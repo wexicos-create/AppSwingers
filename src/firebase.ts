@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import { 
   getAuth, 
   GoogleAuthProvider, 
@@ -23,6 +24,12 @@ import firebaseConfig from '../firebase-applet-config.json';
 import { SwipeAction, Profile, MatchItem } from './types';
 
 const app = initializeApp(firebaseConfig);
+// App Check is required by the SPEI callable functions. Configure this site key in the
+// hosting environment; if it is absent, protected payment calls intentionally fail closed.
+const appCheckSiteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY || firebaseConfig.recaptchaSiteKey;
+if (appCheckSiteKey) {
+  initializeAppCheck(app, { provider: new ReCaptchaV3Provider(appCheckSiteKey), isTokenAutoRefreshEnabled: true });
+}
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
@@ -122,8 +129,6 @@ export async function recordSwipe(
     await setDoc(doc(db, 'users', userId, 'swipes', swipeDocId), {
       fromUserId: userId,
       toUserId: targetProfile.id,
-      profileName: targetProfile.name,
-      profilePhoto: targetProfile.photos[0],
       swipeType,
       timestamp: new Date().toISOString()
     });
@@ -132,21 +137,10 @@ export async function recordSwipe(
   }
 }
 
-// Record a match in Firestore
-export async function recordMatch(userId: string, targetProfile: Profile) {
-  if (!userId) return;
-  const matchDocId = `match_${targetProfile.id}`;
-  const path = `users/${userId}/matches/${matchDocId}`;
-  try {
-    await setDoc(doc(db, 'users', userId, 'matches', matchDocId), {
-      userIds: [userId, targetProfile.id],
-      profile: targetProfile,
-      matchedAt: new Date().toISOString(),
-      lastMessage: "It's a Match! Say hello..."
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+// Match creation is intentionally server-only: client-side writes could fabricate
+// mutual consent. A trusted backend must verify both users' swipe records first.
+export async function recordMatch(_userId: string, _targetProfile: Profile): Promise<never> {
+  throw new Error('Match creation requires the trusted mutual-consent backend.');
 }
 
 // Fetch user matches

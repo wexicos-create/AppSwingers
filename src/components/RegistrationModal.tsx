@@ -88,7 +88,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   const [city, setCity] = useState(
     initialData?.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX')
   );
-  const [acceptedConsent, setAcceptedConsent] = useState(true);
+  const [acceptedConsent, setAcceptedConsent] = useState(false);
 
   if (!isOpen) return null;
 

@@ -111,6 +111,100 @@ export const LegalModal: React.FC<LegalModalProps> = ({
           ]
         }
       ]
+    },
+    {
+      id: 'datos',
+      title: 'Uso de Datos Personales',
+      icon: Lock,
+      intro: 'Solicitamos solo los datos necesarios para operar la cuenta, ofrecer funciones elegidas por la persona usuaria, prevenir abusos y cumplir obligaciones legales.',
+      sections: [
+        { title: 'Qué datos y para qué', items: [
+          'Datos de cuenta y contacto para iniciar sesión, mantener la cuenta y enviar avisos transaccionales.',
+          'Preferencias, afinidades, reportes y ubicación aproximada para las funciones que decidas utilizar. Los datos sobre vida sexual pueden ser sensibles y requieren protección reforzada.',
+          'Datos técnicos y registros de seguridad para detectar accesos indebidos, fraude, spam o abuso. No se debe interpretar la dirección IP como prueba única de identidad.',
+        ] },
+        { title: 'Control y conservación', items: [
+          'No publiques contraseñas, documentos oficiales ni información bancaria en perfiles, chats públicos o reportes abiertos.',
+          'El acceso a datos personales se limita por función y necesidad. Los documentos de identidad y archivos fiscales, cuando se integren, deberán almacenarse en sistemas privados.',
+          'Puedes solicitar acceso, rectificación, cancelación u oposición y preguntar por conservación y eliminación desde soporte. Algunas constancias pueden conservarse cuando lo exija la ley.',
+          'No prometemos que un dato jamás será compartido: cualquier transferencia necesaria deberá explicarse en el aviso de privacidad aplicable.',
+        ] }
+      ]
+    },
+    {
+      id: 'recomendaciones',
+      title: 'Avisos y Recomendaciones de Seguridad',
+      icon: Shield,
+      intro: 'Estas medidas reducen riesgos, pero no garantizan que otro usuario, una agencia o un evento sean seguros.',
+      sections: [
+        { title: 'Antes de reunirte', items: [
+          'Habla de límites y consentimiento antes del encuentro; cualquier persona puede cambiar de opinión y detener la actividad.',
+          'Para la primera reunión, elige un lugar público y avisa a alguien de confianza. Organiza tu propio transporte y evita compartir tu domicilio al principio.',
+          'No envíes dinero, códigos de acceso, documentos de identidad ni contenido íntimo a alguien que ejerza presión o prometa verificaciones fuera de la app.',
+          'Comprueba los detalles del evento y las condiciones de reembolso directamente con el organizador.',
+        ] },
+        { title: 'Si algo sale mal', items: [
+          'Usa reportar y bloquear, conserva evidencia relevante sin redistribuir contenido íntimo y contacta a las autoridades si existe peligro inmediato.',
+          'La insignia de verificación no garantiza antecedentes, comportamiento, consentimiento futuro ni seguridad presencial.',
+        ] }
+      ]
+    },
+    {
+      id: 'estafas',
+      title: 'Reportar Estafas y Bloquear Usuarios',
+      icon: Shield,
+      intro: 'Los reportes deben revisarse con discreción y sin represalias. Nunca compartas contraseñas o códigos de verificación con otro usuario ni con alguien que se haga pasar por soporte.',
+      sections: [
+        { title: 'Señales de posible estafa', items: [
+          'Petición urgente de dinero, depósitos fuera de los canales anunciados, comprobantes alterados o promesas de beneficios pagados sin confirmación bancaria.',
+          'Perfiles que piden salir de la plataforma de inmediato, envían enlaces extraños, amenazan con publicar imágenes o solicitan códigos de un solo uso.',
+          'Suplantación, fotografías que se atribuyen falsamente a otra persona, extorsión, coacción o intento de contactar a menores.',
+        ] },
+        { title: 'Cómo actuar', items: [
+          'Abre el perfil o conversación y usa la función Reportar cuando esté disponible; indica el motivo y adjunta solo evidencia necesaria.',
+          'Bloquear limita el contacto desde la cuenta bloqueada cuando el servicio está conectado y la función está disponible. No impide que esa persona cree otra cuenta o contacte por otros medios.',
+          'Un reporte no significa que exista una infracción confirmada. La plataforma puede revisar, limitar o suspender cuentas conforme a sus reglas y los resultados de la investigación.',
+        ] }
+      ]
+    },
+    {
+      id: 'creadoras',
+      title: 'Políticas para Creadoras de Contenido',
+      icon: HeartHandshake,
+      intro: 'La monetización está sujeta a verificación de mayoría de edad e identidad, consentimiento, derechos de autor, políticas de proveedores y habilitación real de los pagos.',
+      sections: [
+        { title: 'Requisitos de publicación', items: [
+          'Solo personas adultas pueden crear y monetizar contenido. Toda persona identificable que aparezca debe ser adulta y haber otorgado consentimiento informado para la creación y publicación.',
+          'No se permite contenido íntimo no consentido, explotación, coacción, suplantación, menores o contenido que represente o parezca involucrar menores.',
+          'Solo sube material propio o que tengas derecho documentado a distribuir. No uses imágenes falsas para suplantar a otra persona ni presentes contenido generado o alterado por IA como una captura real de una persona sin informar de ello.',
+          'La plataforma puede retirar publicaciones denunciadas, pedir información adicional y suspender temporalmente pagos mientras investiga señales razonables de fraude.',
+        ] },
+        { title: 'Pagos y obligaciones', items: [
+          'Los ingresos deben proceder de ventas y transacciones reales registradas por el servidor. No se aceptan saldos creados por capturas, autodeclaraciones o modificaciones del cliente.',
+          'Retiros sujetos a revisión de identidad, titularidad de cuenta y documentación fiscal/bancaria estrictamente necesaria y protegida.',
+          'Las comisiones, impuestos, retenciones, plazos, reembolsos y requisitos fiscales deberán mostrarse con claridad antes de operar y se determinarán conforme al contrato y la normativa aplicable.',
+          'No se garantiza un ingreso mínimo ni una aprobación automática de cualquier publicación o retiro.',
+        ] }
+      ]
+    },
+    {
+      id: 'agencias',
+      title: 'Políticas para Agencias, Eventos y Promoción',
+      icon: Scale,
+      intro: 'Las agencias, anfitriones y anunciantes responden por la veracidad de sus ofertas, permisos y condiciones comerciales.',
+      sections: [
+        { title: 'Registro y transparencia', items: [
+          'Proporciona datos reales de contacto y acredita autorización para representar al negocio, recinto o evento cuando se solicite.',
+          'Describe lugar, fecha, precio total, aforo, restricciones, reglas de cancelación y si el cobro es individual o por pareja antes de aceptar una reserva.',
+          'No prometas asistentes, resultados, verificaciones o protección absoluta; etiqueta el contenido patrocinado y revela comisiones o cargos relevantes.',
+        ] },
+        { title: 'Seguridad y cumplimiento', items: [
+          'Todos los participantes deben ser mayores de edad y consentir libremente. No se permite trata, coacción, explotación, discriminación ilícita ni actividad ilegal.',
+          'No publiques fotos, videos o datos de asistentes sin autorización específica; no reutilices listas de invitados para publicidad sin base válida y aviso.',
+          'La promoción pagada no equivale a respaldo oficial ni a garantía de seguridad. La plataforma puede pausar anuncios o eventos ante denuncias creíbles, datos falsos o incumplimiento de la ley.',
+          'Los pagos y reembolsos se tramitan según las condiciones visibles y el estado real de la transacción; un comprobante enviado por el usuario no demuestra por sí solo que los fondos se hayan abonado.',
+        ] }
+      ]
     }
   ];
 

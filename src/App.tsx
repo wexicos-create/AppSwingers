@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut as fbSignOut, User } from 'firebase/auth';
+import { getFunctions, httpsCallable } from 'firebase/functions';
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { 
   auth, 
-  googleProvider, 
-  syncUserProfile, 
+    syncUserProfile, 
   recordSwipe, 
-  recordMatch, 
   fetchUserMatches, 
-  testConnection 
+  testConnection,
+  db
 } from './firebase';
 import { 
   Profile, 
@@ -48,8 +49,13 @@ import { AdminModal } from './components/AdminModal';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
+import { AccountAccessModal } from './components/AccountAccessModal';
+import { WelcomeScreen } from './components/WelcomeScreen';
+import { IdentityVerificationModal } from './components/IdentityVerificationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { BenefitNotificationsModal } from './components/BenefitNotificationsModal';
+import { ApprovedEntitlement, entitlementState } from './lib/benefitLifecycle';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -68,7 +74,8 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function App() {
@@ -179,6 +186,7 @@ export default function App() {
 
   // Matches & Chat (Pristine clean launch en 0)
   const [matches, setMatches] = useState<MatchItem[]>([]);
+  const [blockedProfileIds, setBlockedProfileIds] = useState<string[]>([]);
 
   // Modals & Drawers state
   const [matchModalProfile, setMatchModalProfile] = useState<Profile | null>(null);
@@ -187,8 +195,16 @@ export default function App() {
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
+  const [accountAccessOpen, setAccountAccessOpen] = useState(false);
+  const [accountInitialMode, setAccountInitialMode] = useState<'register' | 'login'>('register');
+  const [legalInitialTopic, setLegalInitialTopic] = useState<string | null>(null);
+  const [identityVerificationOpen, setIdentityVerificationOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
+  const [benefitNotificationsOpen, setBenefitNotificationsOpen] = useState(false);
+  const [approvedEntitlement, setApprovedEntitlement] = useState<ApprovedEntitlement | null>(null);
+  const [benefitLoading, setBenefitLoading] = useState(false);
+  const [benefitError, setBenefitError] = useState<string | null>(null);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
@@ -308,20 +324,89 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Google sign in
-  const handleGoogleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncUserProfile(result.user);
-        if (result.user.displayName) {
-          setUserProfile(prev => ({ ...prev, alias: result.user.displayName || prev.alias }));
-        }
+
+  // Read benefits from the trusted backend; never infer activation from a client-writable field.
+  useEffect(() => {
+    let cancelled = false;
+    const loadApprovedBenefit = async () => {
+      if (!user) {
+        setApprovedEntitlement(null);
+        setSubscriptionTier('free');
+        setBenefitError(null);
+        setBenefitLoading(false);
+        return;
       }
-    } catch (e: any) {
-      console.warn('Sign In error:', e);
-    }
-  };
+      setBenefitLoading(true);
+      setBenefitError(null);
+      try {
+        const functions = getFunctions(undefined, 'us-central1');
+        const getMyBenefits = httpsCallable(functions, 'getMyBenefits');
+        const response = await getMyBenefits({});
+        if (cancelled) return;
+        const payload = response.data as {
+          items?: Array<Record<string, unknown>>;
+          notifications?: Array<{ id: string; type?: string; title?: string; body?: string }>;
+        };
+        const unreadNotification = Array.isArray(payload.notifications) ? payload.notifications[0] : undefined;
+        if (unreadNotification) {
+          setPushToast({
+            title: unreadNotification.title || (isEs ? 'Notificación de AppSwinger' : 'AppSwinger notification'),
+            body: unreadNotification.body || '',
+          });
+          void updateDoc(doc(db, 'userNotifications', user.uid, 'items', unreadNotification.id), { read: true }).catch(() => {
+            // If marking as read fails, leave the notification available for the next attempt.
+          });
+        }
+        const validKeys = ['vip_plus', 'ultra_vip', 'event_listing', 'featured_campaign', 'profile_boost', 'host_tools'];
+        const items = Array.isArray(payload.items) ? payload.items.filter(item =>
+          item.userId === undefined &&
+          validKeys.includes(String(item.benefitKey)) &&
+          ['active', 'expired', 'revoked'].includes(String(item.status)) &&
+          item.paymentStatus === 'approved' &&
+          typeof item.activatedAt === 'string'
+        ) : [];
+        items.sort((a, b) => Date.parse(String(b.activatedAt)) - Date.parse(String(a.activatedAt)));
+        const data = items[0];
+        if (!data) {
+          setApprovedEntitlement(null);
+          setSubscriptionTier('free');
+          return;
+        }
+        const entitlement: ApprovedEntitlement = {
+          userId: user.uid,
+          benefitKey: data.benefitKey as ApprovedEntitlement['benefitKey'],
+          status: data.status as ApprovedEntitlement['status'],
+          paymentStatus: 'approved',
+          activatedAt: String(data.activatedAt),
+          expiresAt: typeof data.expiresAt === 'string' ? data.expiresAt : null,
+          approvalReference: typeof data.approvalReference === 'string' ? data.approvalReference : undefined,
+        };
+        setApprovedEntitlement(entitlement);
+        const expiry = entitlementState(entitlement);
+        setSubscriptionTier(expiry.active ? (entitlement.benefitKey === 'vip_plus' ? 'plus' : entitlement.benefitKey === 'ultra_vip' ? 'ultra' : 'free') : 'free');
+        if (!unreadNotification && expiry.shouldNotify) {
+          setPushToast({
+            title: isEs ? 'Tu beneficio está por vencer' : 'Your benefit is about to expire',
+            body: isEs
+              ? `Quedan ${expiry.daysRemaining} día(s) de tu beneficio pagado.`
+              : `${expiry.daysRemaining} day(s) remain on your paid benefit.`,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setApprovedEntitlement(null);
+          setSubscriptionTier('free');
+          setBenefitError(isEs
+            ? 'No se pudo consultar el beneficio seguro del servidor. No se concedieron permisos de pago.'
+            : 'Could not read the server benefit. No paid access was granted.');
+        }
+      } finally {
+        if (!cancelled) setBenefitLoading(false);
+      }
+    };
+    void loadApprovedBenefit();
+    return () => { cancelled = true; };
+  }, [user, isEs]);
 
   const handleSignOut = async () => {
     try {
@@ -332,10 +417,57 @@ export default function App() {
     }
   };
 
+  const handleReportProfile = async (profile: Profile) => {
+    if (!user) {
+      alert(isEs ? 'Inicia sesión para enviar una denuncia.' : 'Sign in to submit a report.');
+      setAccountAccessOpen(true);
+      return;
+    }
+    const reason = window.prompt(isEs
+      ? 'Motivo de denuncia: acoso, amenaza, identidad falsa, contenido no consentido, posible menor u otro. Describe hechos, no suposiciones.'
+      : 'Report reason: harassment, threat, fake identity, non-consensual content, possible minor or other. Describe facts, not assumptions.');
+    if (!reason?.trim()) return;
+    try {
+      await addDoc(collection(db, 'reports'), {
+        reporterId: user.uid,
+        target: { type: 'usuario', id: profile.id, name: profile.name },
+        reason: reason.trim().slice(0, 120),
+        details: '',
+        createdAt: serverTimestamp(),
+        status: 'abierto',
+      });
+      alert(isEs ? 'Denuncia enviada para revisión. Si existe peligro inmediato, contacta a emergencias locales.' : 'Report submitted for review. If there is immediate danger, contact local emergency services.');
+    } catch {
+      alert(isEs ? 'No se pudo enviar la denuncia. Revisa la conexión e inténtalo de nuevo.' : 'Could not submit report. Check your connection and retry.');
+    }
+  };
+
+  const handleBlockProfile = async (profile: Profile) => {
+    if (!user) {
+      alert(isEs ? 'Inicia sesión para bloquear usuarios.' : 'Sign in to block users.');
+      setAccountAccessOpen(true);
+      return;
+    }
+    if (!window.confirm(isEs ? `¿Bloquear a ${profile.name}? Dejarás de ver su perfil en esta sesión.` : `Block ${profile.name}? Their profile will be hidden in this session.`)) return;
+    try {
+      await setDoc(doc(db, 'users', user.uid, 'blocks', encodeURIComponent(profile.id)), {
+        targetUserId: profile.id,
+        targetName: profile.name.slice(0, 80),
+        createdAt: serverTimestamp(),
+      });
+      setBlockedProfileIds(prev => prev.includes(profile.id) ? prev : [...prev, profile.id]);
+      setMatches(prev => prev.filter(match => match.profile.id !== profile.id));
+      setDetailsProfile(null);
+      alert(isEs ? 'Usuario bloqueado en tu cuenta. El bloqueo entre dispositivos depende de sincronizar esta lista en todos los módulos.' : 'User blocked on your account. Cross-device blocking requires this list to be applied across all modules.');
+    } catch {
+      alert(isEs ? 'No se pudo guardar el bloqueo en el servidor.' : 'Could not save the block to the server.');
+    }
+  };
+
   // Regional & Distance filtered profiles (México vs USA)
   const visibleProfiles = profiles.filter(p => {
     const profileCountry = p.country || 'MX';
-    return profileCountry === region && p.km <= maxDistance;
+    return profileCountry === region && p.km <= maxDistance && !blockedProfileIds.includes(p.id);
   });
   const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
 
@@ -354,29 +486,30 @@ export default function App() {
       }
     }
 
-    // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
-
-    if (isMatch) {
-      const newMatch: MatchItem = {
-        id: `match_${target.id}_${Date.now()}`,
-        profile: target,
-        matchedAt: new Date().toISOString(),
-        lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'Mutual match! Say hi first ✨',
-        unreadCount: 1,
-      };
-
-      setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.uid, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
+    // A local "like", superlike, profile score, or mock likesYou flag is NOT a mutual match.
+    // Only a trusted backend can confirm mutual consent and create a chat-enabled match.
+    if (user) {
+      try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/swipes/match', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ targetUserId: target.id, action }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result?.match?.profile && result?.match?.id) {
+            const confirmedMatch = result.match as MatchItem;
+            setMatches(prev => prev.some(m => m.id === confirmedMatch.id) ? prev : [confirmedMatch, ...prev]);
+            setMatchModalProfile(confirmedMatch.profile);
+          }
+        } else if (response.status !== 404) {
+          console.warn('Match service rejected the swipe:', response.status);
         }
+      } catch (err) {
+        // Keep the swipe recorded; do not fabricate a match or open an unverified chat.
+        console.warn('Mutual-match service unavailable:', err);
       }
-
-      setMatchModalProfile(target);
     }
   };
 
@@ -412,21 +545,25 @@ export default function App() {
     setChatDrawerOpen(true);
   };
 
-  // Event reservation handler
+  // Reservation requests never count as paid tickets. A trusted payment webhook
+  // must confirm payment and issue a real ticket/access code before admission.
   const handleReserveEvent = (eventId: string, tierId: string | null) => {
-    const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+    const reservationId = `res_${Date.now()}`;
     const newReservation: Reservation = {
-      id: `res_${Date.now()}`,
+      id: reservationId,
       eventId,
       tier: tierId,
-      folio: `F-${Math.floor(100 + Math.random() * 900)}`,
-      code,
+      folio: reservationId,
+      code: '',
       ts: Date.now(),
-      status: 'pagado',
+      status: event.paid ? 'pendiente_pago' : 'solicitud',
     };
     setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+    alert(event.paid
+      ? (isEs ? 'Solicitud creada. Tu lugar no está pagado ni confirmado; el boleto se emitirá tras verificar el pago.' : 'Request created. Your place is not paid or confirmed; a ticket will be issued after payment verification.')
+      : (isEs ? 'Solicitud de reservación enviada. Espera la confirmación del organizador.' : 'Reservation request submitted. Wait for organizer confirmation.'));
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -567,6 +704,7 @@ export default function App() {
     <div className="min-h-screen bg-[#050307] text-[#f5eeff] flex justify-center font-sans select-none antialiased overflow-x-hidden">
       {/* Mobile Screen Shell container */}
       <div className="relative w-full max-w-[430px] min-h-screen h-[100dvh] flex flex-col bg-[#050307] shadow-[0_0_80px_rgba(177,76,255,0.25)] border-x border-purple-500/20 overflow-hidden">
+        {!user && !accountAccessOpen && !legalModalOpen && !registrationModalOpen && <WelcomeScreen isEs={isEs} onOpenAccount={(mode) => { setAccountInitialMode(mode); setAccountAccessOpen(true); }} onOpenLegal={(topic) => { setLegalInitialTopic(topic); setLegalModalOpen(true); }} />}
         
         {/* Ambient Neon Aura Blob */}
         <div className="absolute top-1/4 -left-20 w-72 h-72 bg-purple-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
@@ -645,6 +783,21 @@ export default function App() {
             >
               <Bell className="w-4 h-4 text-pink-400" />
               <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-purple-950 animate-pulse" />
+            </button>
+
+            <button type="button" onClick={() => setIdentityVerificationOpen(true)} className="p-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/30 text-white transition active:scale-95" title={isEs ? 'Verificar INE e identidad' : 'Verify ID and identity'} aria-label={isEs ? 'Verificación de identidad' : 'Identity verification'}>
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBenefitNotificationsOpen(true)}
+              className="relative p-2 rounded-xl bg-amber-950/60 hover:bg-amber-900/70 border border-amber-400/30 text-white transition active:scale-95"
+              title={isEs ? 'Notificaciones y vencimiento de beneficios' : 'Benefit notifications and expiry'}
+              aria-label={isEs ? 'Notificaciones de beneficios' : 'Benefit notifications'}
+            >
+              <Bell className="w-4 h-4 text-amber-300" />
+              {approvedEntitlement && entitlementState(approvedEntitlement).shouldNotify && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-amber-300 ring-2 ring-amber-950" />}
             </button>
 
             {/* User Profile / Registration Pill */}
@@ -901,6 +1054,8 @@ export default function App() {
             <CommunityView
               region={region}
               isEs={isEs}
+              userId={user?.uid}
+              displayName={userProfile.alias || user?.displayName || undefined}
             />
           )}
 
@@ -908,7 +1063,7 @@ export default function App() {
           {activeTab === 'perfil' && (
             <ProfileView
               user={user}
-              onSignIn={handleGoogleSignIn}
+              onSignIn={() => setAccountAccessOpen(true)}
               onSignOut={handleSignOut}
               stats={{
                 swipesCount: swipedHistory.length,
@@ -925,13 +1080,19 @@ export default function App() {
               }}
               isFirestoreConnected={isFirestoreConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
-              onOpenLegal={() => setLegalModalOpen(true)}
+              onOpenLegal={() => { setLegalInitialTopic(null); setLegalModalOpen(true); }}
               onExportData={handleExportData}
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                if (tier === 'free') {
+                  setSubscriptionTier('free');
+                  alert(isEs ? 'Sigues en el plan gratuito.' : 'You are on the free plan.');
+                  return;
+                }
+                alert(isEs
+                  ? 'Los planes de pago aún no están conectados a la conciliación SPEI. No se activó ningún beneficio ni se realizó ningún cobro.'
+                  : 'Paid plans are not yet connected to SPEI reconciliation. No benefits were activated and no charge was made.');
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
@@ -1050,6 +1211,17 @@ export default function App() {
           </div>
         )}
 
+        <AccountAccessModal
+          isOpen={accountAccessOpen}
+          onClose={() => setAccountAccessOpen(false)}
+          isEs={isEs}
+          initialMode={accountInitialMode}
+          onSuccess={(created) => {
+            setAccountAccessOpen(false);
+            if (created) setRegistrationModalOpen(true);
+          }}
+        />
+
         {/* MODAL 1: REGISTRATION & SEXUAL TASTES / FANTASIES */}
         <RegistrationModal
           isOpen={registrationModalOpen}
@@ -1058,7 +1230,7 @@ export default function App() {
           region={region}
           initialData={userProfile}
           onSave={(data) => {
-            setUserProfile({
+            const savedProfile = {
               alias: data.alias,
               kind: data.kind,
               bio: data.bio,
@@ -1067,13 +1239,27 @@ export default function App() {
               ages: data.ages,
               maxKm: data.maxKm,
               locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
-            });
+              onboardingCompleted: true,
+              adultConsentDeclaredAt: new Date().toISOString(),
+              profileUpdatedAt: new Date().toISOString(),
+            };
+            setUserProfile(savedProfile);
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            if (user) {
+              void syncUserProfile(user, { ...savedProfile, ages: savedProfile.ages.join(', ') }).then(() => {
+                alert(isEs ? `Perfil guardado en tu cuenta: ${data.alias}. Recuerda que la declaración 18+ no sustituye la validación de identidad.` : `Profile saved to your account: ${data.alias}. The 18+ declaration does not replace identity verification.`);
+              }).catch(() => {
+                alert(isEs ? 'El perfil cambió en esta sesión, pero no se pudo guardar en el servidor. Revisa la conexión e inténtalo de nuevo.' : 'Profile changed in this session but could not be saved to the server. Check your connection and retry.');
+              });
+            } else {
+              alert(isEs ? 'Perfil editado solo en esta sesión. Inicia sesión para guardarlo en tu cuenta.' : 'Profile edited for this session only. Sign in to save it to your account.');
+            }
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
         />
+
+        <IdentityVerificationModal isOpen={identityVerificationOpen} onClose={() => setIdentityVerificationOpen(false)} user={user} isEs={isEs} />
 
         {/* MODAL 2: MONETIZATION EXTRAS (from script!) */}
         <MonetizationExtrasModal
@@ -1118,6 +1304,8 @@ export default function App() {
             setDetailsProfile(null);
             handleSwipe(action);
           }}
+          onReport={handleReportProfile}
+          onBlock={handleBlockProfile}
         />
 
         {/* MODAL 6: ADMIN PANEL */}
@@ -1133,11 +1321,21 @@ export default function App() {
         {legalModalOpen && (
           <LegalModal
             isOpen={legalModalOpen}
-            onClose={() => setLegalModalOpen(false)}
+            initialTopic={legalInitialTopic}
+            onClose={() => { setLegalModalOpen(false); setLegalInitialTopic(null); }}
           />
         )}
 
         {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
+        <BenefitNotificationsModal
+          isOpen={benefitNotificationsOpen}
+          onClose={() => setBenefitNotificationsOpen(false)}
+          isEs={isEs}
+          entitlement={approvedEntitlement}
+          loading={benefitLoading}
+          error={benefitError}
+        />
+
         <PushLookupModal
           isOpen={pushLookupOpen}
           onClose={() => setPushLookupOpen(false)}

@@ -1,0 +1,26 @@
+{
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs22"
+    }
+  ],
+  "firestore": [
+    {
+      "database": "ai-studio-bae18161-c5ba-4b69-99f2-4a83f48a6d69",
+      "rules": "firestore.rules"
+    }
+  ],
+  "emulators": {
+    "functions": {
+      "port": 5001
+    },
+    "firestore": {
+      "port": 8080
+    },
+    "auth": {
+      "port": 9099
+    }
+  }
+}

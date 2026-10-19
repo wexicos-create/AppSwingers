@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MatchItem, Profile, ChatMessage } from '../types';
-import { INITIAL_PROFILES } from '../data/mockProfiles';
+import { auth } from '../firebase';
 import { 
   Search, 
   Send, 
@@ -62,22 +62,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingTimerRef = useRef<any>(null);
 
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
-    try {
-      const saved = localStorage.getItem('appswinguer_chat_messages');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('appswinguer_chat_messages', JSON.stringify(chatMessages));
-    } catch (e) {
-      console.warn('LocalStorage save note:', e);
-    }
-  }, [chatMessages]);
+  // Messages are held in memory only until the authenticated chat API confirms delivery.
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({});
 
   // Real-Time Location Sharing State per Chat (Strict Privacy by Default)
   const [liveLocationChats, setLiveLocationChats] = useState<Record<string, boolean>>(() => {
@@ -97,29 +83,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   }, [liveLocationChats]);
 
-  const toggleLiveLocation = (chatKey: string, partnerName: string) => {
-    const isCurrentlyShared = !!liveLocationChats[chatKey];
-    const willShare = !isCurrentlyShared;
-    setLiveLocationChats(prev => ({ ...prev, [chatKey]: willShare }));
-
-    const statusMsg: ChatMessage = {
-      id: `loc_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      t: willShare
-        ? `📍 Has activado la función de compartir ubicación en tiempo real con ${partnerName}. Ambos perfiles pueden ver coordenadas dinámicas de encuentro.`
-        : `🔒 Has apagado la ubicación en tiempo real. Tu posición física exacta ahora está completamente protegida y oculta.`,
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), statusMsg]
-    }));
-
-    showToast(willShare 
-      ? `Ubicación en tiempo real: ACTIVADA (Compartiendo con ${partnerName})` 
-      : `Ubicación en tiempo real: APAGADA (Modo Privado Seguro)`
-    );
+  const toggleLiveLocation = (_chatKey: string, _partnerName: string) => {
+    showToast('Compartir ubicación en tiempo real no está conectado. No se compartieron coordenadas.');
   };
 
   // Automatically select chat if initialChatUserId is provided (from Match modal or matches list)
@@ -128,18 +93,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
       const match = matches.find(m => m.profile.id === initialChatUserId);
       if (match) {
         setActiveChat(match);
-      } else {
-        // Fallback: look up in initial profiles to immediately open chat
-        const fallbackProfile = INITIAL_PROFILES.find(p => p.id === initialChatUserId);
-        if (fallbackProfile) {
-          setActiveChat({
-            id: `match_${fallbackProfile.id}_fallback`,
-            profile: fallbackProfile,
-            matchedAt: new Date().toISOString(),
-            lastMessage: '¡Nuevo Match mutuo! Saludarse primero ✨',
-            unreadCount: 0
-          });
-        }
       }
     }
   }, [initialChatUserId, matches]);
@@ -147,25 +100,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, activeChat]);
-
-  // 3-second polling interval simulating recibir.php / backend sync
-  useEffect(() => {
-    const pollInterval = setInterval(() => {
-      try {
-        const stored = localStorage.getItem('appswinguer_chat_messages');
-        if (stored && activeChat) {
-          const parsed = JSON.parse(stored);
-          if (parsed[activeChat.profile.id]) {
-            setChatMessages(prev => ({ ...prev, [activeChat.profile.id]: parsed[activeChat.profile.id] }));
-          }
-        }
-      } catch (e) {
-        // ignore polling note
-      }
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
-  }, [activeChat]);
 
   // PeerJS Video Call State & WebRTC & Google Keep Sync
   const [videoCallOpen, setVideoCallOpen] = useState(false);
@@ -227,39 +161,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }, 4000);
   };
 
-  // Voice recording simulation
+  // Media delivery is disabled until authenticated server-side storage is configured.
   const startVoiceRecording = () => {
-    setIsRecordingVoice(true);
-    setRecordingSeconds(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingSeconds(sec => sec + 1);
-    }, 1000);
+    showToast('Las notas de voz aún no tienen almacenamiento/transporte de servidor; no se grabó ni envió audio.');
   };
 
   const stopAndSendVoiceRecording = () => {
-    if (!activeChat) return;
     clearInterval(recordingTimerRef.current);
     setIsRecordingVoice(false);
-
-    const seconds = recordingSeconds || 4;
-    const durStr = `00:${seconds < 10 ? '0' : ''}${seconds}`;
-    const chatKey = activeChat.profile.id;
-
-    const newVoiceMsg: ChatMessage = {
-      id: `voice_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      voiceUrl: 'voice_audio_record',
-      voiceDuration: durStr,
-      t: `Nota de voz (${durStr})`,
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newVoiceMsg]
-    }));
-
-    triggerBotReply(chatKey, "¡Qué linda voz tienes! Me gusta mucho escuchar a la persona antes de encontrarnos ✨");
+    setRecordingSeconds(0);
+    showToast('Las notas de voz no están habilitadas porque el servicio de mensajería no está desplegado.');
   };
 
   const cancelVoiceRecording = () => {
@@ -268,73 +179,45 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setRecordingSeconds(0);
   };
 
-  // Image attachment handler (Paperclip 📎)
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const newImgMsg: ChatMessage = {
-        id: `img_${Date.now()}`,
-        me: true,
-        ts: Date.now(),
-        img: imgUrl,
-      };
-
-      setChatMessages(prev => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), newImgMsg]
-      }));
-
-      triggerBotReply(chatKey, "¡Increíble foto! Te ves espectacular 🔥");
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    showToast('Los archivos no se enviaron: falta configurar almacenamiento seguro y el endpoint de mensajería.');
   };
 
-  const triggerBotReply = (chatKey: string, customReply?: string) => {
-    setTimeout(() => {
-      const matchResponses = [
-        "¡Totalmente de acuerdo! Me encanta esa actitud y tener reglas claras 😊",
-        "Jajaja exactamente lo que estaba pensando. ¿Cuándo nos vemos para un cóctel?",
-        "Las reglas claras siempre primero. ¿Has ido antes a una fiesta privada en San Luis Potosí?",
-        "Qué buena vibra transmites. Me alegra mucho que hayamos hecho Match ✨"
-      ];
-      const randomReply = customReply || matchResponses[Math.floor(Math.random() * matchResponses.length)];
-      const replyMessage: ChatMessage = {
-        id: `reply_${Date.now()}`,
-        me: false,
-        ts: Date.now(),
-        t: randomReply,
-      };
-      setChatMessages(prev => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), replyMessage]
-      }));
-    }, 1200);
-  };
-
-  const handleSendMessage = (e: React.FormEvent) => {
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const newMessage: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      t: inputText.trim(),
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newMessage]
-    }));
-    setInputText('');
-    triggerBotReply(chatKey);
+    const text = inputText.trim();
+    if (!text || !activeChat) return;
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      showToast('Inicia sesión para enviar mensajes.');
+      return;
+    }
+    try {
+      const token = await currentUser.getIdToken();
+      const response = await fetch(`/api/chats/${encodeURIComponent(activeChat.id)}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ text }),
+      });
+      if (!response.ok) {
+        showToast(response.status === 404
+          ? 'Mensajería del servidor aún no está desplegada; el mensaje no se envió.'
+          : 'No se pudo enviar el mensaje. Inténtalo de nuevo.');
+        return;
+      }
+      const result = await response.json();
+      const message = result?.message as ChatMessage | undefined;
+      if (!message || typeof message.t !== 'string') {
+        showToast('El servidor no confirmó la entrega del mensaje.');
+        return;
+      }
+      const chatKey = activeChat.profile.id;
+      setChatMessages(prev => ({ ...prev, [chatKey]: [...(prev[chatKey] || []), { ...message, me: true }] }));
+      setInputText('');
+    } catch {
+      showToast('No se pudo conectar con la mensajería; el mensaje no se envió.');
+    }
   };
 
   const handleConfirmReport = () => {
