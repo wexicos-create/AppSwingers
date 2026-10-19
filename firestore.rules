@@ -39,6 +39,16 @@ service cloud.firestore {
           && request.resource.data.toUserId != uid;
         allow update, delete: if false;
       }
+      // A user controls only their own block list; this never grants moderation powers.
+      match /blocks/{targetUid} {
+        allow read: if owner(uid);
+        allow create: if owner(uid)
+          && request.resource.data.targetUserId is string
+          && request.resource.data.targetUserId.size() <= 160
+          && request.resource.data.keys().hasOnly(['targetUserId', 'targetName', 'createdAt']);
+        allow delete: if owner(uid);
+        allow update: if false;
+      }
       // Private per-user cache only. A trusted backend must create mutual matches.
       match /matches/{matchId} {
         allow read: if owner(uid);
@@ -115,6 +125,16 @@ service cloud.firestore {
     match /reports/{reportId} {
       allow create: if signedIn()
         && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() >= 3
+        && request.resource.data.reason.size() <= 120
+        && request.resource.data.status == 'abierto'
+        && request.resource.data.target is map
+        && request.resource.data.target.keys().hasOnly(['type', 'id', 'name'])
+        && request.resource.data.target.type in ['usuario', 'propuesta', 'creadora']
+        && request.resource.data.target.id is string
+        && request.resource.data.target.name is string
+        && request.resource.data.details is string
         && request.resource.data.keys().hasOnly(['reporterId', 'target', 'reason', 'details', 'createdAt', 'status']);
       allow read, update, delete: if admin();
     }
