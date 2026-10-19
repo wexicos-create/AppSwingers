@@ -12,18 +12,17 @@ permissions:
 jobs:
   web-build-and-types:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: 22
-          cache: npm
-      - name: Install dependencies
-        run: npm install
+          bun-version: latest
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
       - name: Check TypeScript
-        run: npm run lint
+        run: bun run lint
       - name: Build production bundle
-        run: npm run build
+        run: bun run build
