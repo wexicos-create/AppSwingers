@@ -110,7 +110,7 @@ export function MonetizationExtrasModal({
             <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {offers.map((offer, index) => {
                 const tier: SubscriptionTier = index === 0 ? 'free' : index === 1 ? 'plus' : 'ultra';
-                const price = index === 0 ? t('Gratis', 'Free') : index === 1 ? money(699, 39.99) + t(' / mes', ' / month') : money(399, 24.99) + t(' / mes', ' / month');
+                const price = index === 0 ? t('Gratis', 'Free') : index === 1 ? money(399, 24.99) + t(' / mes', ' / month') : money(699, 39.99) + t(' / mes', ' / month');
                 const active = currentTier === tier || (tier === 'plus' && currentTier === 'silver') || (tier === 'ultra' && currentTier === 'gold');
                 return <article key={offer.title} className={`relative flex flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:border-white/25 ${offer.tone} ${index === 1 ? 'md:-translate-y-1 md:shadow-[0_16px_60px_rgba(217,70,239,.12)]' : ''}`}>
                   {index === 1 && <span className="absolute -top-2.5 left-5 rounded-full bg-fuchsia-300 px-3 py-1 text-[9px] font-black uppercase tracking-wider text-black">{t('Más elegido','Popular')}</span>}
@@ -119,6 +119,12 @@ export function MonetizationExtrasModal({
                   <h4 className="mt-1 text-xl font-black text-white">{offer.title}</h4>
                   <p className="mt-2 min-h-[42px] text-xs leading-relaxed text-white/60">{offer.description}</p>
                   <p className="my-4 text-xl font-black text-white">{price}</p>
+                  {isMx && index > 0 && (() => {
+                    const total = index === 1 ? 399 : 699;
+                    const subtotal = Math.round((total / 1.16) * 100) / 100;
+                    const vat = Math.round((total - subtotal) * 100) / 100;
+                    return <p className="-mt-2 mb-4 text-[10px] leading-relaxed text-white/50">{t(`Incluye IVA (16%): subtotal ${money(subtotal, subtotal)} + IVA ${money(vat, vat)}`, `Includes 16% VAT: subtotal ${money(subtotal, subtotal)} + VAT ${money(vat, vat)}`)}</p>;
+                  })()}
                   <ul className="mb-5 flex-1 space-y-2.5">{offer.features.map(feature => <li key={feature} className="flex gap-2 text-xs leading-relaxed text-white/75"><Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />{feature}</li>)}</ul>
                   <button onClick={() => handlePlanClick(tier)} className={`w-full rounded-xl px-4 py-3 text-xs font-extrabold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fuchsia-300 ${index === 1 ? 'bg-fuchsia-300 text-[#170b1d] hover:bg-fuchsia-200' : index === 2 ? 'bg-amber-300 text-black hover:bg-amber-200' : 'border border-white/15 bg-white/5 text-white hover:bg-white/10'}`}>{index === 0 ? t('Seguir gratis','Continue free') : t('Ver disponibilidad de pago','Check payment availability')}</button>
                 </article>;
