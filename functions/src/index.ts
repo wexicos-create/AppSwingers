@@ -174,8 +174,14 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
 export const getMyBenefits = onCall({ region: REGION, enforceAppCheck: true }, async (request) => {
   const auth = requireUser(request);
   const snap = await db.collection("entitlements").where("userId", "==", auth.uid).get();
+  const notificationSnap = await db.collection("userNotifications").doc(auth.uid).collection("items").where("read", "==", false).limit(10).get();
   const now = Date.now();
-  return { items: snap.docs.map((d) => {
+  return {
+    notifications: notificationSnap.docs.map((d) => {
+      const n = d.data();
+      return { id: d.id, type: n.type ?? "notice", title: n.title ?? "AppSwinger", body: n.body ?? "", createdAt: n.createdAt?.toDate?.().toISOString() ?? null };
+    }),
+    items: snap.docs.map((d) => {
     const e = d.data();
     const expiresAt = e.expiresAt?.toDate?.() ?? null;
     return { id: d.id, benefitKey: e.benefitKey, productLabel: e.productLabel, status: expiresAt && expiresAt.getTime() <= now ? "expired" : e.status, paymentStatus: e.paymentStatus, activatedAt: e.activatedAt?.toDate?.().toISOString() ?? null, expiresAt: expiresAt?.toISOString() ?? null, remainingQuota: e.remainingQuota ?? null };
