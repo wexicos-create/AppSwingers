@@ -456,7 +456,7 @@ export function CommunityView({ region, isEs, userId, displayName }: CommunityVi
                 </button>
                 <button
                   type="submit"
-                  disabled={storySaving || !userId}
+                  disabled={storySaving}
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-500 transition shadow-lg shadow-rose-600/30"
                 >
                   {storySaving ? (isEs ? 'Enviando…' : 'Submitting…') : (isEs ? 'Enviar a revisión' : 'Submit for review')}
