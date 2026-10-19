@@ -704,7 +704,7 @@ export default function App() {
     <div className="min-h-screen bg-[#050307] text-[#f5eeff] flex justify-center font-sans select-none antialiased overflow-x-hidden">
       {/* Mobile Screen Shell container */}
       <div className="relative w-full max-w-[430px] min-h-screen h-[100dvh] flex flex-col bg-[#050307] shadow-[0_0_80px_rgba(177,76,255,0.25)] border-x border-purple-500/20 overflow-hidden">
-        {!user && !accountAccessOpen && !legalModalOpen && <WelcomeScreen isEs={isEs} onOpenAccount={(mode) => { setAccountInitialMode(mode); setAccountAccessOpen(true); }} onOpenLegal={(topic) => { setLegalInitialTopic(topic); setLegalModalOpen(true); }} />}
+        {!user && !accountAccessOpen && !legalModalOpen && !registrationModalOpen && <WelcomeScreen isEs={isEs} onOpenAccount={(mode) => { setAccountInitialMode(mode); setAccountAccessOpen(true); }} onOpenLegal={(topic) => { setLegalInitialTopic(topic); setLegalModalOpen(true); }} />}
         
         {/* Ambient Neon Aura Blob */}
         <div className="absolute top-1/4 -left-20 w-72 h-72 bg-purple-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
