@@ -21,6 +21,8 @@ jobs:
   android-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      ANDROID_SIGNING_ENABLED: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,7 +85,7 @@ jobs:
           retention-days: 30
 
       - name: Prepare release signing configuration when keystore secrets exist
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        if: ${{ env.ANDROID_SIGNING_ENABLED == 'true' }}
         shell: bash
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -114,7 +116,7 @@ jobs:
           PY
 
       - name: Build production-signed release APK
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        if: ${{ env.ANDROID_SIGNING_ENABLED == 'true' }}
         working-directory: android
         env:
           ANDROID_KEYSTORE_FILE: app/release-key.jks
@@ -124,7 +126,7 @@ jobs:
         run: ./gradlew --no-daemon assembleRelease
 
       - name: Verify and upload production-signed release APK
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        if: ${{ env.ANDROID_SIGNING_ENABLED == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -135,7 +137,7 @@ jobs:
           sha256sum "$APK"
 
       - name: Upload production-signed APK
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEYSTORE_PASSWORD != '' && secrets.ANDROID_KEY_ALIAS != '' && secrets.ANDROID_KEY_PASSWORD != '' }}
+        if: ${{ env.ANDROID_SIGNING_ENABLED == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: AppSwinger-Android15-release-signed
