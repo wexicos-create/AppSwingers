@@ -23,7 +23,8 @@ import {
   Zap,
   CheckCircle2,
   RefreshCw,
-  BadgeCheck
+  BadgeCheck,
+  ExternalLink
 } from 'lucide-react';
 
 interface AdminModalProps {
