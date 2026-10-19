@@ -5,7 +5,6 @@ import {
   googleProvider, 
   syncUserProfile, 
   recordSwipe, 
-  recordMatch, 
   fetchUserMatches, 
   testConnection 
 } from './firebase';
