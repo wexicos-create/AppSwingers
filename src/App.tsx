@@ -328,6 +328,7 @@ export default function App() {
     const loadApprovedBenefit = async () => {
       if (!user) {
         setApprovedEntitlement(null);
+        setSubscriptionTier('free');
         setBenefitError(null);
         setBenefitLoading(false);
         return;
@@ -365,6 +366,7 @@ export default function App() {
         const data = items[0];
         if (!data) {
           setApprovedEntitlement(null);
+          setSubscriptionTier('free');
           return;
         }
         const entitlement: ApprovedEntitlement = {
@@ -378,6 +380,7 @@ export default function App() {
         };
         setApprovedEntitlement(entitlement);
         const expiry = entitlementState(entitlement);
+        setSubscriptionTier(expiry.active ? (entitlement.benefitKey === 'vip_plus' ? 'plus' : entitlement.benefitKey === 'ultra_vip' ? 'ultra' : 'free') : 'free');
         if (!unreadNotification && expiry.shouldNotify) {
           setPushToast({
             title: isEs ? 'Tu beneficio está por vencer' : 'Your benefit is about to expire',
@@ -389,6 +392,7 @@ export default function App() {
       } catch {
         if (!cancelled) {
           setApprovedEntitlement(null);
+          setSubscriptionTier('free');
           setBenefitError(isEs
             ? 'No se pudo consultar el beneficio seguro del servidor. No se concedieron permisos de pago.'
             : 'Could not read the server benefit. No paid access was granted.');
