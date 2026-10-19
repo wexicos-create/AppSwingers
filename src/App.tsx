@@ -50,6 +50,7 @@ import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { AccountAccessModal } from './components/AccountAccessModal';
+import { WelcomeScreen } from './components/WelcomeScreen';
 import { IdentityVerificationModal } from './components/IdentityVerificationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
@@ -195,6 +196,8 @@ export default function App() {
   const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
   const [accountAccessOpen, setAccountAccessOpen] = useState(false);
+  const [accountInitialMode, setAccountInitialMode] = useState<'register' | 'login'>('register');
+  const [legalInitialTopic, setLegalInitialTopic] = useState<string | null>(null);
   const [identityVerificationOpen, setIdentityVerificationOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
@@ -701,6 +704,7 @@ export default function App() {
     <div className="min-h-screen bg-[#050307] text-[#f5eeff] flex justify-center font-sans select-none antialiased overflow-x-hidden">
       {/* Mobile Screen Shell container */}
       <div className="relative w-full max-w-[430px] min-h-screen h-[100dvh] flex flex-col bg-[#050307] shadow-[0_0_80px_rgba(177,76,255,0.25)] border-x border-purple-500/20 overflow-hidden">
+        {!user && !accountAccessOpen && !legalModalOpen && <WelcomeScreen isEs={isEs} onOpenAccount={(mode) => { setAccountInitialMode(mode); setAccountAccessOpen(true); }} onOpenLegal={(topic) => { setLegalInitialTopic(topic); setLegalModalOpen(true); }} />}
         
         {/* Ambient Neon Aura Blob */}
         <div className="absolute top-1/4 -left-20 w-72 h-72 bg-purple-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
@@ -1076,7 +1080,7 @@ export default function App() {
               }}
               isFirestoreConnected={isFirestoreConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
-              onOpenLegal={() => setLegalModalOpen(true)}
+              onOpenLegal={() => { setLegalInitialTopic(null); setLegalModalOpen(true); }}
               onExportData={handleExportData}
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
@@ -1211,6 +1215,7 @@ export default function App() {
           isOpen={accountAccessOpen}
           onClose={() => setAccountAccessOpen(false)}
           isEs={isEs}
+          initialMode={accountInitialMode}
           onSuccess={(created) => {
             setAccountAccessOpen(false);
             if (created) setRegistrationModalOpen(true);
@@ -1316,7 +1321,8 @@ export default function App() {
         {legalModalOpen && (
           <LegalModal
             isOpen={legalModalOpen}
-            onClose={() => setLegalModalOpen(false)}
+            initialTopic={legalInitialTopic}
+            onClose={() => { setLegalModalOpen(false); setLegalInitialTopic(null); }}
           />
         )}
 
