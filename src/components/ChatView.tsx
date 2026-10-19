@@ -214,7 +214,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
       [chatKey]: [...(prev[chatKey] || []), newVoiceMsg]
     }));
 
-    triggerBotReply(chatKey, "¡Qué linda voz tienes! Me gusta mucho escuchar a la persona antes de encontrarnos ✨");
   };
 
   const cancelVoiceRecording = () => {
