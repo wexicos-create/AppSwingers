@@ -98,7 +98,7 @@ jobs:
           p = Path("android/app/build.gradle")
           s = p.read_text()
           if "signingConfigs {" not in s:
-              s = re.sub(r"android\\s*\\{", """android {
+              s = re.sub(r"android\s*\{", """android {
               signingConfigs {
                   release {
                       storeFile file(System.getenv('ANDROID_KEYSTORE_FILE'))
@@ -108,7 +108,7 @@ jobs:
                   }
               }
           """, s, count=1)
-          s, count = re.subn(r"(buildTypes\\s*\\{\\s*release\\s*\\{)", r"\\1\\n            signingConfig signingConfigs.release", s, count=1)
+          s, count = re.subn(r"(buildTypes\s*\{\s*release\s*\{)", r"\1\n            signingConfig signingConfigs.release", s, count=1)
           if count != 1:
               raise SystemExit("Could not safely add the release signingConfig to the generated Gradle file.")
           p.write_text(s)
