@@ -182,38 +182,16 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }, 4000);
   };
 
-  // Voice recording simulation
+  // Media delivery is disabled until authenticated server-side storage is configured.
   const startVoiceRecording = () => {
-    setIsRecordingVoice(true);
-    setRecordingSeconds(0);
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingSeconds(sec => sec + 1);
-    }, 1000);
+    showToast('Las notas de voz aún no tienen almacenamiento/transporte de servidor; no se grabó ni envió audio.');
   };
 
   const stopAndSendVoiceRecording = () => {
-    if (!activeChat) return;
     clearInterval(recordingTimerRef.current);
     setIsRecordingVoice(false);
-
-    const seconds = recordingSeconds || 4;
-    const durStr = `00:${seconds < 10 ? '0' : ''}${seconds}`;
-    const chatKey = activeChat.profile.id;
-
-    const newVoiceMsg: ChatMessage = {
-      id: `voice_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      voiceUrl: 'voice_audio_record',
-      voiceDuration: durStr,
-      t: `Nota de voz (${durStr})`,
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newVoiceMsg]
-    }));
-
+    setRecordingSeconds(0);
+    showToast('Las notas de voz no están habilitadas porque el servicio de mensajería no está desplegado.');
   };
 
   const cancelVoiceRecording = () => {
@@ -222,30 +200,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setRecordingSeconds(0);
   };
 
-  // Image attachment handler (Paperclip 📎)
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const newImgMsg: ChatMessage = {
-        id: `img_${Date.now()}`,
-        me: true,
-        ts: Date.now(),
-        img: imgUrl,
-      };
-
-      setChatMessages(prev => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), newImgMsg]
-      }));
-
-    };
-    reader.readAsDataURL(file);
     e.target.value = '';
+    showToast('Los archivos no se enviaron: falta configurar almacenamiento seguro y el endpoint de mensajería.');
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
