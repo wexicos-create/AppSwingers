@@ -31,8 +31,6 @@ interface AdminModalProps {
 
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,9 +100,6 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const handleSendBroadcast = (e: React.FormEvent) => {
     e.preventDefault();
     setBroadcastSuccess(false);
-    setError(isEs
-      ? 'Las notificaciones push no están conectadas a un servicio de envío. No se envió ninguna alerta.'
-      : 'Push notifications are not connected to a delivery service. No alert was sent.');
   };
 
   return (
@@ -148,35 +143,6 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="jocervantes99@gmail.com"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Key className="w-3.5 h-3.5 text-rose-400" />
-                {isEs ? 'Contraseña' : 'Password'}
-              </label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password" placeholder={isEs ? "Contraseña de la cuenta Firebase" : "Firebase account password"}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                required
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                autoComplete="one-time-code" placeholder={isEs ? "PIN no utilizado; se verifica el permiso del servidor" : "Unused PIN; server permission is verified"}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
               />
             </div>
             <button
@@ -318,11 +284,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                     />
                   </div>
 
-                  {broadcastSuccess && (
-                    <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold text-center">
-                      {isEs ? '¡Alerta enviada exitosamente a los 1,842 dispositivos en México y USA!' : 'Alert broadcasted to 1,842 devices!'}
-                    </div>
-                  )}
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] text-center">
+                    {isEs
+                      ? 'Envío push no conectado. El botón no transmite notificaciones.'
+                      : 'Push delivery is not connected. This button does not send notifications.'}
+                  </div>
 
                   <button
                     type="submit"
