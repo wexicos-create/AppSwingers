@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MatchItem, Profile, ChatMessage } from '../types';
-import { INITIAL_PROFILES } from '../data/mockProfiles';
 import { 
   Search, 
   Send, 
@@ -128,18 +127,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
       const match = matches.find(m => m.profile.id === initialChatUserId);
       if (match) {
         setActiveChat(match);
-      } else {
-        // Fallback: look up in initial profiles to immediately open chat
-        const fallbackProfile = INITIAL_PROFILES.find(p => p.id === initialChatUserId);
-        if (fallbackProfile) {
-          setActiveChat({
-            id: `match_${fallbackProfile.id}_fallback`,
-            profile: fallbackProfile,
-            matchedAt: new Date().toISOString(),
-            lastMessage: '¡Nuevo Match mutuo! Saludarse primero ✨',
-            unreadCount: 0
-          });
-        }
       }
     }
   }, [initialChatUserId, matches]);
@@ -289,32 +276,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
         [chatKey]: [...(prev[chatKey] || []), newImgMsg]
       }));
 
-      triggerBotReply(chatKey, "¡Increíble foto! Te ves espectacular 🔥");
     };
     reader.readAsDataURL(file);
     e.target.value = '';
-  };
-
-  const triggerBotReply = (chatKey: string, customReply?: string) => {
-    setTimeout(() => {
-      const matchResponses = [
-        "¡Totalmente de acuerdo! Me encanta esa actitud y tener reglas claras 😊",
-        "Jajaja exactamente lo que estaba pensando. ¿Cuándo nos vemos para un cóctel?",
-        "Las reglas claras siempre primero. ¿Has ido antes a una fiesta privada en San Luis Potosí?",
-        "Qué buena vibra transmites. Me alegra mucho que hayamos hecho Match ✨"
-      ];
-      const randomReply = customReply || matchResponses[Math.floor(Math.random() * matchResponses.length)];
-      const replyMessage: ChatMessage = {
-        id: `reply_${Date.now()}`,
-        me: false,
-        ts: Date.now(),
-        t: randomReply,
-      };
-      setChatMessages(prev => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), replyMessage]
-      }));
-    }, 1200);
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -334,7 +298,6 @@ export const ChatView: React.FC<ChatViewProps> = ({
       [chatKey]: [...(prev[chatKey] || []), newMessage]
     }));
     setInputText('');
-    triggerBotReply(chatKey);
   };
 
   const handleConfirmReport = () => {
