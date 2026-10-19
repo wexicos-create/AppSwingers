@@ -122,8 +122,6 @@ export async function recordSwipe(
     await setDoc(doc(db, 'users', userId, 'swipes', swipeDocId), {
       fromUserId: userId,
       toUserId: targetProfile.id,
-      profileName: targetProfile.name,
-      profilePhoto: targetProfile.photos[0],
       swipeType,
       timestamp: new Date().toISOString()
     });
@@ -132,21 +130,10 @@ export async function recordSwipe(
   }
 }
 
-// Record a match in Firestore
-export async function recordMatch(userId: string, targetProfile: Profile) {
-  if (!userId) return;
-  const matchDocId = `match_${targetProfile.id}`;
-  const path = `users/${userId}/matches/${matchDocId}`;
-  try {
-    await setDoc(doc(db, 'users', userId, 'matches', matchDocId), {
-      userIds: [userId, targetProfile.id],
-      profile: targetProfile,
-      matchedAt: new Date().toISOString(),
-      lastMessage: "It's a Match! Say hello..."
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+// Match creation is intentionally server-only: client-side writes could fabricate
+// mutual consent. A trusted backend must verify both users' swipe records first.
+export async function recordMatch(_userId: string, _targetProfile: Profile): Promise<never> {
+  throw new Error('Match creation requires the trusted mutual-consent backend.');
 }
 
 // Fetch user matches
