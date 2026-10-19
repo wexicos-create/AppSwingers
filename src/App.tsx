@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut as fbSignOut, User } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { 
   auth, 
     syncUserProfile, 
@@ -339,7 +339,20 @@ export default function App() {
         const getMyBenefits = httpsCallable(functions, 'getMyBenefits');
         const response = await getMyBenefits({});
         if (cancelled) return;
-        const payload = response.data as { items?: Array<Record<string, unknown>> };
+        const payload = response.data as {
+          items?: Array<Record<string, unknown>>;
+          notifications?: Array<{ id: string; type?: string; title?: string; body?: string }>;
+        };
+        const unreadNotification = Array.isArray(payload.notifications) ? payload.notifications[0] : undefined;
+        if (unreadNotification) {
+          setPushToast({
+            title: unreadNotification.title || (isEs ? 'Notificación de AppSwinger' : 'AppSwinger notification'),
+            body: unreadNotification.body || '',
+          });
+          void updateDoc(doc(db, 'userNotifications', user.uid, 'items', unreadNotification.id), { read: true }).catch(() => {
+            // If marking as read fails, leave the notification available for the next attempt.
+          });
+        }
         const validKeys = ['vip_plus', 'ultra_vip', 'event_listing', 'featured_campaign', 'profile_boost', 'host_tools'];
         const items = Array.isArray(payload.items) ? payload.items.filter(item =>
           item.userId === undefined &&
@@ -365,7 +378,7 @@ export default function App() {
         };
         setApprovedEntitlement(entitlement);
         const expiry = entitlementState(entitlement);
-        if (expiry.shouldNotify) {
+        if (!unreadNotification && expiry.shouldNotify) {
           setPushToast({
             title: isEs ? 'Tu beneficio está por vencer' : 'Your benefit is about to expire',
             body: isEs
