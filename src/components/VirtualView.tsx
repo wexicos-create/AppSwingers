@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { Creator, LiveStream, AppRegion } from '../types';
 import { 
   Video, 
@@ -92,7 +93,44 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   ]);
 
   // Virtual card balance
-  const [virtualCardBalance, setVirtualCardBalance] = useState(2450);
+  const [virtualCardBalance, setVirtualCardBalance] = useState<number | null>(null);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [withdrawalAmount, setWithdrawalAmount] = useState('');
+  const [withdrawalLegalName, setWithdrawalLegalName] = useState('');
+  const [withdrawalBankName, setWithdrawalBankName] = useState('');
+  const [withdrawalClabe, setWithdrawalClabe] = useState('');
+  const [withdrawalTaxId, setWithdrawalTaxId] = useState('');
+  const [withdrawalTaxDocRef, setWithdrawalTaxDocRef] = useState('');
+  const [withdrawalStatementRef, setWithdrawalStatementRef] = useState('');
+  const [walletMessage, setWalletMessage] = useState('');
+  const loadCreatorWallet = async () => {
+    setWalletLoading(true); setWalletMessage('');
+    try {
+      const fn = httpsCallable(getFunctions(undefined, 'us-central1'), 'getCreatorWallet');
+      const response = await fn({});
+      const data = response.data as { balances?: { availableMxn?: number } };
+      setVirtualCardBalance(Number(data.balances?.availableMxn || 0));
+    } catch (error) {
+      setVirtualCardBalance(null);
+      setWalletMessage(isEs ? 'No se pudo validar el saldo del servidor. Los retiros permanecen bloqueados.' : 'Server balance unavailable. Withdrawals remain blocked.');
+    } finally { setWalletLoading(false); }
+  };
+  const submitCreatorWithdrawal = async () => {
+    if (virtualCardBalance === null) { setWalletMessage(isEs ? 'Actualiza el saldo desde el servidor antes de continuar.' : 'Refresh server balance before continuing.'); return; }
+    if (!withdrawalAmount || !withdrawalLegalName || !withdrawalBankName || !withdrawalClabe || !withdrawalTaxId || !withdrawalTaxDocRef || !withdrawalStatementRef) {
+      setWalletMessage(isEs ? 'Completa los datos bancarios y las referencias privadas de la constancia fiscal y estado de cuenta.' : 'Complete bank details and private references for tax and bank documents.'); return;
+    }
+    setWalletLoading(true); setWalletMessage('');
+    try {
+      const fn = httpsCallable(getFunctions(undefined, 'us-central1'), 'requestCreatorWithdrawal');
+      const response = await fn({ amountMxn: Number(withdrawalAmount), legalName: withdrawalLegalName, bankName: withdrawalBankName, clabe: withdrawalClabe, taxId: withdrawalTaxId, taxDocumentRef: withdrawalTaxDocRef, bankStatementRef: withdrawalStatementRef });
+      const data = response.data as { success?: boolean; message?: string };
+      setWalletMessage(data.message || (isEs ? 'Solicitud enviada a revisión.' : 'Withdrawal request sent for review.'));
+      await loadCreatorWallet();
+    } catch (error) {
+      setWalletMessage(error instanceof Error ? error.message : (isEs ? 'No se pudo enviar la solicitud.' : 'Could not submit withdrawal request.'));
+    } finally { setWalletLoading(false); }
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -171,7 +209,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
             title={isEs ? 'Tarjeta virtual de ingresos y eventos' : 'Virtual Earnings Card'}
           >
             <CreditCard className="w-3.5 h-3.5 text-pink-400" />
-            <span>${virtualCardBalance} {currencyCode}</span>
+            <span>{virtualCardBalance === null ? (isEs ? 'Consultar saldo' : 'Check balance') : `${virtualCardBalance.toFixed(2)} ${currencyCode}`}</span>
           </button>
         </div>
 
@@ -358,7 +396,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                       <button
                         onClick={() => {
                           onBuyLiveAccess(l);
-                          setVirtualCardBalance(prev => prev + totalLivePrice);
+                          // Never credit creator earnings from a client-side purchase event.
                         }}
                         className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-xs shadow-md active:scale-95 transition"
                       >
@@ -535,7 +573,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                 onClick={() => {
                   const amt = Math.round(selectedCreator.price * (1.1 + taxRate));
                   onSubscribe(selectedCreator);
-                  setVirtualCardBalance(prev => prev + Math.round(selectedCreator.price * 0.85));
+                  // Client-side checkout must not mint creator earnings.
                   setSelectedCreator(null);
                 }}
                 className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white text-xs font-bold shadow-lg"
@@ -676,25 +714,25 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
             </div>
 
             <p className="text-[11px] text-purple-200/80 leading-relaxed">
-              {isEs 
-                ? 'Este saldo se abona automáticamente por la venta de contenido exclusivo (PPV), suscripciones y por tu participación como asociado verificado en eventos presenciales.' 
-                : 'This balance is credited from content sales, subscriptions, and verified event hosting.'}
+              {isEs ? 'Tarjeta de visualización interna; no es una tarjeta bancaria emitida. El saldo solo se obtiene del libro contable del servidor. Las ventas simuladas no generan ganancias.' : 'Internal wallet display only, not an issued bank card. Balance comes only from the server ledger. Simulated sales do not create earnings.'}
             </p>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (virtualCardBalance <= 0) {
-                  alert(isEs ? 'Saldo insuficiente para retirar.' : 'Insufficient balance.');
-                  return;
-                }
-                alert(isEs ? `¡Retiro de $${virtualCardBalance} ${currencyCode} solicitado a tu cuenta bancaria asociada!` : `Withdrawal requested!`);
-                setVirtualCardBalance(0);
-              }}
-              className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-lg active:scale-95 transition flex items-center justify-center gap-2"
-            >
-              <DollarSign className="w-4 h-4" />
-              <span>{isEs ? 'Retirar Dinero a Cuenta Bancaria' : 'Withdraw Funds to Bank Account'}</span>
+            <button type="button" disabled={walletLoading} onClick={() => void loadCreatorWallet()} className="w-full py-2.5 rounded-xl border border-purple-400/40 bg-purple-500/10 text-white text-xs font-bold disabled:opacity-50">
+              {walletLoading ? (isEs ? 'Validando…' : 'Checking…') : (isEs ? 'Consultar saldo seguro' : 'Refresh secure balance')}
+            </button>
+            <div className="space-y-2">
+              <label className="block text-xs text-white/70">{isEs ? 'Importe a retirar (MXN)' : 'Withdrawal amount (MXN)'}</label>
+              <input value={withdrawalAmount} onChange={e => setWithdrawalAmount(e.target.value)} type="number" min="1" step="0.01" className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm" placeholder="0.00" />
+              <input value={withdrawalLegalName} onChange={e => setWithdrawalLegalName(e.target.value)} className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm" placeholder={isEs ? 'Nombre legal exacto de la titular' : 'Exact legal account-holder name'} />
+              <input value={withdrawalBankName} onChange={e => setWithdrawalBankName(e.target.value)} className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm" placeholder={isEs ? 'Banco receptor' : 'Receiving bank'} />
+              <input value={withdrawalClabe} onChange={e => setWithdrawalClabe(e.target.value)} inputMode="numeric" maxLength={18} className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm" placeholder="CLABE de 18 dígitos" />
+              <input value={withdrawalTaxId} onChange={e => setWithdrawalTaxId(e.target.value)} className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm uppercase" placeholder="RFC" />
+              <input value={withdrawalTaxDocRef} onChange={e => setWithdrawalTaxDocRef(e.target.value)} className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm" placeholder={isEs ? 'Referencia privada de constancia fiscal (Storage)' : 'Private tax document reference (Storage)'} />
+              <input value={withdrawalStatementRef} onChange={e => setWithdrawalStatementRef(e.target.value)} className="w-full rounded-xl bg-black/40 border border-white/15 p-3 text-sm" placeholder={isEs ? 'Referencia privada del estado de cuenta (Storage)' : 'Private bank statement reference (Storage)'} />
+              <p className="text-[10px] text-amber-200/80">{isEs ? 'No pegues documentos ni enlaces públicos aquí. Las referencias deben corresponder a archivos privados previamente cargados; la solicitud no transfiere dinero. Retención fiscal pendiente de revisión contable.' : 'Do not paste documents or public links here. References must point to private uploaded files; this request does not transfer money. Tax withholding requires accountant review.'}</p>
+            </div>
+            {walletMessage && <div role="status" className="rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/80">{walletMessage}</div>}
+            <button type="button" disabled={walletLoading || virtualCardBalance === null} onClick={() => void submitCreatorWithdrawal()} className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-lg disabled:opacity-40">
+              <DollarSign className="w-4 h-4 inline mr-2" />{isEs ? 'Solicitar retiro sujeto a revisión' : 'Request withdrawal for review'}
             </button>
           </div>
         </div>
