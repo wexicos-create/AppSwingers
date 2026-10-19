@@ -84,6 +84,34 @@ service cloud.firestore {
       allow delete: if admin() || (signedIn() && resource.data.authorId == request.auth.uid);
     }
 
+    // Community stories are public only after moderator approval.
+    // Authors can submit pending items and read their own; clients cannot publish directly.
+    match /communityStories/{storyId} {
+      allow read: if (signedIn() && resource.data.status == 'published')
+        || (signedIn() && resource.data.authorId == request.auth.uid)
+        || admin();
+      allow create: if signedIn()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.status == 'pending_review'
+        && request.resource.data.consentConfirmed == true
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 4
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.body is string
+        && request.resource.data.body.size() >= 20
+        && request.resource.data.body.size() <= 3000
+        && request.resource.data.category in ['historia', 'consejo', 'donde_buscar']
+        && request.resource.data.region in ['MX', 'US']
+        && request.resource.data.keys().hasOnly([
+          'authorId', 'authorAlias', 'title', 'body', 'category',
+          'region', 'consentConfirmed', 'status', 'createdAt'
+        ]);
+      allow update: if admin();
+      allow delete: if admin() || (signedIn()
+        && resource.data.authorId == request.auth.uid
+        && resource.data.status == 'pending_review');
+    }
+
     match /reports/{reportId} {
       allow create: if signedIn()
         && request.resource.data.reporterId == request.auth.uid
