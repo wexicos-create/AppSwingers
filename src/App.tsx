@@ -1250,6 +1250,11 @@ export default function App() {
           onSave={(data) => {
             const savedProfile = {
               alias: data.alias,
+              legalFirstName: data.legalFirstName || '',
+              legalLastName: data.legalLastName || '',
+              showAlias: data.showAlias ?? true,
+              age: data.age || null,
+              state: data.state || '',
               kind: data.kind,
               bio: data.bio,
               interests: data.interests,
