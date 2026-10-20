@@ -23,12 +23,12 @@ export function WelcomeScreen({ isEs, onOpenAccount, onOpenLegal }: WelcomeScree
     <section aria-label={t('Bienvenida a AppSwinger', 'Welcome to AppSwinger')} className="absolute inset-0 z-[60] overflow-y-auto overscroll-contain bg-[#08050d] text-white">
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-5 pt-8 sm:px-7">
         <header className="mb-8 flex items-center justify-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-fuchsia-300/30 bg-gradient-to-br from-fuchsia-500/25 to-violet-500/20 text-fuchsia-200 shadow-lg">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-500/25 to-lime-500/20 text-emerald-200 shadow-lg">
             <HeartHandshake className="h-7 w-7" />
           </div>
           <div>
             <p className="text-lg font-black tracking-[.12em]">APPSWINGER</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-fuchsia-200/65">{t('Conexiones con respeto', 'Connections with respect')}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-emerald-200/65">{t('Conexiones con respeto', 'Connections with respect')}</p>
           </div>
         </header>
 
@@ -39,11 +39,11 @@ export function WelcomeScreen({ isEs, onOpenAccount, onOpenLegal }: WelcomeScree
         </div>
 
         <div className="mb-6 grid grid-cols-1 gap-3">
-          <button type="button" onClick={() => onOpenAccount('register')} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-fuchsia-400 to-pink-500 px-4 py-4 text-sm font-black text-[#160817] shadow-lg shadow-fuchsia-900/30 transition hover:brightness-110 active:scale-[.99]">
+          <button type="button" onClick={() => onOpenAccount('register')} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 to-lime-500 px-4 py-4 text-sm font-black text-[#160817] shadow-lg shadow-emerald-900/30 transition hover:brightness-110 active:scale-[.99]">
             <UserRoundPlus className="h-5 w-5" /> {t('Regístrate', 'Create account')}
           </button>
           <button type="button" onClick={() => onOpenAccount('login')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[.045] px-4 py-3.5 text-sm font-bold text-white transition hover:bg-white/10 active:scale-[.99]">
-            <LogIn className="h-4 w-4 text-fuchsia-200" /> {t('¿Ya tienes cuenta? Inicia sesión', 'Already have an account? Sign in')}
+            <LogIn className="h-4 w-4 text-emerald-200" /> {t('¿Ya tienes cuenta? Inicia sesión', 'Already have an account? Sign in')}
           </button>
           <p className="text-center text-[10px] leading-relaxed text-white/45">{t('Al crear una cuenta, primero confirma que tienes 18 años o más y revisa los avisos y reglas que aparecen a continuación.', 'When creating an account, confirm you are 18 or older and review the notices and rules below.')}</p>
         </div>
@@ -54,11 +54,11 @@ export function WelcomeScreen({ isEs, onOpenAccount, onOpenLegal }: WelcomeScree
         </section>
 
         <section className="mb-5">
-          <h2 className="mb-3 text-[10px] font-black uppercase tracking-[.2em] text-fuchsia-200/75">{t('Privacidad, confianza y políticas', 'Privacy, trust and policies')}</h2>
+          <h2 className="mb-3 text-[10px] font-black uppercase tracking-[.2em] text-emerald-200/75">{t('Privacidad, confianza y políticas', 'Privacy, trust and policies')}</h2>
           <div className="space-y-2">
             {policyLinks.map(({ id, label, icon: Icon }) => (
-              <button key={id} type="button" onClick={() => onOpenLegal(id)} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3 text-left transition hover:border-fuchsia-300/25 hover:bg-fuchsia-300/[.06]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-950/80 text-fuchsia-200"><Icon className="h-4 w-4" /></span>
+              <button key={id} type="button" onClick={() => onOpenLegal(id)} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3 text-left transition hover:border-emerald-300/25 hover:bg-emerald-300/[.06]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lime-950/80 text-emerald-200"><Icon className="h-4 w-4" /></span>
                 <span className="flex-1 text-xs font-semibold text-white/85">{label}</span>
                 <ArrowUpRight className="h-4 w-4 shrink-0 text-white/35" />
               </button>
