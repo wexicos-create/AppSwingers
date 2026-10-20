@@ -143,10 +143,11 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
   const decision = request.data?.decision;
   const notes = safeText(request.data?.notes, 500);
   const bankTransactionId = safeText(request.data?.bankTransactionId, 160);
+  const confirmedAmountMxn = Number(request.data?.confirmedAmountMxn);
   const bankConfirmed = request.data?.bankConfirmed === true;
   if (!orderId || !["approve", "reject", "request_info"].includes(decision)) throw new HttpsError("invalid-argument", "Decisión no válida.");
-  if (decision === "approve" && (!bankConfirmed || bankTransactionId.length < 5)) {
-    throw new HttpsError("failed-precondition", "Para aprobar debes confirmar el depósito en el banco y registrar su identificador real.");
+  if (decision === "approve" && (!bankConfirmed || bankTransactionId.length < 5 || !Number.isFinite(confirmedAmountMxn) || confirmedAmountMxn <= 0)) {
+    throw new HttpsError("failed-precondition", "Para aprobar debes confirmar el abono bancario, registrar el identificador real y capturar el importe exacto recibido.");
   }
   const orderRef = db.collection("paymentOrders").doc(orderId);
   const queueRef = db.collection("adminReviewQueue").doc(orderId);
@@ -161,6 +162,11 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
       const duplicate = await tx.get(bankLedgerRef);
       if (duplicate.exists) throw new HttpsError("already-exists", "Ese movimiento bancario ya fue aplicado a otro pedido.");
       if (order.currency !== "MXN" || typeof order.totalMxn !== "number") throw new HttpsError("failed-precondition", "Importe o moneda del pedido no válido.");
+      // The operator must re-enter the amount observed in the receiving bank statement.
+      // Never activate an entitlement if it differs from the server-priced order total.
+      if (Math.round(confirmedAmountMxn * 100) !== Math.round(order.totalMxn * 100)) {
+        throw new HttpsError("failed-precondition", "El importe bancario confirmado no coincide exactamente con el total del pedido.");
+      }
       const item = catalogItem(order.benefitKey);
       const now = Timestamp.now();
       const entitlementRef = db.collection("entitlements").doc(orderId);
@@ -173,7 +179,7 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
       if ("quota" in item) entitlement.remainingQuota = item.quota;
       if ("maxGuests" in item) entitlement.maxGuests = item.maxGuests;
       tx.create(entitlementRef, entitlement);
-      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId, amountMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
+      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId, amountMxn: confirmedAmountMxn, orderTotalMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
       tx.update(orderRef, {
         status: "paid", bankTransactionId, bankConfirmed: true,
         reviewedBy: admin.uid, reviewedAt: now, reviewNotes: notes,
