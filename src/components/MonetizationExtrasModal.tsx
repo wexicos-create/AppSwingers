@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AppRegion, SubscriptionTier } from '../types';
-import { auth } from '../firebase';
+import { appCheckConfigured, auth } from '../firebase';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { X, Sparkles, Crown, Megaphone, Check, ShieldCheck, CalendarDays, Video, TrendingUp, LockKeyhole, Info, Users, Ticket, MessageCircle, ExternalLink, CheckCircle2 } from 'lucide-react';
 
@@ -87,6 +87,13 @@ export function MonetizationExtrasModal({
     }
     if (!auth.currentUser) {
       setNotice(t('Inicia sesión para generar una referencia SPEI segura. No se creó ningún pedido.', 'Sign in to create a secure SPEI reference. No order was created.'));
+      return;
+    }
+    if (!appCheckConfigured) {
+      setNotice(t(
+        'Checkout bloqueado por seguridad: falta configurar VITE_RECAPTCHA_V3_SITE_KEY en el entorno de despliegue. No se creó ningún pedido ni se activó ningún beneficio.',
+        'Checkout blocked for security: VITE_RECAPTCHA_V3_SITE_KEY is missing from the deployment environment. No order was created and no benefit was activated.'
+      ));
       return;
     }
     setPaymentBusy(true); setNotice(null); setOrder(null); setSubmittedOrder(null); setTransferReference('');
