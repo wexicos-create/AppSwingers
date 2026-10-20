@@ -6,9 +6,11 @@ on:
     branches:
       - main
       - repair/commercial-integrity-security
+      - feature/adult-dating-commercial-launch
   pull_request:
     branches:
       - main
+      - repair/commercial-integrity-security
 
 permissions:
   contents: read
