@@ -5,12 +5,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 const app = initializeApp();
-const databaseId = process.env.FIRESTORE_DATABASE_ID;
-if (!databaseId) {
-  // Configure FIRESTORE_DATABASE_ID to the Firebase database used by the web client.
-  // Functions fail closed rather than writing payment records into an unintended DB.
-  throw new Error("Missing FIRESTORE_DATABASE_ID secret/environment setting");
-}
+// Keep the Admin SDK pointed at the exact named database configured in firebase.json
+// and firebase-applet-config.json. An environment override is supported for staging,
+// but an absent optional variable must not crash every callable function at cold start.
+const databaseId = process.env.FIRESTORE_DATABASE_ID || "ai-studio-bae18161-c5ba-4b69-99f2-4a83f48a6d69";
 const db = getFirestore(app, databaseId);
 const REGION = "us-central1";
 const IVA = 0.16;
