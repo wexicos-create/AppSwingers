@@ -23,42 +23,42 @@ export function WelcomeScreen({ isEs, onOpenAccount, onOpenLegal }: WelcomeScree
     <section aria-label={t('Bienvenida a AppSwinger', 'Welcome to AppSwinger')} className="absolute inset-0 z-[60] overflow-y-auto overscroll-contain bg-[#08050d] text-white">
       <div className="mx-auto flex min-h-full w-full max-w-md flex-col px-5 pb-5 pt-8 sm:px-7">
         <header className="mb-8 flex items-center justify-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-emerald-300/30 bg-gradient-to-br from-emerald-500/25 to-lime-500/20 text-emerald-200 shadow-lg">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-300/30 bg-gradient-to-br from-violet-500/25 to-fuchsia-500/20 text-violet-200 shadow-lg">
             <HeartHandshake className="h-7 w-7" />
           </div>
           <div>
             <p className="text-lg font-black tracking-[.12em]">APPSWINGER</p>
-            <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-emerald-200/65">{t('Conexiones con respeto', 'Connections with respect')}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[.2em] text-violet-200/65">{t('Conexiones con respeto', 'Connections with respect')}</p>
           </div>
         </header>
 
         <div className="mb-6 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-300/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[.16em] text-emerald-200"><ShieldCheck className="h-3.5 w-3.5" /> {t('Solo mayores de 18 años', 'Adults 18+ only')}</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-300/25 bg-violet-300/10 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-[.16em] text-violet-200"><ShieldCheck className="h-3.5 w-3.5" /> {t('Solo mayores de 18 años', 'Adults 18+ only')}</span>
           <h1 className="mt-4 text-3xl font-black leading-tight sm:text-4xl">{t('Tu comunidad. Tus límites. Tu decisión.', 'Your community. Your boundaries. Your choice.')}</h1>
           <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-white/65">{t('Conoce personas y eventos con reglas claras, consentimiento y herramientas para cuidar tu privacidad.', 'Meet people and discover events with clear rules, consent and privacy controls.')}</p>
         </div>
 
         <div className="mb-6 grid grid-cols-1 gap-3">
-          <button type="button" onClick={() => onOpenAccount('register')} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-400 to-lime-500 px-4 py-4 text-sm font-black text-[#160817] shadow-lg shadow-emerald-900/30 transition hover:brightness-110 active:scale-[.99]">
+          <button type="button" onClick={() => onOpenAccount('register')} className="flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-400 to-fuchsia-500 px-4 py-4 text-sm font-black text-[#160817] shadow-lg shadow-violet-900/30 transition hover:brightness-110 active:scale-[.99]">
             <UserRoundPlus className="h-5 w-5" /> {t('Regístrate', 'Create account')}
           </button>
           <button type="button" onClick={() => onOpenAccount('login')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/[.045] px-4 py-3.5 text-sm font-bold text-white transition hover:bg-white/10 active:scale-[.99]">
-            <LogIn className="h-4 w-4 text-emerald-200" /> {t('¿Ya tienes cuenta? Inicia sesión', 'Already have an account? Sign in')}
+            <LogIn className="h-4 w-4 text-violet-200" /> {t('¿Ya tienes cuenta? Inicia sesión', 'Already have an account? Sign in')}
           </button>
           <p className="text-center text-[10px] leading-relaxed text-white/45">{t('Al crear una cuenta, primero confirma que tienes 18 años o más y revisa los avisos y reglas que aparecen a continuación.', 'When creating an account, confirm you are 18 or older and review the notices and rules below.')}</p>
         </div>
 
-        <section className="mb-5 rounded-2xl border border-emerald-300/20 bg-emerald-300/[.045] p-4">
-          <div className="mb-2 flex items-center gap-2 text-emerald-200"><ShieldCheck className="h-5 w-5" /><h2 className="text-sm font-extrabold">{t('Respeto total y seguridad para cada usuario', 'Respect and safety for every user')}</h2></div>
+        <section className="mb-5 rounded-2xl border border-violet-300/20 bg-violet-300/[.045] p-4">
+          <div className="mb-2 flex items-center gap-2 text-violet-200"><ShieldCheck className="h-5 w-5" /><h2 className="text-sm font-extrabold">{t('Respeto total y seguridad para cada usuario', 'Respect and safety for every user')}</h2></div>
           <p className="text-xs leading-relaxed text-white/65">{t('El consentimiento es indispensable y se puede retirar en cualquier momento. No toleramos acoso, suplantación, extorsión ni contenido íntimo publicado sin permiso.', 'Consent is essential and can be withdrawn at any time. Harassment, impersonation, extortion and intimate content posted without permission are not tolerated.')}</p>
         </section>
 
         <section className="mb-5">
-          <h2 className="mb-3 text-[10px] font-black uppercase tracking-[.2em] text-emerald-200/75">{t('Privacidad, confianza y políticas', 'Privacy, trust and policies')}</h2>
+          <h2 className="mb-3 text-[10px] font-black uppercase tracking-[.2em] text-violet-200/75">{t('Privacidad, confianza y políticas', 'Privacy, trust and policies')}</h2>
           <div className="space-y-2">
             {policyLinks.map(({ id, label, icon: Icon }) => (
-              <button key={id} type="button" onClick={() => onOpenLegal(id)} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3 text-left transition hover:border-emerald-300/25 hover:bg-emerald-300/[.06]">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-lime-950/80 text-emerald-200"><Icon className="h-4 w-4" /></span>
+              <button key={id} type="button" onClick={() => onOpenLegal(id)} className="flex w-full items-center gap-3 rounded-xl border border-white/10 bg-white/[.025] p-3 text-left transition hover:border-violet-300/25 hover:bg-violet-300/[.06]">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-fuchsia-950/80 text-violet-200"><Icon className="h-4 w-4" /></span>
                 <span className="flex-1 text-xs font-semibold text-white/85">{label}</span>
                 <ArrowUpRight className="h-4 w-4 shrink-0 text-white/35" />
               </button>
@@ -68,7 +68,7 @@ export function WelcomeScreen({ isEs, onOpenAccount, onOpenLegal }: WelcomeScree
 
         <footer className="mt-auto border-t border-white/10 pt-4">
           <p className="mb-3 text-center text-[10px] leading-relaxed text-white/45">{t('El uso de la plataforma está sujeto a sus políticas y a la legislación aplicable. La información de seguridad no sustituye el criterio personal ni la ayuda de las autoridades.', 'Use of the platform is subject to its policies and applicable law. Safety information does not replace personal judgment or assistance from authorities.')}</p>
-          <a href="https://wa.me/524443218418" target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/25 bg-emerald-500/10 px-4 py-3.5 text-xs font-black text-emerald-200 transition hover:bg-emerald-500/20">
+          <a href="https://wa.me/524443218418" target="_blank" rel="noreferrer" className="flex w-full items-center justify-center gap-2 rounded-xl border border-violet-300/25 bg-violet-500/10 px-4 py-3.5 text-xs font-black text-violet-200 transition hover:bg-violet-500/20">
             <MessageCircle className="h-4 w-4" /> {t('CONTÁCTANOS POR WHATSAPP', 'CONTACT US ON WHATSAPP')}
           </a>
           <p className="mt-3 text-center text-[9px] text-white/30">AppSwinger · 18+ · {t('Respeto, privacidad y consentimiento', 'Respect, privacy and consent')}</p>
