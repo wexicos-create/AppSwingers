@@ -36,6 +36,7 @@ export function MonetizationExtrasModal({
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [pendingTier, setPendingTier] = useState<SubscriptionTier | null>(null);
   const [purchaseRulesOpen, setPurchaseRulesOpen] = useState(false);
+  const [purchaseRulesAccepted, setPurchaseRulesAccepted] = useState(false);
   if (!isOpen) return null;
 
   const isMx = region === 'MX';
@@ -84,6 +85,7 @@ export function MonetizationExtrasModal({
       return;
     }
     setPendingTier(tier);
+    setPurchaseRulesAccepted(false);
     setPurchaseRulesOpen(true);
     setNotice(null);
   };
@@ -157,10 +159,11 @@ export function MonetizationExtrasModal({
               <section><h3 className="mb-1 font-bold text-white">{t('4. Revisión y plazo','4. Review and timing')}</h3><p>{t('La revisión puede tardar hasta 24 horas. Conserva tu comprobante y no repitas la transferencia si el estado aparece pendiente; contacta a administración para aclaraciones.', 'Review may take up to 24 hours. Keep your receipt and do not repeat the transfer while status is pending; contact administration if you need help.')}</p></section>
               <section><h3 className="mb-1 font-bold text-white">{t('5. Uso del servicio','5. Service use')}</h3><p>{t('Los beneficios son personales, no garantizan coincidencias, respuestas ni resultados y terminan al concluir el periodo contratado. El acceso puede limitarse por incumplir las reglas de la comunidad o por motivos de seguridad.', 'Benefits are personal, do not guarantee matches, replies or results, and end when the purchased term expires. Access may be restricted for community-rule violations or safety reasons.')}</p></section>
               <section><h3 className="mb-1 font-bold text-white">{t('6. Errores, aclaraciones y reembolsos','6. Errors, questions and refunds')}</h3><p>{t('Antes de transferir, verifica el plan y el importe. Si pagaste por error, se duplicó una transferencia o el servicio no se activó tras la aprobación, contacta a administración para revisión conforme a la ley aplicable. No se promete una devolución automática.', 'Check the plan and amount before transferring. If you paid by mistake, made a duplicate transfer or the service did not activate after approval, contact administration for review under applicable law. Automatic refunds are not promised.')}</p></section>
-              <p className="text-xs text-white/45">{t('Al continuar confirmas que leíste estas reglas y que deseas generar una orden de pago. Esta acción todavía no transfiere dinero ni activa beneficios.', 'By continuing, you confirm that you read these rules and want to create a payment order. This action does not transfer money or activate benefits.')}</p>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-white/10 bg-white/[.035] p-3 text-xs leading-relaxed text-white/75"><input type="checkbox" checked={purchaseRulesAccepted} onChange={(event) => setPurchaseRulesAccepted(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-violet-300" /><span>{t('He leído y acepto las reglas de compra anteriores. Entiendo que generar una orden no equivale a pagar ni activa la membresía.', 'I have read and accept the purchase rules above. I understand that creating an order is not payment and does not activate membership.')}</span></label>
+              <p className="text-xs text-white/45">{t('Al continuar se generará una orden SPEI; no se transferirá dinero automáticamente.', 'Continuing creates a SPEI order; no money is transferred automatically.')}</p>
             </div>
             <div className="sticky bottom-0 mt-auto flex flex-col gap-2 border-t border-white/10 bg-[#0b0810] pt-4">
-              <button type="button" onClick={() => { setPurchaseRulesOpen(false); void continueToPayment(); }} disabled={paymentBusy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-300 px-4 py-3.5 text-sm font-black text-[#170b1d] hover:bg-violet-200 disabled:opacity-50">{paymentBusy ? t('Preparando orden…','Preparing order…') : t('Siguiente: ir al pago','Next: go to payment')}<ExternalLink className="h-4 w-4" /></button>
+              <button type="button" onClick={() => { setPurchaseRulesOpen(false); void continueToPayment(); }} disabled={paymentBusy || !purchaseRulesAccepted} className="flex w-full items-center justify-center gap-2 rounded-xl bg-violet-300 px-4 py-3.5 text-sm font-black text-[#170b1d] hover:bg-violet-200 disabled:opacity-50">{paymentBusy ? t('Preparando orden…','Preparing order…') : t('Siguiente: ir al pago','Next: go to payment')}<ExternalLink className="h-4 w-4" /></button>
               <button type="button" onClick={() => setPurchaseRulesOpen(false)} className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-white hover:bg-white/10">{t('Volver sin pagar','Back without paying')}</button>
             </div>
           </aside>
@@ -216,7 +219,7 @@ export function MonetizationExtrasModal({
                     return <p className="-mt-2 mb-4 text-[10px] leading-relaxed text-white/50">{t(`Incluye IVA (16%): subtotal ${money(subtotal, subtotal)} + IVA ${money(vat, vat)}`, `Includes 16% VAT: subtotal ${money(subtotal, subtotal)} + VAT ${money(vat, vat)}`)}</p>;
                   })()}
                   <ul className="mb-5 flex-1 space-y-2.5">{offer.features.map(feature => <li key={feature} className="flex gap-2 text-xs leading-relaxed text-white/75"><Check className="mt-0.5 h-4 w-4 shrink-0 text-violet-300" />{feature}</li>)}</ul>
-                  <button onClick={() => handlePlanClick(tier)} disabled={paymentBusy} className={`w-full rounded-xl px-4 py-3 text-xs font-extrabold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 ${index === 1 ? 'bg-violet-300 text-[#170b1d] hover:bg-violet-200' : index === 2 ? 'bg-amber-300 text-black hover:bg-amber-200' : 'border border-white/15 bg-white/5 text-white hover:bg-white/10'}`}>{index === 0 ? t('Seguir gratis','Continue free') : paymentBusy ? t('Procesando…','Processing…') : t('Generar referencia SPEI','Create SPEI reference')}</button>
+                  <button onClick={() => handlePlanClick(tier)} disabled={paymentBusy} className={`w-full rounded-xl px-4 py-3 text-xs font-extrabold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300 ${index === 1 ? 'bg-violet-300 text-[#170b1d] hover:bg-violet-200' : index === 2 ? 'bg-amber-300 text-black hover:bg-amber-200' : 'border border-white/15 bg-white/5 text-white hover:bg-white/10'}`}>{index === 0 ? t('Seguir gratis','Continue free') : paymentBusy ? t('Procesando…','Processing…') : t('Ver reglas de compra','View purchase rules')}</button>
                 </article>;
               })}
             </div>
