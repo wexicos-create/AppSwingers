@@ -405,7 +405,18 @@ export default function App() {
       }
     };
     void loadApprovedBenefit();
-    return () => { cancelled = true; };
+    // Reflect a manual bank approval when the user returns to the app; do not wait
+    // for a logout/login cycle before refreshing the server-owned entitlement.
+    const refreshOnReturn = () => {
+      if (document.visibilityState === 'visible') void loadApprovedBenefit();
+    };
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+    };
   }, [user, isEs]);
 
   const handleSignOut = async () => {
