@@ -39,6 +39,11 @@ export const EDAD_OPCIONES = ['Colágeno 18–25', '26–39', 'Madura / maduro 4
 
 interface UserProfileData {
   alias: string;
+  legalFirstName?: string;
+  legalLastName?: string;
+  showAlias?: boolean;
+  age?: number;
+  state?: string;
   kind: ProfileKind;
   bio: string;
   interests: string[]; // gustos sexuales y fantasías
@@ -74,6 +79,11 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   // Form states
   const [kind, setKind] = useState<ProfileKind>(initialData?.kind || 'Pareja');
   const [alias, setAlias] = useState(initialData?.alias || '');
+  const [legalFirstName, setLegalFirstName] = useState('');
+  const [legalLastName, setLegalLastName] = useState('');
+  const [showAlias, setShowAlias] = useState(true);
+  const [age, setAge] = useState(initialData?.age ? String(initialData.age) : '');
+  const [stateName, setStateName] = useState(initialData?.state || '');
   const [bio, setBio] = useState(initialData?.bio || '');
   const [interests, setInterests] = useState<string[]>(
     initialData?.interests || ['Swinger', 'Fiestas privadas', 'Intercambio suave']
@@ -116,6 +126,11 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
     onSave({
       alias: alias.trim(),
+      legalFirstName: legalFirstName.trim(),
+      legalLastName: legalLastName.trim(),
+      showAlias,
+      age: Number(age),
+      state: stateName.trim(),
       kind,
       bio: bio.trim(),
       interests,
@@ -206,6 +221,17 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               {isEs ? 'Tu nombre legal nunca se expone a otros usuarios.' : 'Your real legal identity is kept discreet.'}
             </span>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Nombre(s) legal(es)' : 'Legal first name(s)'}</label><input value={legalFirstName} onChange={e => setLegalFirstName(e.target.value.slice(0,80))} autoComplete="given-name" required placeholder={isEs ? 'Como aparece en tu INE' : 'As shown on your ID'} className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Apellidos' : 'Last name(s)'}</label><input value={legalLastName} onChange={e => setLegalLastName(e.target.value.slice(0,100))} autoComplete="family-name" required placeholder={isEs ? 'Como aparecen en tu INE' : 'As shown on your ID'} className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+          </div>
+          <div className="rounded-2xl border border-violet-400/20 bg-violet-950/20 p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold text-white">{isEs ? 'Mostrar alias en todo el sitio' : 'Show alias across the site'}</p><p className="text-[10px] text-white/50">{isEs ? 'Activado: otros verán tu alias, no tu nombre legal.' : 'On: others see your alias, not your legal name.'}</p></div><button type="button" role="switch" aria-checked={showAlias} onClick={() => setShowAlias(v => !v)} className={`relative h-7 w-12 shrink-0 rounded-full transition ${showAlias ? 'bg-fuchsia-500' : 'bg-white/20'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${showAlias ? 'left-6' : 'left-1'}`} /></button></div>
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Edad (18 años o más)' : 'Age (18 or older)'}</label><input type="number" min="18" max="110" required value={age} onChange={e => setAge(e.target.value)} placeholder="18+" className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Estado y ciudad' : 'State and city'}</label><input required value={city} onChange={e => setCity(e.target.value.slice(0,100))} placeholder={isEs ? 'Ej. San Luis Potosí, SLP' : 'e.g. Houston, TX'} className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+          </div>
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.05] p-3 text-[10px] leading-relaxed text-white/65">{isEs ? 'Solicitamos estos datos para verificar mayoría de edad, prevenir suplantación, atender reportes y cumplir obligaciones legales. Acceso restringido; no publiques datos ajenos. Si hay denuncias o indicios de delito, conservaremos y entregaremos la información pertinente a autoridades competentes cuando la ley lo exija. Consulta el Aviso de Privacidad y tus derechos ARCO antes de continuar.' : 'We request this data to verify adulthood, prevent impersonation, handle reports and meet legal obligations. Access is restricted; do not post other people’s data. For reports or suspected crimes, relevant information may be preserved and provided to competent authorities when legally required. Review the Privacy Notice and your ARCO rights before continuing.'}</div>
 
           {/* 3. GUSTOS SEXUALES O FANTASÍAS (CHIPS) */}
           <div>
