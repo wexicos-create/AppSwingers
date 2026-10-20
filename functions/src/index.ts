@@ -157,7 +157,8 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
     const order = snap.data()!;
     if (order.status !== "payment_reported" && order.status !== "under_review") throw new HttpsError("failed-precondition", "El pedido no está pendiente de revisión.");
     if (decision === "approve") {
-      const transactionKey = createHash("sha256").update(bankTransactionId).digest("hex");
+      const normalizedBankTransactionId = bankTransactionId.trim().toUpperCase();
+      const transactionKey = createHash("sha256").update(normalizedBankTransactionId).digest("hex");
       const bankLedgerRef = db.collection("bankTransactionLedger").doc(transactionKey);
       const duplicate = await tx.get(bankLedgerRef);
       if (duplicate.exists) throw new HttpsError("already-exists", "Ese movimiento bancario ya fue aplicado a otro pedido.");
@@ -179,9 +180,9 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
       if ("quota" in item) entitlement.remainingQuota = item.quota;
       if ("maxGuests" in item) entitlement.maxGuests = item.maxGuests;
       tx.create(entitlementRef, entitlement);
-      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId, amountMxn: confirmedAmountMxn, orderTotalMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
+      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId: normalizedBankTransactionId, amountMxn: confirmedAmountMxn, orderTotalMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
       tx.update(orderRef, {
-        status: "paid", bankTransactionId, bankConfirmed: true,
+        status: "paid", bankTransactionId: normalizedBankTransactionId, bankConfirmed: true,
         reviewedBy: admin.uid, reviewedAt: now, reviewNotes: notes,
         entitlementGranted: true, updatedAt: now,
       });
@@ -203,7 +204,7 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
     tx.set(queueRef, { status: decision === "approve" ? "paid" : decision === "reject" ? "rejected" : "under_review", decision, reviewedBy: admin.uid, reviewedAt: FieldValue.serverTimestamp(), notes }, { merge: true });
     tx.set(db.collection("auditLogs").doc(), {
       actorUid: admin.uid, action: `spei_${decision}`, orderId,
-      bankTransactionId: decision === "approve" ? bankTransactionId : null,
+      bankTransactionId: decision === "approve" ? bankTransactionId.trim().toUpperCase() : null,
       notes, createdAt: FieldValue.serverTimestamp(),
     });
   });
