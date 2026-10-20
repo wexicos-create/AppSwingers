@@ -129,21 +129,21 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-2xl overflow-y-auto">
-      <div className="w-full max-w-lg my-auto max-h-[92vh] overflow-y-auto rounded-[36px] bg-[#10061e] border border-purple-500/40 p-5 sm:p-6 shadow-[0_0_60px_rgba(177,76,255,0.4)] text-white space-y-4 scrollbar-none">
+      <div className="w-full max-w-lg my-auto max-h-[92vh] overflow-y-auto rounded-[36px] bg-[#10061e] border border-emerald-500/40 p-5 sm:p-6 shadow-[0_0_60px_rgba(177,76,255,0.4)] text-white space-y-4 scrollbar-none">
         
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-purple-500/20 pb-3">
+        <div className="flex items-start justify-between border-b border-emerald-500/20 pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-pink-400" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300">
+              <Flame className="w-4 h-4 text-lime-400" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-lime-300">
                 {isEs ? 'Registro & Perfil' : 'Registration & Profile'} &bull; AppSwinguer Ultra
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
               {isEs ? 'Configura tu Perfil y Fantasías' : 'Set Up Your Profile & Fantasies'}
             </h2>
-            <p className="text-xs text-purple-200/70 mt-0.5">
+            <p className="text-xs text-emerald-200/70 mt-0.5">
               {isEs 
                 ? 'Pareja o individual, gustos pasionales, radio en KM y ubicación' 
                 : 'Couples or singles, passion preferences, KM radius & location'}
@@ -177,13 +177,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                   onClick={() => setKind(item.id as ProfileKind)}
                   className={`p-3 rounded-2xl border text-center transition flex flex-col items-center gap-1 ${
                     kind === item.id
-                      ? 'bg-purple-900/60 border-pink-400 text-white shadow-[0_0_15px_rgba(255,45,120,0.4)]'
+                      ? 'bg-emerald-900/60 border-lime-400 text-white shadow-[0_0_15px_rgba(255,45,120,0.4)]'
                       : 'bg-neutral-950/70 border-white/10 text-white/60 hover:border-white/20'
                   }`}
                 >
-                  <item.icon className={`w-5 h-5 ${kind === item.id ? 'text-pink-400' : 'text-purple-300'}`} />
+                  <item.icon className={`w-5 h-5 ${kind === item.id ? 'text-lime-400' : 'text-emerald-300'}`} />
                   <span className="font-bold text-xs text-white">{item.label}</span>
-                  <span className="text-[9px] text-purple-200/60">{item.desc}</span>
+                  <span className="text-[9px] text-emerald-200/60">{item.desc}</span>
                 </button>
               ))}
             </div>
@@ -200,7 +200,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               value={alias}
               onChange={(e) => setAlias(e.target.value.slice(0, 30))}
               placeholder={kind === 'Pareja' ? (isEs ? 'Ej. Marina & Leo' : 'Ex. Alex & Mia') : (isEs ? 'Ej. Valeria' : 'Ex. Sophia')}
-              className="w-full p-3 rounded-2xl bg-neutral-950/80 border border-purple-500/30 text-white text-xs focus:outline-none focus:border-pink-400"
+              className="w-full p-3 rounded-2xl bg-neutral-950/80 border border-emerald-500/30 text-white text-xs focus:outline-none focus:border-lime-400"
             />
             <span className="text-[10px] text-white/40 mt-0.5 block">
               {isEs ? 'Tu nombre legal nunca se expone a otros usuarios.' : 'Your real legal identity is kept discreet.'}
@@ -213,7 +213,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               <label className="text-white/80 font-bold uppercase text-[11px] tracking-wider">
                 {isEs ? '3. Gustos Sexuales o Fantasías' : '3. Sexual Preferences & Fantasies'}
               </label>
-              <span className="text-pink-400 font-bold text-[10px]">
+              <span className="text-lime-400 font-bold text-[10px]">
                 {interests.length} {isEs ? 'seleccionados' : 'selected'}
               </span>
             </div>
@@ -227,8 +227,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                     onClick={() => toggleInterest(f)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 active:scale-95 ${
                       isSelected
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
-                        : 'bg-white/5 text-purple-200/70 border border-white/10 hover:border-purple-400/40'
+                        ? 'bg-gradient-to-r from-emerald-600 to-lime-600 text-white shadow-md'
+                        : 'bg-white/5 text-emerald-200/70 border border-white/10 hover:border-emerald-400/40'
                     }`}
                   >
                     {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
@@ -253,7 +253,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                     onClick={() => toggleSeeking(b)}
                     className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition ${
                       seeking.includes(b)
-                        ? 'bg-pink-600 text-white font-bold'
+                        ? 'bg-lime-600 text-white font-bold'
                         : 'bg-neutral-950 border border-white/10 text-white/60'
                     }`}
                   >
@@ -275,7 +275,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                     onClick={() => toggleAge(a)}
                     className={`px-2.5 py-1 rounded-xl text-[10px] font-medium transition ${
                       ages.includes(a)
-                        ? 'bg-purple-600 text-white font-bold'
+                        ? 'bg-emerald-600 text-white font-bold'
                         : 'bg-neutral-950 border border-white/10 text-white/60'
                     }`}
                   >
@@ -287,13 +287,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           </div>
 
           {/* 5. RADIO DE DISTANCIA EN KM */}
-          <div className="p-3.5 rounded-2xl bg-neutral-950/70 border border-purple-500/25 space-y-2">
+          <div className="p-3.5 rounded-2xl bg-neutral-950/70 border border-emerald-500/25 space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-bold text-white flex items-center gap-1.5 text-xs">
-                <SlidersHorizontal className="w-4 h-4 text-purple-400" />
+                <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
                 {isEs ? 'Radio de Búsqueda de Resultados' : 'Search Distance Radius'}
               </span>
-              <span className="font-extrabold text-pink-400 text-sm">{maxKm} km</span>
+              <span className="font-extrabold text-lime-400 text-sm">{maxKm} km</span>
             </div>
 
             <input
@@ -302,7 +302,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               max="100"
               value={maxKm}
               onChange={(e) => setMaxKm(Number(e.target.value))}
-              className="w-full accent-pink-500 h-2 bg-neutral-800 rounded-lg cursor-pointer"
+              className="w-full accent-lime-500 h-2 bg-neutral-800 rounded-lg cursor-pointer"
             />
 
             <div className="flex justify-between text-[10px] text-white/40">
@@ -313,14 +313,14 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           </div>
 
           {/* 6. PERMISO DE UBICACIÓN & CIUDAD */}
-          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 via-pink-950/40 to-purple-950/60 border border-purple-400/30 flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-lime-950/40 to-emerald-950/60 border border-emerald-400/30 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <Navigation className="w-5 h-5 text-pink-400 shrink-0" />
+              <Navigation className="w-5 h-5 text-lime-400 shrink-0" />
               <div>
                 <span className="text-xs font-bold text-white block">
                   {locationGranted ? (isEs ? 'Ubicación GPS Conectada' : 'GPS Location Active') : (isEs ? 'Permitir Ubicación para KM' : 'Enable Location for KM')}
                 </span>
-                <span className="text-[10px] text-purple-200/70 block">
+                <span className="text-[10px] text-emerald-200/70 block">
                   {isEs 
                     ? `Zona: ${city} (SLP / CDMX)` 
                     : `Zone: ${city}`}
@@ -334,7 +334,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
                 locationGranted
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-                  : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md active:scale-95'
+                  : 'bg-gradient-to-r from-emerald-600 to-lime-600 text-white shadow-md active:scale-95'
               }`}
             >
               {locationGranted ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
@@ -352,17 +352,17 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               value={bio}
               onChange={(e) => setBio(e.target.value.slice(0, 160))}
               placeholder={isEs ? 'Qué buscan y cuáles son sus reglas claras...' : 'What you are looking for and your rules...'}
-              className="w-full p-2.5 rounded-xl bg-neutral-950/80 border border-purple-500/30 text-white text-xs focus:outline-none resize-none"
+              className="w-full p-2.5 rounded-xl bg-neutral-950/80 border border-emerald-500/30 text-white text-xs focus:outline-none resize-none"
             />
           </div>
 
           {/* Consent Checkbox */}
-          <label className="flex items-start gap-2 text-[11px] text-purple-200/80 cursor-pointer pt-1">
+          <label className="flex items-start gap-2 text-[11px] text-emerald-200/80 cursor-pointer pt-1">
             <input
               type="checkbox"
               checked={acceptedConsent}
               onChange={(e) => setAcceptedConsent(e.target.checked)}
-              className="mt-0.5 rounded accent-pink-500"
+              className="mt-0.5 rounded accent-lime-500"
             />
             <span>
               {isEs 
@@ -376,7 +376,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
             <button
               type="submit"
               disabled={!alias.trim() || !acceptedConsent}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 via-lime-600 to-rose-500 text-white font-extrabold text-sm shadow-xl shadow-emerald-600/40 hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Sparkles className="w-4 h-4 text-amber-300" />
               <span>{isEs ? 'Guardar Perfil y Preferencias' : 'Save Profile & Preferences'}</span>
