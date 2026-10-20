@@ -405,7 +405,18 @@ export default function App() {
       }
     };
     void loadApprovedBenefit();
-    return () => { cancelled = true; };
+    // Reflect a manual bank approval when the user returns to the app; do not wait
+    // for a logout/login cycle before refreshing the server-owned entitlement.
+    const refreshOnReturn = () => {
+      if (document.visibilityState === 'visible') void loadApprovedBenefit();
+    };
+    window.addEventListener('focus', refreshOnReturn);
+    document.addEventListener('visibilitychange', refreshOnReturn);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', refreshOnReturn);
+      document.removeEventListener('visibilitychange', refreshOnReturn);
+    };
   }, [user, isEs]);
 
   const handleSignOut = async () => {
@@ -636,7 +647,9 @@ export default function App() {
       ...proposal,
       id: `collab_${Date.now()}`,
       status: 'en revisión',
-      paid: true,
+      // A proposal is not a payment receipt. Keep unpaid until a server-approved order
+      // and bank reconciliation explicitly confirm the publication fee.
+      paid: false,
       createdAt: Date.now(),
     };
     // Also insert as a public proposal
@@ -652,17 +665,23 @@ export default function App() {
       mine: true,
     };
     setProposals(prev => [asProp, ...prev]);
+    alert(isEs
+      ? 'Propuesta recibida en esta sesión, pero aún no está pagada ni publicada. La tarifa se debe cobrar y conciliar antes de aprobarla.'
+      : 'Proposal received in this session, but it is unpaid and unpublished. The fee must be charged and reconciled before approval.');
   };
 
-  // Creator subscriptions
+  // Never unlock creator subscriptions or paid live access through a client-only click.
+  // The server-side adult-content processor adapter is not enabled yet.
   const handleSubscribeCreator = (creator: Creator) => {
-    setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    alert(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
+    alert(isEs
+      ? `La suscripción a ${creator.name} aún no está habilitada: falta integrar y probar un procesador de pagos autorizado. No se realizó ningún cobro ni se activó acceso.`
+      : `Subscriptions to ${creator.name} are not enabled yet. An approved payment processor must be integrated and tested. No charge or access was granted.`);
   };
 
   const handleBuyLiveAccess = (live: LiveStream) => {
-    setLiveAccessIds(prev => [...prev, live.id]);
-    alert(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
+    alert(isEs
+      ? `El acceso pagado a "${live.title}" aún no está habilitado. No se realizó ningún cobro ni se concedió acceso.`
+      : `Paid access to "${live.title}" is not enabled yet. No charge was made and no access was granted.`);
   };
 
   // Club reward redemption
@@ -1086,13 +1105,12 @@ export default function App() {
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
                 if (tier === 'free') {
-                  setSubscriptionTier('free');
-                  alert(isEs ? 'Sigues en el plan gratuito.' : 'You are on the free plan.');
+                  // Only the trusted server benefit response can grant a paid tier.
+                  if (!approvedEntitlement) setSubscriptionTier('free');
+                  alert(isEs ? 'El plan gratuito sigue disponible.' : 'The free plan remains available.');
                   return;
                 }
-                alert(isEs
-                  ? 'Los planes de pago aún no están conectados a la conciliación SPEI. No se activó ningún beneficio ni se realizó ningún cobro.'
-                  : 'Paid plans are not yet connected to SPEI reconciliation. No benefits were activated and no charge was made.');
+                setExtrasModalOpen(true);
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
@@ -1232,6 +1250,11 @@ export default function App() {
           onSave={(data) => {
             const savedProfile = {
               alias: data.alias,
+              legalFirstName: data.legalFirstName || '',
+              legalLastName: data.legalLastName || '',
+              showAlias: data.showAlias ?? true,
+              age: data.age || null,
+              state: data.state || '',
               kind: data.kind,
               bio: data.bio,
               interests: data.interests,

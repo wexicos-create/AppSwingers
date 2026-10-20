@@ -102,10 +102,23 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     const prompts = { approve: isEs ? '¿Confirmas aprobar este caso? Primero compara el depósito real, el importe exacto y la referencia en tu banco.' : 'Approve this case? First verify the actual bank deposit, exact amount and reference.', reject: isEs ? '¿Confirmas rechazar este caso?' : 'Reject this case?', request_info: isEs ? '¿Solicitar información adicional?' : 'Request additional information?' };
     if (!window.confirm(prompts[decision])) return;
     let bankTransactionId = '';
+    let confirmedAmountMxn: number | null = null;
     if (decision === 'approve' && item.type === 'spei') {
       bankTransactionId = window.prompt(isEs ? 'Introduce el identificador real del movimiento bancario confirmado (no el folio que escribió el usuario).' : 'Enter the actual confirmed bank transaction ID (not the user-entered transfer reference).')?.trim() || '';
       if (bankTransactionId.length < 5) {
         setReviewError(isEs ? 'Aprobación cancelada: hace falta el identificador real del movimiento bancario.' : 'Approval cancelled: actual bank transaction ID is required.');
+        return;
+      }
+      const rawAmount = window.prompt(isEs
+        ? `Vuelve a capturar el importe exacto que aparece abonado en el banco (MXN). Total esperado: ${Number(item.amount || 0).toFixed(2)}`
+        : `Re-enter the exact amount credited in the bank (MXN). Expected total: ${Number(item.amount || 0).toFixed(2)}`);
+      if (rawAmount === null || rawAmount.trim() === '' || !Number.isFinite(Number(rawAmount))) {
+        setReviewError(isEs ? 'Aprobación cancelada: el importe bancario es obligatorio.' : 'Approval cancelled: bank amount is required.');
+        return;
+      }
+      confirmedAmountMxn = Number(rawAmount);
+      if (Math.round(confirmedAmountMxn * 100) !== Math.round(Number(item.amount || 0) * 100)) {
+        setReviewError(isEs ? 'Aprobación cancelada: el importe no coincide con el total del pedido.' : 'Approval cancelled: bank amount does not match the order total.');
         return;
       }
     }
@@ -121,6 +134,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         notes: reviewNotes[item.id] || '',
         bankConfirmed: decision === 'approve' && item.type === 'spei',
         bankTransactionId,
+        confirmedAmountMxn,
       });
       const payload = response.data as { success?: boolean; status?: string };
       if (payload.success !== true) throw new Error(isEs ? 'El servidor no confirmó la decisión.' : 'Server did not confirm the decision.');

@@ -35,10 +35,17 @@ export const GUSTOS_SEXUALES_FANTASIAS = [
 
 export const BUSCO_OPCIONES = ['Parejas', 'Mujeres', 'Hombres', 'Grupos'];
 
-export const EDAD_OPCIONES = ['Colágeno 18–25', '26–39', 'Madura / maduro 40+'];
+export const EDAD_OPCIONES = ['18–25', '26–39', '40–55', '56+'];
+
+export const BUSQUEDA_OPCIONES = ['Swinger', 'Tríos', 'Hotwife', 'Mujeres maduras', 'Adultos jóvenes 18+', 'Amistad con beneficios', 'Encuentros informales', 'Encuentros frecuentes sin compromiso', 'Citas y conexión emocional', 'Eventos privados'];
 
 interface UserProfileData {
   alias: string;
+  legalFirstName?: string;
+  legalLastName?: string;
+  showAlias?: boolean;
+  age?: number;
+  state?: string;
   kind: ProfileKind;
   bio: string;
   interests: string[]; // gustos sexuales y fantasías
@@ -74,6 +81,11 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   // Form states
   const [kind, setKind] = useState<ProfileKind>(initialData?.kind || 'Pareja');
   const [alias, setAlias] = useState(initialData?.alias || '');
+  const [legalFirstName, setLegalFirstName] = useState('');
+  const [legalLastName, setLegalLastName] = useState('');
+  const [showAlias, setShowAlias] = useState(true);
+  const [age, setAge] = useState(initialData?.age ? String(initialData.age) : '');
+  const [stateName, setStateName] = useState(initialData?.state || '');
   const [bio, setBio] = useState(initialData?.bio || '');
   const [interests, setInterests] = useState<string[]>(
     initialData?.interests || ['Swinger', 'Fiestas privadas', 'Intercambio suave']
@@ -89,6 +101,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
     initialData?.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX')
   );
   const [acceptedConsent, setAcceptedConsent] = useState(false);
+  const [acceptedLegalNotice, setAcceptedLegalNotice] = useState(false);
 
   if (!isOpen) return null;
 
@@ -112,10 +125,15 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!alias.trim()) return;
+    if (!alias.trim() || Number(age) < 18 || Number(age) > 110 || !city.trim() || !acceptedConsent || !acceptedLegalNotice) return;
 
     onSave({
       alias: alias.trim(),
+      legalFirstName: legalFirstName.trim(),
+      legalLastName: legalLastName.trim(),
+      showAlias,
+      age: Number(age),
+      state: stateName.trim(),
       kind,
       bio: bio.trim(),
       interests,
@@ -129,21 +147,22 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/90 backdrop-blur-2xl overflow-y-auto">
-      <div className="w-full max-w-lg my-auto max-h-[92vh] overflow-y-auto rounded-[36px] bg-[#10061e] border border-purple-500/40 p-5 sm:p-6 shadow-[0_0_60px_rgba(177,76,255,0.4)] text-white space-y-4 scrollbar-none">
+      <div className="w-full max-w-lg my-auto max-h-[92vh] overflow-y-auto rounded-[36px] bg-[#10061e] border border-violet-500/40 p-5 sm:p-6 shadow-[0_0_60px_rgba(177,76,255,0.4)] text-white space-y-4 scrollbar-none">
+        <div className="rounded-2xl border border-violet-400/25 bg-violet-950/30 p-3 text-xs leading-relaxed text-violet-100/80">{isEs ? 'Primero crea tu cuenta con correo y contraseña. Después completarás la verificación de identidad con tres capturas obligatorias: frente de INE, reverso de INE y selfie con tu rostro e INE visibles. Tu cuenta permanecerá pendiente hasta revisión; no se habilitarán funciones 18+ antes de aprobarse.' : 'First create your account with email and password. Then complete identity verification with three required captures: ID front, ID back, and a selfie showing your face and ID. Your account remains pending review; 18+ features stay locked until approved.'}</div>
         
         {/* Header */}
-        <div className="flex items-start justify-between border-b border-purple-500/20 pb-3">
+        <div className="flex items-start justify-between border-b border-violet-500/20 pb-3">
           <div>
             <div className="flex items-center gap-2">
-              <Flame className="w-4 h-4 text-pink-400" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300">
+              <Flame className="w-4 h-4 text-fuchsia-400" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">
                 {isEs ? 'Registro & Perfil' : 'Registration & Profile'} &bull; AppSwinguer Ultra
               </span>
             </div>
             <h2 className="text-xl sm:text-2xl font-black text-white mt-1">
               {isEs ? 'Configura tu Perfil y Fantasías' : 'Set Up Your Profile & Fantasies'}
             </h2>
-            <p className="text-xs text-purple-200/70 mt-0.5">
+            <p className="text-xs text-violet-200/70 mt-0.5">
               {isEs 
                 ? 'Pareja o individual, gustos pasionales, radio en KM y ubicación' 
                 : 'Couples or singles, passion preferences, KM radius & location'}
@@ -177,13 +196,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                   onClick={() => setKind(item.id as ProfileKind)}
                   className={`p-3 rounded-2xl border text-center transition flex flex-col items-center gap-1 ${
                     kind === item.id
-                      ? 'bg-purple-900/60 border-pink-400 text-white shadow-[0_0_15px_rgba(255,45,120,0.4)]'
+                      ? 'bg-violet-900/60 border-fuchsia-400 text-white shadow-[0_0_15px_rgba(255,45,120,0.4)]'
                       : 'bg-neutral-950/70 border-white/10 text-white/60 hover:border-white/20'
                   }`}
                 >
-                  <item.icon className={`w-5 h-5 ${kind === item.id ? 'text-pink-400' : 'text-purple-300'}`} />
+                  <item.icon className={`w-5 h-5 ${kind === item.id ? 'text-fuchsia-400' : 'text-violet-300'}`} />
                   <span className="font-bold text-xs text-white">{item.label}</span>
-                  <span className="text-[9px] text-purple-200/60">{item.desc}</span>
+                  <span className="text-[9px] text-violet-200/60">{item.desc}</span>
                 </button>
               ))}
             </div>
@@ -192,7 +211,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           {/* 2. NOMBRE O ALIAS */}
           <div>
             <label className="text-white/80 font-bold block mb-1 uppercase text-[11px] tracking-wider">
-              {isEs ? '2. Tu Nombre o Alias' : '2. Name or Alias'}
+              {isEs ? '2. Nombre legal y nombre público' : '2. Legal and public name'}
             </label>
             <input
               type="text"
@@ -200,20 +219,31 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               value={alias}
               onChange={(e) => setAlias(e.target.value.slice(0, 30))}
               placeholder={kind === 'Pareja' ? (isEs ? 'Ej. Marina & Leo' : 'Ex. Alex & Mia') : (isEs ? 'Ej. Valeria' : 'Ex. Sophia')}
-              className="w-full p-3 rounded-2xl bg-neutral-950/80 border border-purple-500/30 text-white text-xs focus:outline-none focus:border-pink-400"
+              className="w-full p-3 rounded-2xl bg-neutral-950/80 border border-violet-500/30 text-white text-xs focus:outline-none focus:border-fuchsia-400"
             />
             <span className="text-[10px] text-white/40 mt-0.5 block">
-              {isEs ? 'Tu nombre legal nunca se expone a otros usuarios.' : 'Your real legal identity is kept discreet.'}
+              {isEs ? 'El nombre legal es para verificación y cumplimiento. El nombre público puede ser tu alias; no se mostrará la INE a otros usuarios.' : 'Your legal name is for verification and compliance. Your public name can be an alias; your ID is never shown to other users.'}
             </span>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Nombre(s) legal(es)' : 'Legal first name(s)'}</label><input value={legalFirstName} onChange={e => setLegalFirstName(e.target.value.slice(0,80))} autoComplete="given-name" required placeholder={isEs ? 'Como aparece en tu INE' : 'As shown on your ID'} className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Apellidos' : 'Last name(s)'}</label><input value={legalLastName} onChange={e => setLegalLastName(e.target.value.slice(0,100))} autoComplete="family-name" required placeholder={isEs ? 'Como aparecen en tu INE' : 'As shown on your ID'} className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+          </div>
+          <div className="rounded-2xl border border-violet-400/20 bg-violet-950/20 p-3 space-y-3">
+            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold text-white">{isEs ? 'Mostrar nombre de usuario en todo el sitio' : 'Show username across the site'}</p><p className="text-[10px] text-white/50">{isEs ? 'Activado: se muestra tu alias en lugar del nombre legal. Puedes cambiarlo en Ajustes; el apellido legal permanece privado.' : 'On: your alias appears instead of your legal name. Change it in Settings; your legal surname remains private.'}</p></div><button type="button" role="switch" aria-checked={showAlias} onClick={() => setShowAlias(v => !v)} className={`relative h-7 w-12 shrink-0 rounded-full transition ${showAlias ? 'bg-fuchsia-500' : 'bg-white/20'}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white transition ${showAlias ? 'left-6' : 'left-1'}`} /></button></div>
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Edad (18 años o más)' : 'Age (18 or older)'}</label><input type="number" min="18" max="110" required value={age} onChange={e => setAge(e.target.value)} placeholder="18+" className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+            <div><label className="mb-1 block text-[11px] font-bold uppercase tracking-wider text-white/80">{isEs ? 'Estado y ciudad' : 'State and city'}</label><input required value={city} onChange={e => setCity(e.target.value.slice(0,100))} placeholder={isEs ? 'Ej. San Luis Potosí, SLP' : 'e.g. Houston, TX'} className="w-full rounded-xl border border-violet-500/30 bg-neutral-950/80 p-3 text-xs text-white focus:border-fuchsia-400 focus:outline-none" /></div>
+          </div>
+          <div className="rounded-2xl border border-amber-300/20 bg-amber-300/[.05] p-3 text-[10px] leading-relaxed text-white/65">{isEs ? 'Solicitamos estos datos para verificar mayoría de edad, prevenir suplantación, atender reportes y cumplir obligaciones legales. Acceso restringido; no publiques datos ajenos. Si hay denuncias o indicios de delito, conservaremos y entregaremos la información pertinente a autoridades competentes cuando la ley lo exija. Consulta el Aviso de Privacidad y tus derechos ARCO antes de continuar.' : 'We request this data to verify adulthood, prevent impersonation, handle reports and meet legal obligations. Access is restricted; do not post other people’s data. For reports or suspected crimes, relevant information may be preserved and provided to competent authorities when legally required. Review the Privacy Notice and your ARCO rights before continuing.'}</div>
 
           {/* 3. GUSTOS SEXUALES O FANTASÍAS (CHIPS) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-white/80 font-bold uppercase text-[11px] tracking-wider">
-                {isEs ? '3. Gustos Sexuales o Fantasías' : '3. Sexual Preferences & Fantasies'}
+                {isEs ? '3. Tus intereses (elige los que quieras)' : '3. Your interests (choose any)'}
               </label>
-              <span className="text-pink-400 font-bold text-[10px]">
+              <span className="text-fuchsia-400 font-bold text-[10px]">
                 {interests.length} {isEs ? 'seleccionados' : 'selected'}
               </span>
             </div>
@@ -227,8 +257,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                     onClick={() => toggleInterest(f)}
                     className={`px-3 py-1.5 rounded-full text-xs font-semibold transition flex items-center gap-1 active:scale-95 ${
                       isSelected
-                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
-                        : 'bg-white/5 text-purple-200/70 border border-white/10 hover:border-purple-400/40'
+                        ? 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-md'
+                        : 'bg-white/5 text-violet-200/70 border border-white/10 hover:border-violet-400/40'
                     }`}
                   >
                     {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
@@ -239,11 +269,17 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
             </div>
           </div>
 
+          <div className="space-y-2">
+            <label className="text-white/80 font-bold block uppercase text-[10px] tracking-wider">{isEs ? 'Objetivos y experiencias' : 'Goals and experiences'}</label>
+            <div className="flex flex-wrap gap-1.5">{BUSQUEDA_OPCIONES.map(option => <button key={option} type="button" onClick={() => toggleSeeking(option)} className={`rounded-full border px-3 py-2 text-[11px] font-semibold transition ${seeking.includes(option) ? 'border-fuchsia-400 bg-fuchsia-600 text-white' : 'border-white/10 bg-neutral-950 text-violet-200/70'}`}>{seeking.includes(option) ? '✓ ' : ''}{option}</button>)}</div>
+            <p className="text-[10px] text-white/45">{isEs ? 'Todas las opciones son para adultos de 18 años o más. Seleccionar una opción no implica consentimiento para ninguna actividad.' : 'All options are for adults 18+. Selecting an option does not imply consent to any activity.'}</p>
+          </div>
+
           {/* 4. BUSCO Y RANGO DE EDADES */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-white/80 font-bold block mb-1 uppercase text-[10px] tracking-wider">
-                {isEs ? 'Busco' : 'Looking for'}
+                {isEs ? '¿Qué buscas en AppSwinger?' : 'What are you looking for on AppSwinger?'}
               </label>
               <div className="flex flex-wrap gap-1">
                 {BUSCO_OPCIONES.map(b => (
@@ -253,7 +289,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                     onClick={() => toggleSeeking(b)}
                     className={`px-2.5 py-1 rounded-xl text-[11px] font-medium transition ${
                       seeking.includes(b)
-                        ? 'bg-pink-600 text-white font-bold'
+                        ? 'bg-fuchsia-600 text-white font-bold'
                         : 'bg-neutral-950 border border-white/10 text-white/60'
                     }`}
                   >
@@ -275,7 +311,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
                     onClick={() => toggleAge(a)}
                     className={`px-2.5 py-1 rounded-xl text-[10px] font-medium transition ${
                       ages.includes(a)
-                        ? 'bg-purple-600 text-white font-bold'
+                        ? 'bg-violet-600 text-white font-bold'
                         : 'bg-neutral-950 border border-white/10 text-white/60'
                     }`}
                   >
@@ -287,13 +323,13 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           </div>
 
           {/* 5. RADIO DE DISTANCIA EN KM */}
-          <div className="p-3.5 rounded-2xl bg-neutral-950/70 border border-purple-500/25 space-y-2">
+          <div className="p-3.5 rounded-2xl bg-neutral-950/70 border border-violet-500/25 space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-bold text-white flex items-center gap-1.5 text-xs">
-                <SlidersHorizontal className="w-4 h-4 text-purple-400" />
+                <SlidersHorizontal className="w-4 h-4 text-violet-400" />
                 {isEs ? 'Radio de Búsqueda de Resultados' : 'Search Distance Radius'}
               </span>
-              <span className="font-extrabold text-pink-400 text-sm">{maxKm} km</span>
+              <span className="font-extrabold text-fuchsia-400 text-sm">{maxKm} km</span>
             </div>
 
             <input
@@ -302,7 +338,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               max="100"
               value={maxKm}
               onChange={(e) => setMaxKm(Number(e.target.value))}
-              className="w-full accent-pink-500 h-2 bg-neutral-800 rounded-lg cursor-pointer"
+              className="w-full accent-fuchsia-500 h-2 bg-neutral-800 rounded-lg cursor-pointer"
             />
 
             <div className="flex justify-between text-[10px] text-white/40">
@@ -313,14 +349,14 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           </div>
 
           {/* 6. PERMISO DE UBICACIÓN & CIUDAD */}
-          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-950/60 via-pink-950/40 to-purple-950/60 border border-purple-400/30 flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-violet-950/60 via-fuchsia-950/40 to-violet-950/60 border border-violet-400/30 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
-              <Navigation className="w-5 h-5 text-pink-400 shrink-0" />
+              <Navigation className="w-5 h-5 text-fuchsia-400 shrink-0" />
               <div>
                 <span className="text-xs font-bold text-white block">
                   {locationGranted ? (isEs ? 'Ubicación GPS Conectada' : 'GPS Location Active') : (isEs ? 'Permitir Ubicación para KM' : 'Enable Location for KM')}
                 </span>
-                <span className="text-[10px] text-purple-200/70 block">
+                <span className="text-[10px] text-violet-200/70 block">
                   {isEs 
                     ? `Zona: ${city} (SLP / CDMX)` 
                     : `Zone: ${city}`}
@@ -333,8 +369,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               onClick={onRequestLocation}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
                 locationGranted
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40'
-                  : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md active:scale-95'
+                  ? 'bg-violet-500/20 text-violet-300 border border-violet-400/40'
+                  : 'bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white shadow-md active:scale-95'
               }`}
             >
               {locationGranted ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
@@ -352,17 +388,22 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
               value={bio}
               onChange={(e) => setBio(e.target.value.slice(0, 160))}
               placeholder={isEs ? 'Qué buscan y cuáles son sus reglas claras...' : 'What you are looking for and your rules...'}
-              className="w-full p-2.5 rounded-xl bg-neutral-950/80 border border-purple-500/30 text-white text-xs focus:outline-none resize-none"
+              className="w-full p-2.5 rounded-xl bg-neutral-950/80 border border-violet-500/30 text-white text-xs focus:outline-none resize-none"
             />
           </div>
 
+          <label className="flex items-start gap-2 text-[11px] leading-relaxed text-violet-200/80 cursor-pointer pt-1">
+            <input type="checkbox" checked={acceptedLegalNotice} onChange={e => setAcceptedLegalNotice(e.target.checked)} className="mt-0.5 rounded accent-fuchsia-500" />
+            <span>{isEs ? 'Leí el Aviso de Privacidad y las reglas de AppSwinger. Entiendo que los datos se usan para seguridad, verificación 18+, prevención de fraude y atención de denuncias. Solo se compartirán con autoridades competentes cuando exista fundamento legal. Puedo consultar los medios para ejercer mis derechos ARCO.' : 'I read the Privacy Notice and AppSwinger rules. I understand data is used for safety, age verification, fraud prevention and reports. Data will only be shared with competent authorities where legally justified. I can review how to exercise my data rights.'}</span>
+          </label>
+
           {/* Consent Checkbox */}
-          <label className="flex items-start gap-2 text-[11px] text-purple-200/80 cursor-pointer pt-1">
+          <label className="flex items-start gap-2 text-[11px] text-violet-200/80 cursor-pointer pt-1">
             <input
               type="checkbox"
               checked={acceptedConsent}
               onChange={(e) => setAcceptedConsent(e.target.checked)}
-              className="mt-0.5 rounded accent-pink-500"
+              className="mt-0.5 rounded accent-fuchsia-500"
             />
             <span>
               {isEs 
@@ -375,8 +416,8 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
           <div className="pt-2">
             <button
               type="submit"
-              disabled={!alias.trim() || !acceptedConsent}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={!alias.trim() || Number(age) < 18 || !city.trim() || !acceptedConsent || !acceptedLegalNotice}
+              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-rose-500 text-white font-extrabold text-sm shadow-xl shadow-violet-600/40 hover:brightness-110 active:scale-95 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Sparkles className="w-4 h-4 text-amber-300" />
               <span>{isEs ? 'Guardar Perfil y Preferencias' : 'Save Profile & Preferences'}</span>

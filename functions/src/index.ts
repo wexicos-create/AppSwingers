@@ -5,12 +5,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 
 const app = initializeApp();
-const databaseId = process.env.FIRESTORE_DATABASE_ID;
-if (!databaseId) {
-  // Configure FIRESTORE_DATABASE_ID to the Firebase database used by the web client.
-  // Functions fail closed rather than writing payment records into an unintended DB.
-  throw new Error("Missing FIRESTORE_DATABASE_ID secret/environment setting");
-}
+// Keep the Admin SDK pointed at the exact named database configured in firebase.json
+// and firebase-applet-config.json. An environment override is supported for staging,
+// but an absent optional variable must not crash every callable function at cold start.
+const databaseId = process.env.FIRESTORE_DATABASE_ID || "ai-studio-bae18161-c5ba-4b69-99f2-4a83f48a6d69";
 const db = getFirestore(app, databaseId);
 const REGION = "us-central1";
 const IVA = 0.16;
@@ -143,10 +141,11 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
   const decision = request.data?.decision;
   const notes = safeText(request.data?.notes, 500);
   const bankTransactionId = safeText(request.data?.bankTransactionId, 160);
+  const confirmedAmountMxn = Number(request.data?.confirmedAmountMxn);
   const bankConfirmed = request.data?.bankConfirmed === true;
   if (!orderId || !["approve", "reject", "request_info"].includes(decision)) throw new HttpsError("invalid-argument", "Decisión no válida.");
-  if (decision === "approve" && (!bankConfirmed || bankTransactionId.length < 5)) {
-    throw new HttpsError("failed-precondition", "Para aprobar debes confirmar el depósito en el banco y registrar su identificador real.");
+  if (decision === "approve" && (!bankConfirmed || bankTransactionId.length < 5 || !Number.isFinite(confirmedAmountMxn) || confirmedAmountMxn <= 0)) {
+    throw new HttpsError("failed-precondition", "Para aprobar debes confirmar el abono bancario, registrar el identificador real y capturar el importe exacto recibido.");
   }
   const orderRef = db.collection("paymentOrders").doc(orderId);
   const queueRef = db.collection("adminReviewQueue").doc(orderId);
@@ -156,11 +155,17 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
     const order = snap.data()!;
     if (order.status !== "payment_reported" && order.status !== "under_review") throw new HttpsError("failed-precondition", "El pedido no está pendiente de revisión.");
     if (decision === "approve") {
-      const transactionKey = createHash("sha256").update(bankTransactionId).digest("hex");
+      const normalizedBankTransactionId = bankTransactionId.trim().toUpperCase();
+      const transactionKey = createHash("sha256").update(normalizedBankTransactionId).digest("hex");
       const bankLedgerRef = db.collection("bankTransactionLedger").doc(transactionKey);
       const duplicate = await tx.get(bankLedgerRef);
       if (duplicate.exists) throw new HttpsError("already-exists", "Ese movimiento bancario ya fue aplicado a otro pedido.");
       if (order.currency !== "MXN" || typeof order.totalMxn !== "number") throw new HttpsError("failed-precondition", "Importe o moneda del pedido no válido.");
+      // The operator must re-enter the amount observed in the receiving bank statement.
+      // Never activate an entitlement if it differs from the server-priced order total.
+      if (Math.round(confirmedAmountMxn * 100) !== Math.round(order.totalMxn * 100)) {
+        throw new HttpsError("failed-precondition", "El importe bancario confirmado no coincide exactamente con el total del pedido.");
+      }
       const item = catalogItem(order.benefitKey);
       const now = Timestamp.now();
       const entitlementRef = db.collection("entitlements").doc(orderId);
@@ -173,9 +178,9 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
       if ("quota" in item) entitlement.remainingQuota = item.quota;
       if ("maxGuests" in item) entitlement.maxGuests = item.maxGuests;
       tx.create(entitlementRef, entitlement);
-      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId, amountMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
+      tx.create(bankLedgerRef, { transactionKey, orderId, bankTransactionId: normalizedBankTransactionId, amountMxn: confirmedAmountMxn, orderTotalMxn: order.totalMxn, currency: order.currency, confirmedBy: admin.uid, confirmedAt: now });
       tx.update(orderRef, {
-        status: "paid", bankTransactionId, bankConfirmed: true,
+        status: "paid", bankTransactionId: normalizedBankTransactionId, bankConfirmed: true,
         reviewedBy: admin.uid, reviewedAt: now, reviewNotes: notes,
         entitlementGranted: true, updatedAt: now,
       });
@@ -197,7 +202,7 @@ export const reviewSpeiOrder = onCall({ region: REGION, enforceAppCheck: true },
     tx.set(queueRef, { status: decision === "approve" ? "paid" : decision === "reject" ? "rejected" : "under_review", decision, reviewedBy: admin.uid, reviewedAt: FieldValue.serverTimestamp(), notes }, { merge: true });
     tx.set(db.collection("auditLogs").doc(), {
       actorUid: admin.uid, action: `spei_${decision}`, orderId,
-      bankTransactionId: decision === "approve" ? bankTransactionId : null,
+      bankTransactionId: decision === "approve" ? bankTransactionId.trim().toUpperCase() : null,
       notes, createdAt: FieldValue.serverTimestamp(),
     });
   });

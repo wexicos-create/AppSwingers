@@ -27,8 +27,11 @@ const app = initializeApp(firebaseConfig);
 // App Check is required by the SPEI callable functions. Configure this site key in the
 // hosting environment; if it is absent, protected payment calls intentionally fail closed.
 const appCheckSiteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY || firebaseConfig.recaptchaSiteKey;
+export const appCheckConfigured = Boolean(appCheckSiteKey);
 if (appCheckSiteKey) {
   initializeAppCheck(app, { provider: new ReCaptchaV3Provider(appCheckSiteKey), isTokenAutoRefreshEnabled: true });
+} else if (import.meta.env.DEV) {
+  console.warn('Firebase App Check is not configured. Protected server functions will reject requests until VITE_RECAPTCHA_V3_SITE_KEY is set.');
 }
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
