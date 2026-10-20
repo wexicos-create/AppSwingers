@@ -70,6 +70,22 @@ No construir un “enjambre de bots” como garantía de autenticidad. Usar un p
 
 **Estado de implementación:** los campos de nombre legal, apellidos, alias público, edad y ubicación se han añadido al formulario y al objeto de perfil; aún se debe verificar su persistencia real en Firestore, aplicar la preferencia de alias/apellidos en todos los componentes públicos y conectar la secuencia de identidad para que el cuestionario no se interprete como una verificación completada. La precarga desde OCR, la captura automática de INE y el flujo de aprobación manual no se consideran funcionales hasta implementarse y probarse.
 
+## 3A. Registro de baja fricción: orden, campos y avisos
+
+El flujo de onboarding debe ser corto y secuencial:
+1. Crear cuenta con correo y contraseña; solicitar verificación del correo. No pedir intereses antes de crear la cuenta.
+2. Iniciar la verificación de identidad con tres capturas estrictamente ordenadas: frente de INE, reverso de INE y selfie con cámara frontal sosteniendo la INE junto al rostro. El registro no se considera verificado al terminar las capturas; el estado inicial es pendiente de revisión manual.
+3. Capturar los campos legales por separado: nombre(s) y apellidos como aparecen en la INE, edad declarada y estado/ciudad. La lectura automática de la INE puede ayudar a prellenar el formulario, pero el usuario debe revisar y confirmar los campos. No dar por hecha la extracción OCR hasta implementarla y probarla.
+4. Solicitar un nombre público/alias. Incluir un interruptor accesible “Mostrar mi nombre de usuario en todo el sitio”; activado significa mostrar alias y no nombre legal. En Ajustes debe existir una opción independiente para ocultar el apellido público, con valor predeterminado oculto. Nombre legal, INE y documentos no se exponen en perfiles, chats, búsquedas ni eventos.
+5. Mostrar una encuesta compacta de etiquetas seleccionables: intereses; qué busca; rangos de edad (solo categorías 18+); estado/ciudad. La ubicación precisa es opcional y requiere permiso separado. La selección de preferencias no constituye consentimiento para actos sexuales ni garantiza compatibilidad.
+6. Antes de finalizar, pedir aceptación explícita del aviso de privacidad y reglas de comunidad; registrar versión, fecha y consentimiento. Evitar una pantalla saturada: mostrar progreso de pasos, permitir guardar y continuar, y explicar brevemente por qué se solicita cada dato.
+
+### Texto de cumplimiento visible en el registro
+
+“AppSwinger es exclusivamente para personas adultas de 18 años o más. Solicitamos datos mínimos para administrar la cuenta, verificar la edad e identidad, proteger a la comunidad, prevenir fraude e investigar reportes. Los documentos de identidad son privados y solo personal autorizado puede acceder a ellos. No publicamos tu nombre legal ni tu INE. Si recibimos una denuncia o detectamos indicios de delito, revisaremos el caso y colaboraremos con las autoridades competentes cuando exista obligación o fundamento legal. Usa la plataforma con respeto: no se permite violencia, amenazas, acoso, explotación, trata, contenido íntimo no consentido ni contenido sexual que involucre a menores. El contenido sexual de menores está prohibido; se bloqueará el material, se restringirá la cuenta y se dará aviso a las autoridades cuando corresponda conforme a la ley. Puedes bloquear y reportar desde la aplicación.”
+
+No prometer que todos los datos se entregarán automáticamente ante cualquier denuncia. El acceso y la divulgación deben tener base legal, alcance proporcional, controles de acceso y registro de auditoría. La política pública debe identificar al responsable, finalidades, transferencias, conservación, medios ARCO y contacto para privacidad; revisión jurídica mexicana es requisito previo a producción. El consentimiento de privacidad debe distinguirse de la aceptación de términos y de comunicaciones promocionales.
+
 ## 4. Protección reforzada y convivencia
 - Perfil/medios privados por defecto; ubicación aproximada opcional, nunca domicilio o coordenadas en vivo por defecto.
 - Bloqueo bilateral inmediato: impedir mensajes, llamadas, invitaciones y aparición en búsquedas, preservando solo evidencia mínima necesaria para seguridad.
