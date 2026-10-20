@@ -14,13 +14,39 @@ AppSwinger será una comunidad 18+ para citas, perfiles individuales y de pareja
 Aplicar mínimo privilegio, MFA fuerte, sesiones administrativas limitadas, auditoría inmutable y doble aprobación para operaciones de riesgo. Finanzas no necesita ver INE; moderación no puede alterar pagos.
 
 ## 3. Verificación +18 e identidad
-1. Registro con confirmación de correo/teléfono y términos/privacidad versionados.
-2. Proveedor especializado que admita INE mexicana, detección de vida (liveness) y captura guiada desde cámara activa.
-3. Flujo guiado para frente y reverso de INE física y selfie en vivo sosteniendo la INE. No aceptar archivos de galería en este flujo. Mostrar imagen de ejemplo con rótulo “ilustración, no documento válido”.
-4. Comprobar coherencia documental/OCR, vigencia, indicios de pantalla o impresión, liveness, duplicidad y comparación facial. Metadatos/EXIF son solo una señal secundaria: pueden borrarse o falsificarse y no prueban autenticidad.
-5. Estados: aprobado, reintento, revisión manual o rechazo. Discrepancias, baja confianza y posibles falsificaciones van a cola humana. No prometer detección infalible ni suspender solo por una puntuación de IA.
-6. Guardar preferentemente el token/resultado del proveedor, no imágenes de INE. Si conservarlas fuera imprescindible, cifrar, restringir acceso, definir retención y borrado automático, registrar cada consulta y excluirlas de logs, analítica, CDN y repositorios.
-7. INE, rostros y plantillas biométricas son datos de alto riesgo. Antes de activar el flujo, asesoría jurídica mexicana debe revisar base legal, consentimiento expreso cuando proceda, aviso integral/simplificado, proveedores/transferencias, derechos ARCO, retención, seguridad, incidentes y evaluación de impacto. Separar consentimiento de identidad y marketing. El perfil público nunca muestra nombre legal ni INE.
+
+### Secuencia obligatoria de tres capturas automáticas
+
+El registro de identidad exige exactamente tres capturas, en este orden, usando la cámara activa del dispositivo. No se permite elegir archivos de galería, subir imágenes guardadas ni saltar pasos:
+
+1. **INE física — frente.** La cámara guía al usuario para colocar el frente completo dentro del marco. Solo captura automáticamente cuando el detector reconoce un documento compatible con INE y la imagen supera controles mínimos de enfoque, iluminación, reflejos, encuadre y legibilidad. Si no se detecta una INE física compatible, no se captura.
+2. **INE física — reverso.** Solo se habilita después de aceptar una captura frontal válida. Aplica los mismos controles de detección, enfoque, luz, encuadre y legibilidad al reverso.
+3. **Selfie en vivo con INE.** Solo se habilita después de aceptar ambas caras del documento. Se utiliza la **cámara frontal**. Instrucción visible y literal: **“Sostén tu INE con una mano y toma una selfie donde salgan tu rostro y la INE visibles.”** La captura es automática cuando el sistema detecta simultáneamente un rostro en vivo y el documento en la misma escena, ambos suficientemente visibles, enfocados e iluminados. No basta con detectar solo un rostro o solo una tarjeta.
+
+### Reglas de captura y mensajes
+
+- La persona no pulsa un botón para tomar la fotografía. El sistema captura automáticamente cuando las comprobaciones de calidad y detección se mantienen estables durante el umbral definido en la implementación.
+- Se permite tocar la vista previa para enfocar, pero tocar no dispara la captura.
+- Si la imagen está oscura: **“Hay poca luz. Ajusta la iluminación del lugar y vuelve a colocar el documento.”**
+- Si está borrosa: **“La captura salió borrosa. Enfoca la cámara y mantén el documento quieto.”**
+- Si el frente o reverso no es legible: **“La captura de la INE no salió clara. Inténtalo de nuevo en un lugar con buena luz y enfoca tu cámara.”**
+- Si no se reconoce el documento: **“Coloca tu INE física dentro del marco. No uses una pantalla, impresión ni fotografía de otra pantalla.”** La detección visual por sí sola no demuestra autenticidad; los indicios de falsificación deben pasar a revisión del proveedor y/o de una persona administradora.
+- Si falta rostro o INE en la selfie: **“Sostén tu INE con una mano y toma una selfie donde salgan tu rostro y la INE visibles.”**
+- Si se detectan reflejos, partes cortadas, movimiento excesivo o calidad insuficiente, no se acepta la captura. Se explica el problema y se permite reintentar el paso actual sin repetir los anteriores ya validados, salvo que el análisis posterior los invalide.
+- Mostrar progreso inequívoco: **1 de 3 — Frente de INE**, **2 de 3 — Reverso de INE**, **3 de 3 — Selfie con INE**. No marcar el registro como verificado solo por haber capturado tres imágenes.
+- El resultado de cada captura y la verificación final se deciden en el servidor/proveedor confiable. La interfaz no puede aprobarse a sí misma ni permitir que el cliente envíe un estado “verificado”.
+
+### Verificación posterior y protección de datos
+
+1. Antes de abrir la cámara, mostrar el aviso de privacidad y obtener el consentimiento específico requerido. Explicar finalidad, acceso, conservación, revisión manual, derechos y contacto responsable.
+2. Capturar frente, reverso y selfie desde cámara activa; no aceptar archivos de galería. La validación de calidad/detección en el dispositivo sirve para guiar la captura, no para garantizar que la INE sea auténtica.
+3. Un proveedor de verificación o proceso backend confiable debe comprobar, cuando esté contratado y configurado, coherencia documental/OCR, vigencia, señales de pantalla o impresión, liveness, duplicidad y comparación facial. La selfie con documento no es por sí sola una prueba infalible de vida ni de autenticidad.
+4. Si hay baja confianza, contradicciones, posible manipulación o fallos reiterados, detener la aprobación automática y enviar el caso a revisión manual. No rechazar definitivamente solo por una puntuación automatizada.
+5. Estados posibles: no iniciado, capturando, pendiente de revisión, requiere reintento, aprobado o rechazado con vía de aclaración.
+6. Guardar preferentemente el identificador y resultado de verificación, no las imágenes originales. Si es imprescindible conservarlas, cifrar, restringir acceso, fijar retención y borrado automático, registrar cada acceso y excluirlas de logs, analítica, CDN y repositorios.
+7. INE, rostros y plantillas biométricas son datos de alto riesgo. Antes de activar producción, asesoría jurídica mexicana debe revisar base legal, consentimiento expreso cuando proceda, avisos, proveedores/transferencias, derechos ARCO, retención, seguridad, incidentes y evaluación de impacto. Separar consentimiento de identidad y marketing. El perfil público nunca muestra nombre legal ni INE.
+
+**Estado técnico actual:** el componente `IdentityVerificationModal.tsx` que existe en esta rama redirige a una URL de proveedor mediante `/api/identity-verification/session`; no implementa todavía la cámara, la captura automática de las tres imágenes ni los detectores de enfoque, iluminación, INE y rostro. El contrato de sesión/estado tampoco demuestra que exista un proveedor conectado. Estos requisitos son criterios obligatorios de implementación y prueba, no funciones que deban anunciarse como terminadas.
 
 No construir un “enjambre de bots” como garantía de autenticidad. Usar un pipeline versionado de señales independientes, controles de falsos positivos, proveedor especializado y revisión humana. No identificar a terceros ni rastrear rostros por toda la plataforma.
 
