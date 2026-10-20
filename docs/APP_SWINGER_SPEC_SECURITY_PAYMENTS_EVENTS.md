@@ -50,6 +50,26 @@ El registro de identidad exige exactamente tres capturas, en este orden, usando 
 
 No construir un “enjambre de bots” como garantía de autenticidad. Usar un pipeline versionado de señales independientes, controles de falsos positivos, proveedor especializado y revisión humana. No identificar a terceros ni rastrear rostros por toda la plataforma.
 
+## 3.1. Orden obligatorio del onboarding
+
+1. **Cuenta:** solicitar correo y contraseña; verificar el correo antes de habilitar funciones sensibles. La declaración de mayoría de edad no sustituye la verificación documental.
+2. **Identidad:** iniciar la secuencia de captura 1) frente de INE, 2) reverso de INE, 3) selfie con cámara frontal sosteniendo la INE. La cuenta permanece en estado pendiente; no se presenta como verificada hasta una decisión administrativa registrada.
+3. **Datos del perfil:** precargar el nombre y apellidos solo si se extraen de forma fiable de la INE y el usuario los confirma. Mostrar igualmente campos editables de nombre(s) y apellidos; no inferir datos ilegibles ni aprobar por OCR.
+4. **Privacidad pública:** permitir un interruptor “Mostrar alias en todo el sitio”. Activado, mostrar el alias en tarjetas, búsquedas, chats y eventos; desactivado, mostrar únicamente el nombre de perfil que la persona haya elegido, nunca exponer por defecto el nombre legal completo. En Ajustes, permitir ocultar también los apellidos. Los datos legales solo son visibles para roles autorizados con necesidad justificada.
+5. **Encuesta breve:** selección múltiple por chips, sin texto libre obligatorio:
+   - Intereses: Swinger, tríos, Hotwife, encuentros informales, amistad con intimidad entre adultos, encuentros recurrentes sin compromiso, fiestas privadas y otras preferencias adultas permitidas por las políticas.
+   - Qué busca: mujeres, hombres, parejas, personas individuales o grupos adultos.
+   - Edad: campo numérico validado como 18+; la edad declarada no sustituye la comprobación documental.
+   - Estado y ciudad: selección/búsqueda; solicitar ubicación precisa solo si es necesaria y con permiso separado.
+   - Opcionales: límites personales, preferencias de contacto y qué desea evitar. No hacer obligatorios los datos sensibles que no sean necesarios.
+6. **Consentimientos claros:** mostrar por separado términos, aviso de privacidad y consentimiento explícito para tratar datos sensibles cuando corresponda. El usuario puede leer el aviso completo antes de aceptar. No condicionar el consentimiento de marketing al registro.
+7. **Acceso gradual:** mientras la identidad esté pendiente, limitar las funciones para adultos y las interacciones de riesgo. Permitir consultar estado y contactar soporte. Rechazos deben incluir motivo general, reintento o vía de aclaración.
+8. **Datos y transparencia:** explicar en lenguaje sencillo que los datos se usan para seguridad, prevención de suplantación, moderación, gestión de denuncias y cumplimiento de obligaciones legales. Ante reportes o requerimientos válidos, conservar y entregar únicamente la información pertinente a las autoridades competentes conforme a la ley. No prometer divulgación indiscriminada ni retención ilimitada.
+9. **Convivencia:** prohibir menores y cualquier material sexual que involucre o represente menores, coerción, violencia sexual, explotación, trata, difusión íntima sin consentimiento, acoso, amenazas, extorsión, suplantación y contenido ilegal. Los reportes se investigan con medidas proporcionales; las sospechas de explotación sexual infantil se escalan de inmediato conforme al protocolo legal aplicable, preservando evidencia de forma segura y reportando a las autoridades competentes cuando corresponda.
+10. **Marco jurídico:** antes del lanzamiento en México, revisión legal de términos, privacidad, tratamiento de datos personales y sensibles bajo la legislación aplicable, derechos ARCO, reglas de consumo y comercio electrónico, obligaciones fiscales, contenido de terceros y protocolo de respuesta a requerimientos oficiales. El texto de la interfaz es informativo y no sustituye asesoría legal.
+
+**Estado de implementación:** los campos de nombre legal, apellidos, alias público, edad y ubicación se han añadido al formulario y al objeto de perfil; aún se debe verificar su persistencia real en Firestore, aplicar la preferencia de alias/apellidos en todos los componentes públicos y conectar la secuencia de identidad para que el cuestionario no se interprete como una verificación completada. La precarga desde OCR, la captura automática de INE y el flujo de aprobación manual no se consideran funcionales hasta implementarse y probarse.
+
 ## 4. Protección reforzada y convivencia
 - Perfil/medios privados por defecto; ubicación aproximada opcional, nunca domicilio o coordenadas en vivo por defecto.
 - Bloqueo bilateral inmediato: impedir mensajes, llamadas, invitaciones y aparición en búsquedas, preservando solo evidencia mínima necesaria para seguridad.
