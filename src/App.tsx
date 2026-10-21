@@ -480,7 +480,7 @@ export default function App() {
     const { error } = await supabase.from('experience_proposals').insert({
       owner_user_id: user.uid,
       title: proposal.title.trim().slice(0, 120),
-      description: [proposal.description, 'Organizador: ' + proposal.organizerName, 'Ciudad: ' + proposal.city, 'Ratio: ' + proposal.attendeeRatio, 'Reglas: ' + proposal.consentRules, 'Protocolos: ' + proposal.healthProtocols].filter(Boolean).join('\n').slice(0, 4000),
+      description: ['Organizador: ' + proposal.organizerName, 'Ciudad: ' + proposal.city, 'Ratio: ' + proposal.attendeeRatio, 'Reglas: ' + proposal.consentRules, 'Protocolos: ' + proposal.healthProtocols].filter(Boolean).join('\n').slice(0, 4000),
       category: proposal.eventType.slice(0, 60),
       boundaries: proposal.consentRules.slice(0, 1200),
       location_mode: 'city_only',
