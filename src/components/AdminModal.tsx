@@ -36,8 +36,6 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [isChangingCreds, setIsChangingCreds] = useState(false);
-  const [newPass, setNewPass] = useState('');
-  const [newPin, setNewPin] = useState('');
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
