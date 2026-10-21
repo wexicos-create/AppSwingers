@@ -227,7 +227,6 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               <input
                 type="password"
                 maxLength={6}
-                required
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
                 placeholder="000000"
