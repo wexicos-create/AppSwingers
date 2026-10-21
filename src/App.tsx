@@ -49,6 +49,8 @@ import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { SafetyCenterModal } from './components/SafetyCenterModal';
+import { supabase } from './supabase';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -67,7 +69,8 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function App() {
@@ -114,11 +117,11 @@ export default function App() {
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
   const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
@@ -151,14 +154,14 @@ export default function App() {
   };
 
   // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
+  const [creators, setCreators] = useState<Creator[]>([]);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
   const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
   const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
+  const [lives, setLives] = useState<LiveStream[]>([]);
 
   // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ReportItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
@@ -188,6 +191,7 @@ export default function App() {
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
+  const [safetyCenterOpen, setSafetyCenterOpen] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
@@ -220,10 +224,10 @@ export default function App() {
           // Mexico geographical bounds: lat 14 to 33, lng -119 to -85
           if (lat >= 14 && lat <= 33 && lng >= -119 && lng <= -85) {
             setRegion('MX');
-            setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
+            // GPS identifies country only; it does not identify a city. Preserve the user's selected city.
           } else {
             setRegion('US');
-            setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
+            // Preserve the user's selected city; GPS country detection is not city geocoding.
           }
           if (isManualClick) {
             setPushToast({
@@ -381,20 +385,11 @@ export default function App() {
 
   // CRITICAL REQUIREMENT: DIRECT MATCH-TO-CHAT NAVIGATION
   const handleStartChatFromMatch = (profile: Profile) => {
-    setMatches(prev => {
-      const exists = prev.some(m => m.profile.id === profile.id);
-      if (exists) return prev;
-      return [
-        {
-          id: `match_${profile.id}_${Date.now()}`,
-          profile: profile,
-          matchedAt: new Date().toISOString(),
-          lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'New match! Say hello first ✨',
-          unreadCount: 1,
-        },
-        ...prev,
-      ];
-    });
+    const confirmedMatch = matches.some(m => m.profile.id === profile.id);
+    if (!confirmedMatch) {
+      setPushToast({ title: isEs ? 'Match no confirmado' : 'Match not confirmed', body: isEs ? 'El chat solo se abre después de que el servidor confirme un match mutuo.' : 'Chat opens only after the server confirms a mutual match.' });
+      return;
+    }
     setActiveChatUserId(profile.id);
     setMatchModalProfile(null);
     setChatDrawerOpen(true);
@@ -626,7 +621,17 @@ export default function App() {
             {/* Push Notification Lookup Button */}
             <button
               type="button"
-              onClick={() => setPushLookupOpen(true)}
+              onClick={() => setSafetyCenterOpen(true)}
+              className="p-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/30 text-white transition active:scale-95"
+              title={isEs ? 'Centro de seguridad' : 'Safety center'}
+              aria-label={isEs ? 'Centro de seguridad' : 'Safety center'}
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPushLookupOpen(true)
               className="relative p-2 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/30 text-white transition active:scale-95 flex items-center justify-center"
               title={isEs ? 'Lookup de Notificaciones Push & Diagnóstico' : 'Push Notification Lookup & Alert System'}
               aria-label="Push notifications lookup"
@@ -1024,12 +1029,18 @@ export default function App() {
                   matches={matches}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
-                  onBlockUser={(id) => {
+                  onOpenReport={async (t) => {
+                    if (!user || !supabase) { setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Debes iniciar sesión para enviar un reporte seguro.' : 'Sign in to submit a safety report.' }); return; }
+                    const { error } = await supabase.from('safety_reports').insert({ reporter_user_id: user.uid, reported_user_id: t.id, category: 'user_report', description: isEs ? 'Reporte iniciado desde Mensajes; solicita seguimiento de moderación.' : 'Report started from Messages; moderation follow-up requested.' });
+                    setPushToast(error ? { title: isEs ? 'No se envió el reporte' : 'Report not sent', body: isEs ? 'No se confirmó el registro. Inténtalo de nuevo.' : 'The report was not confirmed. Try again.' } : { title: isEs ? 'Reporte enviado' : 'Report submitted', body: isEs ? 'El reporte quedó registrado para revisión.' : 'Your report was recorded for review.' });
+                  }}
+                  onBlockUser={async (id) => {
+                    if (!user || !supabase) { setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Debes iniciar sesión para bloquear una cuenta.' : 'Sign in to block an account.' }); return; }
+                    const { error } = await supabase.from('user_blocks').upsert({ blocker_user_id: user.uid, blocked_user_id: id }, { onConflict: 'blocker_user_id,blocked_user_id' });
+                    if (error) { setPushToast({ title: isEs ? 'Bloqueo no confirmado' : 'Block not confirmed', body: isEs ? 'No se guardó el bloqueo. Inténtalo de nuevo.' : 'The block was not saved. Try again.' }); return; }
                     setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
-                    }
+                    if (activeChatUserId === id) setActiveChatUserId(null);
+                    setPushToast({ title: isEs ? 'Cuenta bloqueada' : 'Account blocked', body: isEs ? 'El bloqueo quedó guardado en tu cuenta.' : 'The block was saved to your account.' });
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
                 />
@@ -1124,6 +1135,14 @@ export default function App() {
             onClose={() => setLegalModalOpen(false)}
           />
         )}
+
+        <SafetyCenterModal
+          isOpen={safetyCenterOpen}
+          onClose={() => setSafetyCenterOpen(false)}
+          isEs={isEs}
+          onOpenChat={() => { setActiveChatUserId(null); setChatDrawerOpen(true); }}
+          onOpenLegal={() => setLegalModalOpen(true)}
+        />
 
         {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
         <PushLookupModal
