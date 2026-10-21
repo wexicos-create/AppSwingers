@@ -283,10 +283,18 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (!conversationId) { showToast('No hay una conversación activa confirmada por el servidor.'); return; }
     const body = inputText.trim().slice(0, 4000);
     setInputText('');
-    const { error } = await supabase.from('chat_messages').insert({
+    const { data, error } = await supabase.from('chat_messages').insert({
       conversation_id: conversationId, sender_user_id: currentUserId, body, message_type: 'text',
-    });
+    }).select('id,sender_user_id,body,created_at').single();
     if (error) { setInputText(body); showToast('El mensaje no se envió. Comprueba la conexión e inténtalo de nuevo.'); return; }
+    if (data) {
+      const chatKey = activeChat.profile.id;
+      setChatMessages(prev => {
+        const current = prev[chatKey] || [];
+        if (current.some(message => message.id === data.id)) return prev;
+        return { ...prev, [chatKey]: [...current, { id: data.id, me: true, ts: new Date(data.created_at).getTime(), t: data.body }] };
+      });
+    }
   };
 
   const handleConfirmReport = () => {
