@@ -3,13 +3,13 @@
 **Alcance:** inspección del repositorio privado `wexicos-create/AppSwingers` (rama `main`) y del proyecto Supabase `Swingers App` (`plsnlwskttnskhsacina`). El dominio EdgeOne no pudo recuperarse mediante la herramienta de lectura HTTP; por tanto, no se certifica que el artefacto publicado corresponda exactamente a este commit.
 
 ## Resumen ejecutivo
-El backend Supabase existe y tiene un esquema considerable para perfiles, verificación, matches, chat, reportes, membresías, SPEI e impuestos. Sin embargo, el frontend que se pudo inspeccionar no está conectado a ese backend: el repositorio sigue usando Firebase Auth/Firestore y datos de demostración locales. La arquitectura publicada y la arquitectura Supabase no deben considerarse integradas hasta comprobar el build desplegado.
+El backend Supabase existe y tiene un esquema considerable para perfiles, verificación, matches, chat, reportes, membresías, SPEI e impuestos. La rama de corrección conecta el flujo principal de autenticación, descubrimiento de perfiles verificados y matches mutuos a Supabase. Las secciones secundarias (eventos, propuestas, creadoras, lives, reportes y reservas) todavía contienen datos simulados y necesitan integración antes de producción. El dominio publicado no se certifica como actualizado hasta desplegar y probar esta rama.
 
 ## Hallazgos críticos
-1. **Autenticación de frontend inconsistente.** `package.json` y `src/firebase.ts` usan Firebase Auth/Firestore; no existía cliente de Supabase en el frontend.
+1. **Autenticación de frontend inconsistente en `main`.** La rama de corrección añade cliente Supabase y sustituye el adaptador de autenticación, perfiles, descubrimiento y matches; la configuración de despliegue y el build aún deben validarse.
 2. **Panel administrativo inseguro.** `AdminModal.tsx` contenía contraseña y PIN por defecto en el cliente, email administrativo fijo y guardado de credenciales en `localStorage`. Cualquier usuario con acceso al bundle podía extraerlas o modificar el estado.
 3. **Pago simulado.** `PaymentModal.tsx` prellenaba número de tarjeta/CVV y mostraba pago aprobado después de un temporizador, sin procesador ni confirmación del servidor.
-4. **Match falso.** `App.tsx` puede crear un match con un solo like/superlike basándose en datos mock; el backend Supabase tiene trigger de match mutuo, pero el frontend no lo consume.
+4. **Match falso en `main`.** La rama de corrección elimina el match sintético y consulta la RPC de matches mutuos después de guardar el swipe; la validación real requiere dos cuentas verificadas.
 5. **Datos de demostración.** `INITIAL_PROFILES`, eventos, propuestas, creadoras, lives y reportes se inicializan en memoria. Las reservas y aplicaciones a propuestas también se guardan localmente; no son registros persistentes de negocio.
 6. **Precios legales desactualizados.** `LegalModal.tsx` anunciaba $400 MXN por 15 días y reparto de 85% a creadoras, incompatibles con la configuración Prime $350 + IVA / $406 total y Gold $500 + IVA / $580 total.
 7. **Geolocalización engañosa.** La detección por coordenadas trata cualquier punto dentro de México como San Luis Potosí; la ubicación no se obtiene por geocodificación y el filtrado usa distancias mock.
@@ -35,11 +35,11 @@ El backend Supabase existe y tiene un esquema considerable para perfiles, verifi
 - Corregir el texto de precios y eliminar promesas de reparto no configuradas.
 
 ## Bloqueos para considerar producción
-1. Migrar frontend completo de Firebase a Supabase y retirar datos mock de los flujos de negocio.
+1. Completar la migración de las secciones secundarias y retirar datos mock de eventos, propuestas, creadoras, lives, reportes y reservas.
 2. Configurar y validar OAuth/redirect URLs y variables de entorno de EdgeOne.
 3. Conectar registro/perfil a Supabase y probar edad/identidad/foto verificada desde el servidor.
 4. Conectar matches mutuos, chat, reportes, bloqueos, creadoras, eventos, soporte y panel administrativo a tablas/RPC/Edge Functions reales.
-5. Corregir SPEI: catálogo de planes único, totales/IVA, CEP, expiración, revisión manual y activación idempotente tras confirmación.
+5. Probar SPEI end-to-end: catálogo de planes, totales/IVA, CEP, expiración, revisión manual y activación idempotente tras confirmación.
 6. Ejecutar build, pruebas de permisos/RLS, pruebas móviles y smoke tests en el dominio publicado.
 7. Revisar aviso de privacidad, términos, política de reembolso y obligaciones legales con asesoría mexicana antes del lanzamiento.
 
