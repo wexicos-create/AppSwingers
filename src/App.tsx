@@ -301,7 +301,7 @@ export default function App() {
     (async () => {
       const { data, error } = await supabase!.from('experience_proposals')
         .select('id,owner_user_id,title,description,category,created_at,status')
-        .eq('status', 'approved')
+        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) {
@@ -316,7 +316,7 @@ export default function App() {
         author: row.owner_user_id === user?.uid ? (isEs ? 'Tú' : 'You') : (isEs ? 'Miembro verificado' : 'Verified member'),
         when: new Date(row.created_at).toLocaleDateString(isEs ? 'es-MX' : 'en-US'),
         apps: 0,
-        status: 'aprobada',
+        status: 'activa',
         body: row.description,
         mine: row.owner_user_id === user?.uid,
       })));
@@ -1023,8 +1023,8 @@ export default function App() {
                   }}
                   onBlockUser={async (id) => {
                     if (!user || !supabase) { setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Debes iniciar sesión para bloquear una cuenta.' : 'Sign in to block an account.' }); return; }
-                    const { error } = await supabase.from('user_blocks').upsert({ blocker_user_id: user.uid, blocked_user_id: id }, { onConflict: 'blocker_user_id,blocked_user_id' });
-                    if (error) { setPushToast({ title: isEs ? 'Bloqueo no confirmado' : 'Block not confirmed', body: isEs ? 'No se guardó el bloqueo. Inténtalo de nuevo.' : 'The block was not saved. Try again.' }); return; }
+                    const { error } = await supabase.from('user_blocks').insert({ blocker_user_id: user.uid, blocked_user_id: id });
+                    if (error && error.code !== '23505') { setPushToast({ title: isEs ? 'Bloqueo no confirmado' : 'Block not confirmed', body: isEs ? 'No se guardó el bloqueo. Inténtalo de nuevo.' : 'The block was not saved. Try again.' }); return; }
                     setMatches(prev => prev.filter(m => m.profile.id !== id));
                     if (activeChatUserId === id) setActiveChatUserId(null);
                     setPushToast({ title: isEs ? 'Cuenta bloqueada' : 'Account blocked', body: isEs ? 'El bloqueo quedó guardado en tu cuenta.' : 'The block was saved to your account.' });
