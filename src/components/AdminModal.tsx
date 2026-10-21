@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { signInWithEmailAndPassword, getIdTokenResult, signOut } from 'firebase/auth';
+import { auth } from '../firebase';
 import { 
   X, 
   ShieldAlert, 
@@ -30,13 +32,9 @@ interface AdminModalProps {
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
   const [isChangingCreds, setIsChangingCreds] = useState(false);
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -53,36 +51,34 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
-      return;
+    setIsLoggedIn(false);
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const token = await getIdTokenResult(credential.user, true);
+      if (token.claims.admin !== true && token.claims.role !== 'admin' && token.claims.role !== 'superadmin') {
+        await signOut(auth);
+        setError(isEs
+          ? 'Acceso denegado: la cuenta no tiene el rol administrativo asignado por el servidor.'
+          : 'Access denied: this account has no server-assigned administrator role.');
+        return;
+      }
+      setIsLoggedIn(true);
+    } catch {
+      setError(isEs
+        ? 'No se pudo autenticar. Verifica las credenciales y la configuración de Firebase.'
+        : 'Authentication failed. Check credentials and Firebase configuration.');
     }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
-      return;
-    }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
-    }
-    setIsLoggedIn(true);
   };
 
   const handleUpdateCreds = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
-    }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
-    }
     setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
+    alert(isEs
+      ? 'Las credenciales se administran en Firebase Authentication. Los roles deben asignarse con Firebase Admin SDK en un entorno de confianza; nunca desde el navegador.'
+      : 'Credentials are managed in Firebase Authentication. Roles must be assigned using Firebase Admin SDK in a trusted environment, never from the browser.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -161,23 +157,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
+                placeholder={isEs ? "Contraseña de Firebase" : "Firebase password"}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                required
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
               />
             </div>
             <button
@@ -355,45 +336,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 </div>
 
                 {isChangingCreds ? (
-                  <form onSubmit={handleUpdateCreds} className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">{isEs ? 'Cambiar Credenciales Admin' : 'Change Admin Credentials'}</h4>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nueva Contraseña' : 'New Password'}</label>
-                      <input
-                        type="password"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="Nueva contraseña"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nuevo NIP (6 dígitos)' : 'New PIN (6 digits)'}</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Nuevo NIP"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs tracking-widest text-center"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsChangingCreds(false)}
-                        className="flex-1 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Cancelar' : 'Cancel'}
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Guardar Cambios' : 'Save Changes'}
-                      </button>
-                    </div>
-                  </form>
+                  <div className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10">
+                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">{isEs ? 'Administración de credenciales' : 'Credential management'}</h4>
+                    <p className="text-xs leading-relaxed text-white/65">{isEs ? 'Las contraseñas se gestionan en Firebase Authentication. Los rangos administrativos deben asignarse en un entorno de servidor confiable mediante Firebase Admin SDK; no se guardan contraseñas ni PIN en localStorage.' : 'Passwords are managed in Firebase Authentication. Admin roles must be assigned in a trusted server environment using Firebase Admin SDK; passwords and PINs are never stored in localStorage.'}</p>
+                    <button type="button" onClick={() => setIsChangingCreds(false)} className="w-full py-2 rounded-xl bg-white/10 text-white text-xs font-semibold">{isEs ? 'Entendido' : 'Understood'}</button>
+                  </div>
                 ) : (
                   <button
                     onClick={() => setIsChangingCreds(true)}
