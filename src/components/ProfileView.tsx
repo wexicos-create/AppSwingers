@@ -193,14 +193,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div className="relative p-6 rounded-[36px] bg-gradient-to-b from-[#1b0f34] via-[#100720] to-[#080310] border border-purple-500/30 shadow-2xl mb-5 flex flex-col items-center text-center">
         {/* Avatar with glow */}
         <div className="relative mb-3">
-          <img
-            src={
-              user?.photoURL ||
-              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'
-            }
-            alt={user?.displayName || 'Explorador'}
-            className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/60 shadow-[0_0_25px_rgba(177,76,255,0.5)]"
-          />
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt={user.displayName || 'Mi perfil'}
+              className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/60 shadow-[0_0_25px_rgba(177,76,255,0.5)]"
+            />
+          ) : (
+            <div aria-label="Sin foto de perfil" className="w-24 h-24 rounded-full border-4 border-purple-500/60 bg-neutral-800 flex items-center justify-center text-purple-200 text-2xl font-black">
+              {user?.displayName?.trim()?.charAt(0)?.toUpperCase() || '?'}
+            </div>
+          )}
           <div className="absolute bottom-0 right-0 p-1.5 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 text-white shadow-lg">
             <Flame className="w-4 h-4 fill-white" />
           </div>
