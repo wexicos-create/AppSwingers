@@ -116,11 +116,11 @@ export default function App() {
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
   const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
@@ -153,14 +153,14 @@ export default function App() {
   };
 
   // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
+  const [creators, setCreators] = useState<Creator[]>([]);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
   const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
   const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
+  const [lives, setLives] = useState<LiveStream[]>([]);
 
   // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ReportItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
@@ -197,15 +197,12 @@ export default function App() {
   // Discovery Filter (KM Radius)
   const [maxDistance, setMaxDistance] = useState(userProfile.maxKm || 30);
 
-  // Auto-detect IP and Region on startup
+  // Detect interface language only. Never request GPS automatically on page load.
   useEffect(() => {
     detectUserRegionAndLang().then(({ region: r, lang: l }) => {
       setRegion(r);
       setLang(l);
     });
-
-    // Request GPS location automatically
-    requestLocationAccess();
   }, []);
 
   // Location request to determine exact KM distances and country
