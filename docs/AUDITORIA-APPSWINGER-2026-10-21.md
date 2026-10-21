@@ -45,3 +45,22 @@ El backend Supabase existe y tiene un esquema considerable para perfiles, verifi
 
 ## Criterio de verificación
 Esta auditoría no afirma que el dominio publicado haya sido reparado ni que las funciones estén activas en producción. El cambio se entrega en una rama de revisión; debe compilarse, probarse y desplegarse desde el flujo autorizado antes de sustituir el sitio actual.
+
+
+## Actualizaciones de reparación — 21 de octubre de 2026
+
+La rama de reparación ahora también incluye:
+- **Centro de seguridad visual** accesible desde la barra superior, con recomendaciones de consentimiento, privacidad de ubicación, reportes, bloqueos y acceso a reglas legales.
+- **Reportes y bloqueos persistentes** desde Mensajes, conectados a `safety_reports` y `user_blocks`; la interfaz distingue errores de confirmación.
+- **Chat con Supabase**: carga las conversaciones activas y mensajes de `chat_conversations` / `chat_messages`, usa Realtime cuando está disponible y guarda mensajes de texto en el servidor. Se retiraron las respuestas falsas del bot y los mensajes locales simulados. Audio/fotos siguen sin envío real y se informa al usuario.
+- **Propuestas de experiencia**: creación y postulaciones usan `experience_proposals` y `experience_interests`, sujetas a las políticas RLS de perfil activo, edad, identidad y foto verificadas. El catálogo público carga propuestas activas; las pendientes no se publican automáticamente.
+- **Se eliminaron datos iniciales de demostración** en eventos, propuestas, creadoras, transmisiones y reportes; ya no se muestran perfiles ficticios como si fueran miembros reales.
+- **Se retiraron confirmaciones simuladas** de reservas, accesos virtuales, suscripciones de creadoras, recompensas y activación de membresías. Estas funciones permanecen bloqueadas hasta integrar sus flujos de servidor y pagos reales.
+- **Ubicación**: el GPS ya no convierte todas las coordenadas mexicanas en San Luis Potosí ni inventa ciudad/distancias cuando se deniega el permiso.
+- **Android**: se añadió configuración de Capacitor y un workflow de GitHub Actions para compilar un APK debug y publicarlo como artefacto de CI. El APK todavía no está generado ni probado en dispositivo; el artefacto aparecerá cuando el workflow se ejecute correctamente.
+
+## Validación actualizada y límites
+- La base de datos confirma políticas RLS para mensajes, bloqueos, reportes, propuestas e intereses. La creación de propuestas/intereses depende de verificación de edad, identidad y foto aprobada.
+- El estado de Vercel en la rama reportó `build-rate-limit`; no es una prueba de compilación exitosa ni un diagnóstico de error de código. La conexión Vercel del equipo `chattoj` no autoriza inspeccionar los logs completos, por lo que no se puede certificar el despliegue.
+- No se ejecutó un test end-to-end con dos cuentas verificadas; no se probó una transferencia SPEI/CEP real; no se confirmó el flujo Didit; no se obtuvo un APK instalable en este turno.
+- Antes de producción siguen pendientes: conectar eventos/reservas, creadoras/contenido/lives y notificaciones al backend; finalizar verificación de identidad; revisar el flujo SPEI completo y activación idempotente; validar la compilación Vite/TypeScript y el APK en Android real; confirmar dominios/variables Supabase; revisar privacidad, términos y soporte legal.
