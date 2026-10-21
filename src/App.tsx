@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from './firebase';
 import { 
   auth, 
   googleProvider, 
@@ -7,6 +7,7 @@ import {
   recordSwipe, 
   recordMatch, 
   fetchUserMatches, 
+  fetchDiscoverableProfiles,
   testConnection 
 } from './firebase';
 import { 
@@ -27,7 +28,6 @@ import {
   SubscriptionTier
 } from './types';
 import { 
-  INITIAL_PROFILES, 
   INITIAL_EVENTS, 
   INITIAL_PROPOSALS, 
   INITIAL_CREATORS, 
@@ -73,7 +73,7 @@ import {
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
 
   // Region and Language Detection (Default San Luis Potosí, México with USA option)
   const [region, setRegion] = useState<AppRegion>('MX');
@@ -110,7 +110,7 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
 
   // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
@@ -278,30 +278,30 @@ export default function App() {
     };
   }, []);
 
-  // Firebase auth & test connection
+  // Supabase Auth and verified data loading
   useEffect(() => {
-    testConnection().then(ok => setIsFirestoreConnected(ok));
+    testConnection().then(ok => setIsSupabaseConnected(ok));
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        try {
-          await syncUserProfile(currentUser);
-          const remoteMatches = await fetchUserMatches(currentUser.uid);
-          if (remoteMatches.length > 0) {
-            setMatches(prev => {
-              const combined = [...remoteMatches, ...prev];
-              const seen = new Set();
-              return combined.filter(m => {
-                if (seen.has(m.profile.id)) return false;
-                seen.add(m.profile.id);
-                return true;
-              });
-            });
-          }
-        } catch (e) {
-          console.warn('Firebase user sync note:', e);
-        }
+      setCurrentIndex(0);
+      if (!currentUser) {
+        setProfiles([]);
+        setMatches([]);
+        return;
+      }
+      try {
+        await syncUserProfile(currentUser);
+        const [remoteMatches, discoverableProfiles] = await Promise.all([
+          fetchUserMatches(currentUser.uid),
+          fetchDiscoverableProfiles(),
+        ]);
+        setMatches(remoteMatches);
+        setProfiles(discoverableProfiles);
+      } catch (e) {
+        console.warn('Supabase profile/match loading failed:', e);
+        setProfiles([]);
+        setMatches([]);
       }
     });
 
@@ -341,42 +341,30 @@ export default function App() {
 
   const handleSwipe = async (action: SwipeAction) => {
     if (!currentProfile) return;
-
-    const target = currentProfile;
-    setSwipedHistory(prev => [...prev, { profile: target, action }]);
-    setCurrentIndex(prev => prev + 1);
-
-    if (user) {
-      try {
-        await recordSwipe(user.uid, target, action);
-      } catch (err) {
-        console.warn('Error recording swipe:', err);
-      }
+    if (!user) {
+      setRegistrationModalOpen(true);
+      return;
     }
 
-    // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
+    const target = currentProfile;
+    try {
+      await recordSwipe(user.uid, target, action);
+      setSwipedHistory(prev => [...prev, { profile: target, action }]);
+      setCurrentIndex(prev => prev + 1);
 
-    if (isMatch) {
-      const newMatch: MatchItem = {
-        id: `match_${target.id}_${Date.now()}`,
-        profile: target,
-        matchedAt: new Date().toISOString(),
-        lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'Mutual match! Say hi first ✨',
-        unreadCount: 1,
-      };
-
-      setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.uid, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
-        }
-      }
-
-      setMatchModalProfile(target);
+      // The database creates matches only after reciprocal swipes.
+      const remoteMatches = await fetchUserMatches(user.uid);
+      setMatches(remoteMatches);
+      const mutualMatch = remoteMatches.find(match => match.profile.id === target.id);
+      if (mutualMatch) setMatchModalProfile(mutualMatch.profile);
+    } catch (err) {
+      console.warn('Supabase swipe failed:', err);
+      setPushToast({
+        title: isEs ? 'Acción no guardada' : 'Action not saved',
+        body: isEs
+          ? 'Completa la verificación de edad, identidad y foto para interactuar con perfiles.'
+          : 'Complete age, identity and photo verification before interacting with profiles.',
+      });
     }
   };
 
@@ -923,7 +911,7 @@ export default function App() {
                 setMaxDistance(val);
                 setUserProfile(prev => ({ ...prev, maxKm: val }));
               }}
-              isFirestoreConnected={isFirestoreConnected}
+              isSupabaseConnected={isSupabaseConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
