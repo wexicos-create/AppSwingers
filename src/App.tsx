@@ -200,8 +200,6 @@ export default function App() {
       setLang(l);
     });
 
-    // Request GPS location automatically
-    requestLocationAccess();
   }, []);
 
   // Location request to determine exact KM distances and country
