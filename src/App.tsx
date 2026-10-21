@@ -110,7 +110,8 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
 
   // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
+  // Do not display seeded demo identities as real people. Load only profiles created by actual users.
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
