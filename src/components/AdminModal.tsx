@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { supabase, isSupabaseConfigured } from '../supabase';
 import { 
   X, 
   ShieldAlert, 
@@ -34,12 +35,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
   const [isChangingCreds, setIsChangingCreds] = useState(false);
   const [newPass, setNewPass] = useState('');
-  const [newPin, setNewPin] = useState('');
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
@@ -53,36 +50,93 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
+
+    if (!supabase || !isSupabaseConfigured) {
+      setError(isEs
+        ? 'Panel bloqueado: configura VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el entorno de despliegue.'
+        : 'Admin panel locked: configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the deployment environment.');
       return;
     }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
+
+    const { data: signIn, error: signInError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (signInError || !signIn.user) {
+      setError(isEs ? 'No se pudo autenticar la cuenta en Supabase.' : 'Supabase authentication failed.');
       return;
     }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
+
+    const { data: assurance, error: assuranceError } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (assuranceError) {
+      await supabase.auth.signOut();
+      setError(isEs ? 'No se pudo comprobar el nivel MFA.' : 'Could not verify MFA assurance level.');
       return;
     }
+
+    if (assurance.currentLevel !== 'aal2') {
+      const { data: factors, error: factorsError } = await supabase.auth.mfa.listFactors();
+      const factor = factors?.totp?.find((candidate) => candidate.status === 'verified');
+      if (factorsError || !factor) {
+        await supabase.auth.signOut();
+        setError(isEs
+          ? 'La cuenta administrativa debe tener MFA TOTP verificado en Supabase antes de entrar.'
+          : 'The admin account must have verified TOTP MFA in Supabase before access.');
+        return;
+      }
+      if (!/^\\d{6}$/.test(pin.trim())) {
+        setError(isEs ? 'Introduce el código TOTP de seis dígitos.' : 'Enter the six-digit TOTP code.');
+        return;
+      }
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: factor.id });
+      if (challengeError || !challenge?.id) {
+        setError(isEs ? 'No se pudo iniciar el desafío MFA.' : 'Could not start the MFA challenge.');
+        return;
+      }
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: factor.id,
+        challengeId: challenge.id,
+        code: pin.trim(),
+      });
+      if (verifyError) {
+        setError(isEs ? 'Código MFA incorrecto o expirado.' : 'Invalid or expired MFA code.');
+        return;
+      }
+    }
+
+    const { data: adminRole, error: roleError } = await supabase
+      .from('admin_roles')
+      .select('role')
+      .eq('user_id', signIn.user.id)
+      .eq('role', 'admin')
+      .maybeSingle();
+
+    if (roleError || !adminRole) {
+      await supabase.auth.signOut();
+      setError(isEs ? 'Esta cuenta no tiene el rol administrativo en Supabase.' : 'This account has no admin role in Supabase.');
+      return;
+    }
+
     setIsLoggedIn(true);
   };
 
-  const handleUpdateCreds = (e: React.FormEvent) => {
+  const handleUpdateCreds = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
+    if (!supabase || !newPass || newPass.length < 12) {
+      setError(isEs ? 'La nueva contraseña debe tener al menos 12 caracteres y Supabase debe estar configurado.' : 'New password must be at least 12 characters and Supabase must be configured.');
+      return;
     }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
+    const { error: updateError } = await supabase.auth.updateUser({ password: newPass });
+    if (updateError) {
+      setError(isEs ? 'Supabase no pudo actualizar la contraseña.' : 'Supabase could not update the password.');
+      return;
     }
+    setNewPass('');
     setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
+    alert(isEs ? 'Contraseña actualizada mediante Supabase Auth.' : 'Password updated through Supabase Auth.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -126,7 +180,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {isEs ? 'Panel Admin & Business Analytics' : 'Admin & Business Analytics'}
           </h2>
           <p className="text-[11px] text-purple-200/70 mt-0.5">
-            {isEs ? 'Acceso seguro para jocervantes99@gmail.com' : 'Secure access for jocervantes99@gmail.com'}
+            {isEs ? 'Acceso restringido por rol de Supabase y MFA' : 'Access restricted by Supabase role and MFA'}
           </p>
         </div>
 
@@ -147,7 +201,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="jocervantes99@gmail.com"
+                placeholder="correo de tu cuenta Supabase"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
@@ -161,14 +215,14 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
+                placeholder="Contraseña de Supabase"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
             <div>
               <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
                 <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
+                {isEs ? 'Código TOTP de MFA (6 dígitos, si se solicita)' : 'MFA TOTP code (6 digits, if requested)'}
               </label>
               <input
                 type="password"
@@ -176,7 +230,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
+                placeholder="000000"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
               />
             </div>
@@ -196,11 +250,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0" />
                 <div>
                   <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión Autorizada (Root Admin)' : 'Authorized Session'}</h4>
-                  <p className="text-[10px] text-emerald-200">jocervantes99@gmail.com</p>
+                  <p className="text-[10px] text-emerald-200">Cuenta autenticada y rol validado en Supabase</p>
                 </div>
               </div>
               <button
-                onClick={() => setIsLoggedIn(false)}
+                onClick={async () => { if (supabase) await supabase.auth.signOut(); setIsLoggedIn(false); }}
                 className="px-2.5 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 text-[11px] font-bold border border-rose-500/30 transition"
               >
                 {isEs ? 'Salir' : 'Logout'}
@@ -365,17 +419,6 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                         onChange={(e) => setNewPass(e.target.value)}
                         placeholder="Nueva contraseña"
                         className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nuevo NIP (6 dígitos)' : 'New PIN (6 digits)'}</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Nuevo NIP"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs tracking-widest text-center"
                       />
                     </div>
                     <div className="flex gap-2 pt-1">
