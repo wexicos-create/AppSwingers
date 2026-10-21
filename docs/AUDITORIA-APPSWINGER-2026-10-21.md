@@ -19,7 +19,7 @@ El backend Supabase existe y tiene un esquema considerable para perfiles, verifi
 - Tablas de perfiles, swipes, matches, conversaciones, mensajes, roles administrativos, denuncias, propuestas, creadores, membresías y órdenes SPEI presentes.
 - Bucket `profile-photos`: privado, con límite de 5 MiB y MIME JPEG/PNG/WebP.
 - Edge Functions de verificación, fotos, revisión administrativa, SPEI y Stripe desplegadas. El checkout Stripe contiene un guard `CHECKOUT_ENABLED`; la estrategia comercial vigente indicada por el propietario descarta Stripe y debe priorizar el flujo SPEI.
-- La función SPEI observada calcula órdenes de $350/$500 como si fueran totales con IVA incluido, mientras la lógica de checkout y precios definida en el proyecto considera $406/$580 totales con IVA incluido. Debe corregirse antes de cobrar.
+- La función SPEI fue actualizada a versión 2: Prime $350 + IVA $56 = $406; Gold $500 + IVA $80 = $580. Ahora exige perfil activo, mayoría de edad e identidad verificadas, foto aprobada, referencia única reutilizable en reintentos y expiración de 24 horas. La configuración bancaria y el flujo CEP/activación todavía requieren prueba end-to-end autenticada antes de cobrar.
 - Los códigos de plan no son consistentes entre algunas rutas: aparecen `prime` y `premium`. Debe usarse un catálogo único.
 
 ## Hallazgos de los asesores de Supabase
