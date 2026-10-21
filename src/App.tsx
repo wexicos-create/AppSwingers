@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from './firebase';
 import { 
   auth, 
   googleProvider, 
   syncUserProfile, 
   recordSwipe, 
-  recordMatch, 
   fetchUserMatches, 
+  fetchDiscoverableProfiles,
   testConnection 
 } from './firebase';
 import { 
@@ -27,13 +27,6 @@ import {
   SubscriptionTier
 } from './types';
 import { 
-  INITIAL_PROFILES, 
-  INITIAL_EVENTS, 
-  INITIAL_PROPOSALS, 
-  INITIAL_CREATORS, 
-  INITIAL_LIVES, 
-  INITIAL_REPORTS 
-} from './data/mockProfiles';
 import { SwipeCard } from './components/SwipeCard';
 import { ActionButtons } from './components/ActionButtons';
 import { MatchModal } from './components/MatchModal';
@@ -50,6 +43,8 @@ import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { SafetyCenterModal } from './components/SafetyCenterModal';
+import { supabase } from './supabase';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -68,12 +63,13 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from 'lucide-react';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(false);
 
   // Region and Language Detection (Default San Luis Potosí, México with USA option)
   const [region, setRegion] = useState<AppRegion>('MX');
@@ -95,14 +91,14 @@ export default function App() {
     maxKm: number;
     locationCity: string;
   }>({
-    alias: 'Pareja Fuego',
-    kind: 'Pareja',
-    bio: 'Pareja liberal de San Luis Potosí. Reglas claras, respeto y química mutua.',
-    interests: ['Swinger', 'Fiestas privadas', 'Intercambio suave', 'Antifaz'],
-    seeking: ['Parejas', 'Mujeres'],
-    ages: ['26–39'],
+    alias: 'Mi perfil',
+    kind: 'Individual',
+    bio: '',
+    interests: [],
+    seeking: [],
+    ages: [],
     maxKm: 30,
-    locationCity: 'San Luis Potosí, SLP',
+    locationCity: '',
   });
 
   // Active navigation tab & subscription tier
@@ -110,16 +106,16 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
 
   // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
   const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
@@ -152,22 +148,22 @@ export default function App() {
   };
 
   // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
+  const [creators, setCreators] = useState<Creator[]>([]);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
   const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
   const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
+  const [lives, setLives] = useState<LiveStream[]>([]);
 
   // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ReportItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
       id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
+      title: isEs ? 'Bienvenido a AppSwinger' : 'Welcome to AppSwinger',
       body: isEs 
-        ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
-        : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
+        ? 'Comunidad para adultos. La disponibilidad depende de perfiles y funciones verificados en tu región.' 
+        : 'Adults-only community. Availability depends on verified profiles and features in your region.',
       ts: Date.now(),
     }
   ]);
@@ -189,6 +185,7 @@ export default function App() {
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
+  const [safetyCenterOpen, setSafetyCenterOpen] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
@@ -203,8 +200,6 @@ export default function App() {
       setLang(l);
     });
 
-    // Request GPS location automatically
-    requestLocationAccess();
   }, []);
 
   // Location request to determine exact KM distances and country
@@ -221,10 +216,10 @@ export default function App() {
           // Mexico geographical bounds: lat 14 to 33, lng -119 to -85
           if (lat >= 14 && lat <= 33 && lng >= -119 && lng <= -85) {
             setRegion('MX');
-            setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
+            // GPS identifies country only; it does not identify a city. Preserve the user's selected city.
           } else {
             setRegion('US');
-            setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
+            // Preserve the user's selected city; GPS country detection is not city geocoding.
           }
           if (isManualClick) {
             setPushToast({
@@ -238,35 +233,23 @@ export default function App() {
         (err) => {
           setIsLocating(false);
           console.warn('Geolocation note:', err);
+          setLocationGranted(false);
           if (isManualClick) {
-            setLocationGranted(true);
-            setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
             setPushToast({
-              title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
-              body: isEs 
-                ? `Ubicación configurada en ${cityName}. Cálculo en KM activado.` 
-                : `Location configured in ${cityName}. Distance calculations active.`
+              title: isEs ? 'Ubicación no disponible' : 'Location unavailable',
+              body: isEs ? 'No se concedió acceso GPS. No se calcularán distancias exactas ni se inventará una ciudad.' : 'GPS access was not granted. Exact distances will not be calculated and no city will be invented.'
             });
-          } else {
-            setLocationGranted(false);
           }
         },
         { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
       );
     } else {
       setIsLocating(false);
-      if (isManualClick) {
-        setLocationGranted(true);
-        setLocationBannerDismissed(true);
-        const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-        setUserProfile(prev => ({ ...prev, locationCity: cityName }));
-        setPushToast({
-          title: isEs ? 'Ubicación Activada' : 'Location Activated',
-          body: isEs ? `Ubicación configurada en ${cityName}.` : `Location set in ${cityName}.`
-        });
-      }
+      setLocationGranted(false);
+      if (isManualClick) setPushToast({
+        title: isEs ? 'GPS no disponible' : 'GPS unavailable',
+        body: isEs ? 'Este navegador no ofrece geolocalización. Selecciona tu ciudad manualmente.' : 'This browser does not provide geolocation. Select your city manually.'
+      });
     }
   };
 
@@ -278,35 +261,66 @@ export default function App() {
     };
   }, []);
 
-  // Firebase auth & test connection
+  // Supabase Auth and verified data loading
   useEffect(() => {
-    testConnection().then(ok => setIsFirestoreConnected(ok));
+    testConnection().then(ok => setIsSupabaseConnected(ok));
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
-      if (currentUser) {
-        try {
-          await syncUserProfile(currentUser);
-          const remoteMatches = await fetchUserMatches(currentUser.uid);
-          if (remoteMatches.length > 0) {
-            setMatches(prev => {
-              const combined = [...remoteMatches, ...prev];
-              const seen = new Set();
-              return combined.filter(m => {
-                if (seen.has(m.profile.id)) return false;
-                seen.add(m.profile.id);
-                return true;
-              });
-            });
-          }
-        } catch (e) {
-          console.warn('Firebase user sync note:', e);
-        }
+      if (currentUser?.displayName) setUserProfile(prev => ({ ...prev, alias: currentUser.displayName || prev.alias }));
+      setCurrentIndex(0);
+      if (!currentUser) {
+        setProfiles([]);
+        setMatches([]);
+        return;
+      }
+      try {
+        await syncUserProfile(currentUser);
+        const [remoteMatches, discoverableProfiles] = await Promise.all([
+          fetchUserMatches(currentUser.uid),
+          fetchDiscoverableProfiles(),
+        ]);
+        setMatches(remoteMatches);
+        setProfiles(discoverableProfiles);
+      } catch (e) {
+        console.warn('Supabase profile/match loading failed:', e);
+        setProfiles([]);
+        setMatches([]);
       }
     });
 
     return () => unsubscribe();
   }, []);
+
+  // Public proposals come from moderated server records only.
+  useEffect(() => {
+    if (!supabase) { setProposals([]); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase!.from('experience_proposals')
+        .select('id,owner_user_id,title,description,category,created_at,status')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        console.warn('Approved proposals could not be loaded:', error);
+        if (!cancelled) setProposals([]);
+        return;
+      }
+      if (!cancelled) setProposals((data ?? []).map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        cat: row.category,
+        author: row.owner_user_id === user?.uid ? (isEs ? 'Tú' : 'You') : (isEs ? 'Miembro verificado' : 'Verified member'),
+        when: new Date(row.created_at).toLocaleDateString(isEs ? 'es-MX' : 'en-US'),
+        apps: 0,
+        status: 'activa',
+        body: row.description,
+        mine: row.owner_user_id === user?.uid,
+      })));
+    })();
+    return () => { cancelled = true; };
+  }, [user?.uid, isEs]);
 
   // Google sign in
   const handleGoogleSignIn = async () => {
@@ -341,42 +355,30 @@ export default function App() {
 
   const handleSwipe = async (action: SwipeAction) => {
     if (!currentProfile) return;
-
-    const target = currentProfile;
-    setSwipedHistory(prev => [...prev, { profile: target, action }]);
-    setCurrentIndex(prev => prev + 1);
-
-    if (user) {
-      try {
-        await recordSwipe(user.uid, target, action);
-      } catch (err) {
-        console.warn('Error recording swipe:', err);
-      }
+    if (!user) {
+      setRegistrationModalOpen(true);
+      return;
     }
 
-    // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
+    const target = currentProfile;
+    try {
+      await recordSwipe(user.uid, target, action);
+      setSwipedHistory(prev => [...prev, { profile: target, action }]);
+      setCurrentIndex(prev => prev + 1);
 
-    if (isMatch) {
-      const newMatch: MatchItem = {
-        id: `match_${target.id}_${Date.now()}`,
-        profile: target,
-        matchedAt: new Date().toISOString(),
-        lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'Mutual match! Say hi first ✨',
-        unreadCount: 1,
-      };
-
-      setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.uid, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
-        }
-      }
-
-      setMatchModalProfile(target);
+      // The database creates matches only after reciprocal swipes.
+      const remoteMatches = await fetchUserMatches(user.uid);
+      setMatches(remoteMatches);
+      const mutualMatch = remoteMatches.find(match => match.profile.id === target.id);
+      if (mutualMatch) setMatchModalProfile(mutualMatch.profile);
+    } catch (err) {
+      console.warn('Supabase swipe failed:', err);
+      setPushToast({
+        title: isEs ? 'Acción no guardada' : 'Action not saved',
+        body: isEs
+          ? 'Completa la verificación de edad, identidad y foto para interactuar con perfiles.'
+          : 'Complete age, identity and photo verification before interacting with profiles.',
+      });
     }
   };
 
@@ -393,40 +395,19 @@ export default function App() {
 
   // CRITICAL REQUIREMENT: DIRECT MATCH-TO-CHAT NAVIGATION
   const handleStartChatFromMatch = (profile: Profile) => {
-    setMatches(prev => {
-      const exists = prev.some(m => m.profile.id === profile.id);
-      if (exists) return prev;
-      return [
-        {
-          id: `match_${profile.id}_${Date.now()}`,
-          profile: profile,
-          matchedAt: new Date().toISOString(),
-          lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'New match! Say hello first ✨',
-          unreadCount: 1,
-        },
-        ...prev,
-      ];
-    });
+    const confirmedMatch = matches.some(m => m.profile.id === profile.id);
+    if (!confirmedMatch) {
+      setPushToast({ title: isEs ? 'Match no confirmado' : 'Match not confirmed', body: isEs ? 'El chat solo se abre después de que el servidor confirme un match mutuo.' : 'Chat opens only after the server confirms a mutual match.' });
+      return;
+    }
     setActiveChatUserId(profile.id);
     setMatchModalProfile(null);
     setChatDrawerOpen(true);
   };
 
   // Event reservation handler
-  const handleReserveEvent = (eventId: string, tierId: string | null) => {
-    const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
-    const newReservation: Reservation = {
-      id: `res_${Date.now()}`,
-      eventId,
-      tier: tierId,
-      folio: `F-${Math.floor(100 + Math.random() * 900)}`,
-      code,
-      ts: Date.now(),
-      status: 'pagado',
-    };
-    setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+  const handleReserveEvent = (_eventId: string, _tierId: string | null) => {
+    setPushToast({ title: isEs ? 'Reservas no activadas' : 'Reservations unavailable', body: isEs ? 'No se generará un folio ni se marcará como pagado hasta conectar reserva, inventario y confirmación real de pago.' : 'No pass or paid status is created until reservations, capacity and verified payment are connected.' });
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -434,41 +415,28 @@ export default function App() {
   };
 
   // Proposal handlers with strict weekly quota enforcement
-  const handleApplyProposal = (proposal: Proposal) => {
-    const weeklyLimit = getWeeklyLimit(subscriptionTier);
-    const usedThisWeek = getWeeklyApplicationsCount();
-
-    if (usedThisWeek >= weeklyLimit) {
-      const planName = subscriptionTier === 'free' 
-        ? (isEs ? 'Plan Gratis (máx. 4 por semana)' : 'Free Plan (max 4/week)')
-        : (isEs ? 'Plan VIP Plus (máx. 15 por semana)' : 'VIP Plus Plan (max 15/week)');
-      
-      const nextPlanOffer = subscriptionTier === 'free'
-        ? (isEs ? 'Siguiente plan (15 postulaciones/semana) o Ultra Plan (Ilimitadas)' : 'Next plan (15/week) or Ultra Plan (Unlimited)')
-        : (isEs ? 'Ultra Plan (Postulaciones Ilimitadas)' : 'Ultra Plan (Unlimited postulations)');
-
-      const alertMsg = isEs
-        ? `Has alcanzado el límite semanal de ${weeklyLimit} postulaciones de tu ${planName}.\n\nPara continuar postulándote a fiestas y propuestas exclusivas, sube a: ${nextPlanOffer}.`
-        : `You reached the weekly limit of ${weeklyLimit} applications of your ${planName}.\n\nUpgrade to ${nextPlanOffer} to post unlimited requests.`;
-      
-      alert(alertMsg);
-      setExtrasModalOpen(true);
+  const handleApplyProposal = async (proposal: Proposal) => {
+    if (!user || !supabase) {
+      setRegistrationModalOpen(true);
+      setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Necesitas una cuenta para enviar una postulación.' : 'Sign in to apply.' });
       return;
     }
-
-    const newRecord = {
-      id: `app_${Date.now()}`,
-      proposalId: proposal.id,
-      ts: Date.now(),
-    };
-    setProposalApplications(prev => [newRecord, ...prev]);
-    setAppliedProposalIds(prev => [...prev, proposal.id]);
-
-    const remaining = weeklyLimit === Infinity ? (isEs ? 'Ilimitadas' : 'Unlimited') : (weeklyLimit - (usedThisWeek + 1));
-    const msg = isEs
-      ? `¡Postulación enviada con éxito a "${proposal.title}"!\nTu identidad se mantiene confidencial.\n\nPostulaciones restantes esta semana: ${remaining}.`
-      : `Application sent successfully to "${proposal.title}"!\nConfidentiality preserved.\n\nRemaining applications this week: ${remaining}.`;
-    alert(msg);
+    if (!/^[0-9a-f-]{36}$/i.test(proposal.id)) {
+      setPushToast({ title: isEs ? 'Propuesta no disponible' : 'Proposal unavailable', body: isEs ? 'Esta propuesta no tiene un identificador de servidor válido.' : 'This proposal has no valid server identifier.' });
+      return;
+    }
+    const { error } = await supabase.from('experience_interests').insert({
+      proposal_id: proposal.id,
+      requester_user_id: user.uid,
+      message: isEs ? 'Me interesa esta propuesta. Solicito más información.' : 'I am interested in this proposal. Please share more information.',
+      status: 'pending',
+    });
+    if (error) {
+      setPushToast({ title: isEs ? 'Postulación no enviada' : 'Application not sent', body: isEs ? 'No se confirmó el registro en el servidor. Inténtalo de nuevo.' : 'The server did not confirm the application. Try again.' });
+      return;
+    }
+    setAppliedProposalIds(prev => prev.includes(proposal.id) ? prev : [...prev, proposal.id]);
+    setPushToast({ title: isEs ? 'Postulación registrada' : 'Application recorded', body: isEs ? 'Tu interés se guardó y queda sujeto a la respuesta del organizador.' : 'Your interest was saved and awaits the organizer.' });
   };
 
   const handleToggleSaveProposal = (proposalId: string) => {
@@ -477,62 +445,62 @@ export default function App() {
     );
   };
 
-  const handleCreateProposal = (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
-    const created: Proposal = {
-      id: `prop_${Date.now()}`,
-      title: newProp.title,
-      cat: newProp.cat,
-      author: newProp.limited ? (isEs ? 'Tú (Identidad limitada)' : 'You (Discreet)') : (userProfile.alias || 'Tú'),
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: newProp.body || (isEs ? 'Propuesta privada con reglas claras.' : 'Private proposal with clear boundaries.'),
-      mine: true,
-    };
-    setProposals(prev => [created, ...prev]);
-    alert(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
+  const handleCreateProposal = async (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
+    if (!user || !supabase) {
+      setRegistrationModalOpen(true);
+      setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Inicia sesión para enviar una propuesta a revisión.' : 'Sign in to submit a proposal for review.' });
+      return;
+    }
+    const { error } = await supabase.from('experience_proposals').insert({
+      owner_user_id: user.uid,
+      title: newProp.title.trim().slice(0, 120),
+      description: newProp.body.trim().slice(0, 4000) || (isEs ? 'Propuesta privada con reglas claras.' : 'Private proposal with clear boundaries.'),
+      category: newProp.cat.slice(0, 60),
+      boundaries: newProp.limited ? (isEs ? 'Identidad limitada hasta aceptación' : 'Identity limited until accepted') : '',
+      location_mode: 'city_only',
+      city: userProfile.locationCity || null,
+      status: 'pending',
+    });
+    if (error) {
+      setPushToast({ title: isEs ? 'No se guardó la propuesta' : 'Proposal not saved', body: isEs ? 'El servidor no confirmó el envío. Revisa tu perfil y vuelve a intentarlo.' : 'The server did not confirm submission. Check your profile and retry.' });
+      return;
+    }
+    setPushToast({ title: isEs ? 'En revisión' : 'Pending review', body: isEs ? 'La propuesta se guardó en el servidor y no será pública hasta su aprobación.' : 'The proposal was saved and will remain private until approved.' });
   };
 
   // Collaboration Proposal (Swinger/Gangbang $350 MXN / $80 USD)
-  const handleSubmitCollaboration = (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
-    const fullProposal: CollaborationProposal = {
-      ...proposal,
-      id: `collab_${Date.now()}`,
-      status: 'en revisión',
-      paid: true,
-      createdAt: Date.now(),
-    };
-    // Also insert as a public proposal
-    const asProp: Proposal = {
-      id: fullProposal.id,
-      title: fullProposal.title,
-      cat: fullProposal.eventType,
-      author: `${fullProposal.organizerName} (${fullProposal.organizerType} Verificada)`,
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: `Ciudad: ${fullProposal.city} | Ratio: ${fullProposal.attendeeRatio} | Reglas: ${fullProposal.consentRules} | Salud: ${fullProposal.healthProtocols}`,
-      mine: true,
-    };
-    setProposals(prev => [asProp, ...prev]);
+  const handleSubmitCollaboration = async (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
+    if (!user || !supabase) {
+      setRegistrationModalOpen(true);
+      setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Inicia sesión para enviar la propuesta de colaboración.' : 'Sign in to submit a collaboration proposal.' });
+      return;
+    }
+    const { error } = await supabase.from('experience_proposals').insert({
+      owner_user_id: user.uid,
+      title: proposal.title.trim().slice(0, 120),
+      description: ['Organizador: ' + proposal.organizerName, 'Ciudad: ' + proposal.city, 'Ratio: ' + proposal.attendeeRatio, 'Reglas: ' + proposal.consentRules, 'Protocolos: ' + proposal.healthProtocols].filter(Boolean).join('\n').slice(0, 4000),
+      category: proposal.eventType.slice(0, 60),
+      boundaries: proposal.consentRules.slice(0, 1200),
+      location_mode: 'city_only',
+      city: proposal.city.slice(0, 100),
+      status: 'pending',
+    });
+    if (error) setPushToast({ title: isEs ? 'No se guardó' : 'Not saved', body: isEs ? 'No se confirmó la propuesta en el servidor.' : 'The server did not confirm the proposal.' });
+    else setPushToast({ title: isEs ? 'Propuesta enviada a revisión' : 'Proposal submitted for review', body: isEs ? 'No se cobró ningún pago ni se publicó automáticamente.' : 'No payment was taken and nothing was auto-published.' });
   };
 
   // Creator subscriptions
-  const handleSubscribeCreator = (creator: Creator) => {
-    setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    alert(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
+  const handleSubscribeCreator = (_creator: Creator) => {
+    setPushToast({ title: isEs ? 'Suscripciones no activadas' : 'Subscriptions unavailable', body: isEs ? 'No se registrará una suscripción ni se cobrará hasta conectar el sistema de membresías de creadoras.' : 'No subscription or charge is created until creator billing is connected.' });
   };
 
-  const handleBuyLiveAccess = (live: LiveStream) => {
-    setLiveAccessIds(prev => [...prev, live.id]);
-    alert(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
+  const handleBuyLiveAccess = (_live: LiveStream) => {
+    setPushToast({ title: isEs ? 'Acceso virtual no activado' : 'Virtual access unavailable', body: isEs ? 'No se marcará un pase como comprado sin pago y permisos reales.' : 'No access pass is granted without real payment and entitlements.' });
   };
 
   // Club reward redemption
   const handleRedeemClubReward = () => {
-    const folio = `CLB-${Math.floor(1000 + Math.random() * 9000)}`;
-    setRedeemedClubFolio(folio);
-    alert(isEs ? `¡Felicidades! Has canjeado tu recompensa del Club de Experiencias. Folio: ${folio}` : `Club reward redeemed! Folio: ${folio}`);
+    setPushToast({ title: isEs ? 'Recompensas en preparación' : 'Rewards not active', body: isEs ? 'No se genera un folio de canje hasta que el programa de asistencia esté conectado al servidor.' : 'No redemption code is issued until attendance tracking is server-backed.' });
   };
 
   // Data privacy wipe
@@ -638,7 +606,17 @@ export default function App() {
             {/* Push Notification Lookup Button */}
             <button
               type="button"
-              onClick={() => setPushLookupOpen(true)}
+              onClick={() => setSafetyCenterOpen(true)}
+              className="p-2 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/30 text-white transition active:scale-95"
+              title={isEs ? 'Centro de seguridad' : 'Safety center'}
+              aria-label={isEs ? 'Centro de seguridad' : 'Safety center'}
+            >
+              <ShieldCheck className="w-4 h-4 text-emerald-300" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPushLookupOpen(true)
               className="relative p-2 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/30 text-white transition active:scale-95 flex items-center justify-center"
               title={isEs ? 'Lookup de Notificaciones Push & Diagnóstico' : 'Push Notification Lookup & Alert System'}
               aria-label="Push notifications lookup"
@@ -923,15 +901,14 @@ export default function App() {
                 setMaxDistance(val);
                 setUserProfile(prev => ({ ...prev, maxKm: val }));
               }}
-              isFirestoreConnected={isFirestoreConnected}
+              isSupabaseConnected={isSupabaseConnected}
               onOpenAdmin={() => setAdminModalOpen(true)}
               onOpenLegal={() => setLegalModalOpen(true)}
               onExportData={handleExportData}
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                setPushToast({ title: isEs ? 'Membresía no activada' : 'Membership not activated', body: isEs ? `El plan ${tier.toUpperCase()} no se activará hasta confirmar un pago real por SPEI y recibir la confirmación del servidor.` : `The ${tier.toUpperCase()} plan will not activate until a real SPEI payment is confirmed by the server.` });
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
@@ -1034,14 +1011,21 @@ export default function App() {
               <div className="flex-1 overflow-hidden">
                 <ChatView
                   matches={matches}
+                  currentUserId={user?.uid}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
-                  onBlockUser={(id) => {
+                  onOpenReport={async (t) => {
+                    if (!user || !supabase) { setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Debes iniciar sesión para enviar un reporte seguro.' : 'Sign in to submit a safety report.' }); return; }
+                    const { error } = await supabase.from('safety_reports').insert({ reporter_user_id: user.uid, reported_user_id: t.id, category: 'user_report', description: isEs ? 'Reporte iniciado desde Mensajes; solicita seguimiento de moderación.' : 'Report started from Messages; moderation follow-up requested.' });
+                    setPushToast(error ? { title: isEs ? 'No se envió el reporte' : 'Report not sent', body: isEs ? 'No se confirmó el registro. Inténtalo de nuevo.' : 'The report was not confirmed. Try again.' } : { title: isEs ? 'Reporte enviado' : 'Report submitted', body: isEs ? 'El reporte quedó registrado para revisión.' : 'Your report was recorded for review.' });
+                  }}
+                  onBlockUser={async (id) => {
+                    if (!user || !supabase) { setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Debes iniciar sesión para bloquear una cuenta.' : 'Sign in to block an account.' }); return; }
+                    const { error } = await supabase.from('user_blocks').insert({ blocker_user_id: user.uid, blocked_user_id: id });
+                    if (error && error.code !== '23505') { setPushToast({ title: isEs ? 'Bloqueo no confirmado' : 'Block not confirmed', body: isEs ? 'No se guardó el bloqueo. Inténtalo de nuevo.' : 'The block was not saved. Try again.' }); return; }
                     setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
-                    }
+                    if (activeChatUserId === id) setActiveChatUserId(null);
+                    setPushToast({ title: isEs ? 'Cuenta bloqueada' : 'Account blocked', body: isEs ? 'El bloqueo quedó guardado en tu cuenta.' : 'The block was saved to your account.' });
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
                 />
@@ -1057,8 +1041,8 @@ export default function App() {
           lang={lang}
           region={region}
           initialData={userProfile}
-          onSave={(data) => {
-            setUserProfile({
+          onSave={async (data) => {
+            const nextProfile = {
               alias: data.alias,
               kind: data.kind,
               bio: data.bio,
@@ -1066,10 +1050,29 @@ export default function App() {
               seeking: data.seeking,
               ages: data.ages,
               maxKm: data.maxKm,
-              locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
-            });
+              locationCity: data.locationCity || '',
+            };
+            setUserProfile(nextProfile);
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            if (!user || !supabase) {
+              setPushToast({ title: isEs ? 'Cambios locales' : 'Local changes only', body: isEs ? 'Inicia sesión para guardar el perfil de forma persistente.' : 'Sign in to persist your profile.' });
+              return;
+            }
+            const { error } = await supabase.from('profiles').update({
+              display_name: data.alias,
+              profile_kind: data.kind,
+              bio: data.bio,
+              interests: data.interests,
+              seeking: data.seeking,
+              preferred_age_ranges: data.ages,
+              max_distance_km: data.maxKm,
+              city: data.locationCity || null,
+              country_code: region,
+              updated_at: new Date().toISOString(),
+            }).eq('id', user.uid);
+            setPushToast(error
+              ? { title: isEs ? 'Perfil no guardado' : 'Profile not saved', body: isEs ? 'El servidor rechazó los cambios. Revisa la conexión y los requisitos de verificación.' : 'The server rejected the changes. Check connection and verification requirements.' }
+              : { title: isEs ? 'Perfil guardado' : 'Profile saved', body: isEs ? 'Los cambios quedaron guardados en tu cuenta.' : 'Your changes were saved to your account.' });
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
@@ -1082,7 +1085,7 @@ export default function App() {
           region={region}
           isEs={isEs}
           currentTier={subscriptionTier}
-          onSelectTier={(tier) => setSubscriptionTier(tier)}
+          onSelectTier={(tier) => setPushToast({ title: isEs ? 'Membresía no activada' : 'Membership not activated', body: isEs ? `El plan ${tier.toUpperCase()} requiere pago real confirmado por el servidor.` : `The ${tier.toUpperCase()} plan requires server-confirmed real payment.` })}
         />
 
         {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}
@@ -1102,7 +1105,7 @@ export default function App() {
         <MatchModal
           isOpen={!!matchModalProfile}
           matchProfile={matchModalProfile}
-          currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+          currentUserPhoto={user?.photoURL || ''}
           currentUserName={userProfile.alias}
           isEs={isEs}
           onClose={() => setMatchModalProfile(null)}
@@ -1136,6 +1139,14 @@ export default function App() {
             onClose={() => setLegalModalOpen(false)}
           />
         )}
+
+        <SafetyCenterModal
+          isOpen={safetyCenterOpen}
+          onClose={() => setSafetyCenterOpen(false)}
+          isEs={isEs}
+          onOpenChat={() => { setActiveChatUserId(null); setChatDrawerOpen(true); }}
+          onOpenLegal={() => setLegalModalOpen(true)}
+        />
 
         {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
         <PushLookupModal

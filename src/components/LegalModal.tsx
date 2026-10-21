@@ -61,8 +61,8 @@ export const LegalModal: React.FC<LegalModalProps> = ({
           title: 'Pagos y Suscripciones',
           items: [
             'Todos los precios están expresados en pesos mexicanos con IVA incluido.',
-            'Membresía Premium: $400 MXN cada 15 días con renovación voluntaria y cancelación instantánea.',
-            'Suscripciones a creadoras: La creadora fija su precio y recibe el 85% neto del valor base.',
+            'Membresía Prime: $406 MXN al mes (precio base $350 + IVA $56). Membresía Gold: $580 MXN al mes (precio base $500 + IVA $80). Estos importes deben coincidir con el checkout habilitado.',
+            'Las condiciones económicas de creadoras y eventos deben mostrarse antes de contratar y solo aplican cuando el método de cobro y la liquidación estén habilitados y documentados.',
           ]
         }
       ]

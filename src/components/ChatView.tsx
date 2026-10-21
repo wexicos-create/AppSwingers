@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MatchItem, Profile, ChatMessage } from '../types';
-import { INITIAL_PROFILES } from '../data/mockProfiles';
+import { supabase } from '../supabase';
 import { 
   Search, 
   Send, 
@@ -27,6 +27,7 @@ import {
 
 interface ChatViewProps {
   matches: MatchItem[];
+  currentUserId?: string | null;
   initialChatUserId?: string | null;
   onOpenProfile: (profile: Profile) => void;
   onOpenReport?: (target: { type: 'usuario'; id: string; name: string }) => void;
@@ -36,6 +37,7 @@ interface ChatViewProps {
 
 export const ChatView: React.FC<ChatViewProps> = ({
   matches,
+  currentUserId,
   initialChatUserId,
   onOpenProfile,
   onOpenReport,
@@ -62,22 +64,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const recordingTimerRef = useRef<any>(null);
 
-  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>(() => {
-    try {
-      const saved = localStorage.getItem('appswinguer_chat_messages');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('appswinguer_chat_messages', JSON.stringify(chatMessages));
-    } catch (e) {
-      console.warn('LocalStorage save note:', e);
-    }
-  }, [chatMessages]);
+  const [chatMessages, setChatMessages] = useState<Record<string, ChatMessage[]>>({});
+  const [conversationIds, setConversationIds] = useState<Record<string, string>>({});
+  const [messagesLoading, setMessagesLoading] = useState(false);
 
   // Real-Time Location Sharing State per Chat (Strict Privacy by Default)
   const [liveLocationChats, setLiveLocationChats] = useState<Record<string, boolean>>(() => {
@@ -129,17 +118,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
       if (match) {
         setActiveChat(match);
       } else {
-        // Fallback: look up in initial profiles to immediately open chat
-        const fallbackProfile = INITIAL_PROFILES.find(p => p.id === initialChatUserId);
-        if (fallbackProfile) {
-          setActiveChat({
-            id: `match_${fallbackProfile.id}_fallback`,
-            profile: fallbackProfile,
-            matchedAt: new Date().toISOString(),
-            lastMessage: '¡Nuevo Match mutuo! Saludarse primero ✨',
-            unreadCount: 0
-          });
-        }
+        setActiveChat(null);
+        showToast('No existe un match confirmado para abrir este chat.');
       }
     }
   }, [initialChatUserId, matches]);
@@ -148,24 +128,61 @@ export const ChatView: React.FC<ChatViewProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages, activeChat]);
 
-  // 3-second polling interval simulating recibir.php / backend sync
+  // Load only server-backed conversations and messages; never synthesize chat history.
   useEffect(() => {
-    const pollInterval = setInterval(() => {
+    if (!activeChat || !currentUserId || !supabase) return;
+    let cancelled = false;
+    const targetId = activeChat.profile.id;
+    let channel: any = null;
+    setMessagesLoading(true);
+    (async () => {
       try {
-        const stored = localStorage.getItem('appswinguer_chat_messages');
-        if (stored && activeChat) {
-          const parsed = JSON.parse(stored);
-          if (parsed[activeChat.profile.id]) {
-            setChatMessages(prev => ({ ...prev, [activeChat.profile.id]: parsed[activeChat.profile.id] }));
-          }
+        let conversation = await supabase!.from('chat_conversations').select('id')
+          .eq('participant_a', currentUserId).eq('participant_b', targetId).eq('status', 'active').maybeSingle();
+        if (!conversation.data && !conversation.error) {
+          conversation = await supabase!.from('chat_conversations').select('id')
+            .eq('participant_a', targetId).eq('participant_b', currentUserId).eq('status', 'active').maybeSingle();
         }
-      } catch (e) {
-        // ignore polling note
+        if (conversation.error) throw conversation.error;
+        if (!conversation.data?.id) {
+          if (!cancelled) setChatMessages(prev => ({ ...prev, [targetId]: [] }));
+          return;
+        }
+        const conversationId = conversation.data.id as string;
+        if (cancelled) return;
+        setConversationIds(prev => ({ ...prev, [targetId]: conversationId }));
+        const loadMessages = async () => {
+          const { data, error } = await supabase!.from('chat_messages')
+            .select('id,sender_user_id,body,created_at,message_type')
+            .eq('conversation_id', conversationId).is('deleted_at', null)
+            .order('created_at', { ascending: true }).limit(300);
+          if (error) throw error;
+          if (!cancelled) setChatMessages(prev => ({
+            ...prev,
+            [targetId]: (data ?? []).map((m: any) => ({
+              id: m.id, me: m.sender_user_id === currentUserId,
+              ts: new Date(m.created_at).getTime(), t: m.body,
+            })),
+          }));
+        };
+        await loadMessages();
+        if (!cancelled) {
+          channel = supabase!.channel('chat:' + conversationId)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages', filter: 'conversation_id=eq.' + conversationId }, () => { void loadMessages(); })
+            .subscribe();
+        }
+      } catch (error) {
+        console.error('Chat load failed:', error);
+        if (!cancelled) {
+          setChatMessages(prev => ({ ...prev, [targetId]: [] }));
+          showToast('No se pudo cargar el chat del servidor. Inténtalo de nuevo.');
+        }
+      } finally {
+        if (!cancelled) setMessagesLoading(false);
       }
-    }, 3000);
-
-    return () => clearInterval(pollInterval);
-  }, [activeChat]);
+    })();
+    return () => { cancelled = true; if (channel && supabase) void supabase.removeChannel(channel); };
+  }, [activeChat?.profile.id, currentUserId]);
 
   // PeerJS Video Call State & WebRTC & Google Keep Sync
   const [videoCallOpen, setVideoCallOpen] = useState(false);
@@ -237,29 +254,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const stopAndSendVoiceRecording = () => {
-    if (!activeChat) return;
     clearInterval(recordingTimerRef.current);
     setIsRecordingVoice(false);
-
-    const seconds = recordingSeconds || 4;
-    const durStr = `00:${seconds < 10 ? '0' : ''}${seconds}`;
-    const chatKey = activeChat.profile.id;
-
-    const newVoiceMsg: ChatMessage = {
-      id: `voice_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      voiceUrl: 'voice_audio_record',
-      voiceDuration: durStr,
-      t: `Nota de voz (${durStr})`,
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newVoiceMsg]
-    }));
-
-    triggerBotReply(chatKey, "¡Qué linda voz tienes! Me gusta mucho escuchar a la persona antes de encontrarnos ✨");
+    setRecordingSeconds(0);
+    showToast('Las notas de voz aún no están conectadas al almacenamiento seguro; no se envió ningún audio.');
   };
 
   const cancelVoiceRecording = () => {
@@ -270,71 +268,33 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   // Image attachment handler (Paperclip 📎)
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const newImgMsg: ChatMessage = {
-        id: `img_${Date.now()}`,
-        me: true,
-        ts: Date.now(),
-        img: imgUrl,
-      };
-
-      setChatMessages(prev => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), newImgMsg]
-      }));
-
-      triggerBotReply(chatKey, "¡Increíble foto! Te ves espectacular 🔥");
-    };
-    reader.readAsDataURL(file);
+    if (!e.target.files?.[0]) return;
     e.target.value = '';
+    showToast('El envío de fotos aún no está conectado al almacenamiento seguro; no se guardó ningún archivo.');
   };
 
-  const triggerBotReply = (chatKey: string, customReply?: string) => {
-    setTimeout(() => {
-      const matchResponses = [
-        "¡Totalmente de acuerdo! Me encanta esa actitud y tener reglas claras 😊",
-        "Jajaja exactamente lo que estaba pensando. ¿Cuándo nos vemos para un cóctel?",
-        "Las reglas claras siempre primero. ¿Has ido antes a una fiesta privada en San Luis Potosí?",
-        "Qué buena vibra transmites. Me alegra mucho que hayamos hecho Match ✨"
-      ];
-      const randomReply = customReply || matchResponses[Math.floor(Math.random() * matchResponses.length)];
-      const replyMessage: ChatMessage = {
-        id: `reply_${Date.now()}`,
-        me: false,
-        ts: Date.now(),
-        t: randomReply,
-      };
-      setChatMessages(prev => ({
-        ...prev,
-        [chatKey]: [...(prev[chatKey] || []), replyMessage]
-      }));
-    }, 1200);
-  };
 
-  const handleSendMessage = (e: React.FormEvent) => {
+
+  const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText.trim() || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const newMessage: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      t: inputText.trim(),
-    };
-
-    setChatMessages(prev => ({
-      ...prev,
-      [chatKey]: [...(prev[chatKey] || []), newMessage]
-    }));
+    if (!currentUserId || !supabase) { showToast('Inicia sesión para enviar mensajes.'); return; }
+    const conversationId = conversationIds[activeChat.profile.id];
+    if (!conversationId) { showToast('No hay una conversación activa confirmada por el servidor.'); return; }
+    const body = inputText.trim().slice(0, 4000);
     setInputText('');
-    triggerBotReply(chatKey);
+    const { data, error } = await supabase.from('chat_messages').insert({
+      conversation_id: conversationId, sender_user_id: currentUserId, body, message_type: 'text',
+    }).select('id,sender_user_id,body,created_at').single();
+    if (error) { setInputText(body); showToast('El mensaje no se envió. Comprueba la conexión e inténtalo de nuevo.'); return; }
+    if (data) {
+      const chatKey = activeChat.profile.id;
+      setChatMessages(prev => {
+        const current = prev[chatKey] || [];
+        if (current.some(message => message.id === data.id)) return prev;
+        return { ...prev, [chatKey]: [...current, { id: data.id, me: true, ts: new Date(data.created_at).getTime(), t: data.body }] };
+      });
+    }
   };
 
   const handleConfirmReport = () => {
@@ -345,7 +305,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
       name: activeChat.profile.name,
     });
     setReportModalOpen(false);
-    showToast(`Reporte enviado contra ${activeChat.profile.name}. El equipo de moderación revisará la cuenta en menos de 2 horas.`);
+    showToast('Solicitud de reporte enviada. El estado se confirma en la respuesta del sistema.');
   };
 
   const handleConfirmBlock = () => {
@@ -355,15 +315,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setBlockModalOpen(false);
     setActiveChat(null);
     onBlockUser?.(blockedId);
-    showToast(`Has bloqueado a ${blockedName}. No podrá comunicarse ni interactuar contigo.`);
+    showToast(`Solicitud de bloqueo enviada para ${blockedName}.`);
   };
 
   // IF AN ACTIVE CHAT CONVERSATION IS OPEN
   if (activeChat) {
     const chatKey = activeChat.profile.id;
-    const currentMsgs = chatMessages[chatKey] || [
-      { id: 'init', me: false, ts: Date.now(), t: `¡Hola! Qué gusto coincidir. ¿Qué plan te llama más la atención? ✨` }
-    ];
+    const currentMsgs = chatMessages[chatKey] || [];
 
     return (
       <div className="w-full max-w-md mx-auto h-[calc(100vh-76px)] flex flex-col bg-[#090414] text-white relative">
@@ -500,6 +458,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </span>
           </div>
 
+          {messagesLoading && <p className="px-4 py-2 text-xs text-purple-200/70">Cargando mensajes seguros…</p>}
+          {!messagesLoading && currentMsgs.length === 0 && <p className="mx-4 my-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-white/60">Aún no hay mensajes guardados en esta conversación.</p>}
           {currentMsgs.map((msg) => {
             const isMe = msg.me;
             const timeStr = new Date(msg.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

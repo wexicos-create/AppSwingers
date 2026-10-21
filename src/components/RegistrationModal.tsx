@@ -86,7 +86,7 @@ export const RegistrationModal: React.FC<RegistrationModalProps> = ({
   );
   const [maxKm, setMaxKm] = useState<number>(initialData?.maxKm || 25);
   const [city, setCity] = useState(
-    initialData?.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'Houston, TX')
+    initialData?.locationCity || ''
   );
   const [acceptedConsent, setAcceptedConsent] = useState(true);
 
