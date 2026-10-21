@@ -800,11 +800,11 @@ export default function App() {
                       <Sparkles className="w-7 h-7 text-pink-400 animate-pulse" />
                     </div>
                     <h3 className="text-base font-bold text-white mb-1">
-                      {isEs ? 'Has visto todos los perfiles en este radio' : 'No more profiles in this radius'}
+                      {isEs ? 'Todavía no hay perfiles reales disponibles' : 'No real profiles are available yet'}
                     </h3>
                     <p className="text-[11px] text-purple-200/70 max-w-xs mb-3 leading-relaxed">
                       {isEs 
-                        ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en tu región.` 
+                        ? `Los perfiles aparecerán cuando haya usuarios reales con su cuenta y fotos. No mostramos perfiles de muestra.` 
                         : `Expand your ${maxDistance} km radius or explore private parties.`}
                     </p>
                     <div className="flex gap-2">
