@@ -294,6 +294,36 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Public proposals come from moderated server records only.
+  useEffect(() => {
+    if (!supabase) { setProposals([]); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase!.from('experience_proposals')
+        .select('id,owner_user_id,title,description,category,created_at,status')
+        .eq('status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        console.warn('Approved proposals could not be loaded:', error);
+        if (!cancelled) setProposals([]);
+        return;
+      }
+      if (!cancelled) setProposals((data ?? []).map((row: any) => ({
+        id: row.id,
+        title: row.title,
+        cat: row.category,
+        author: row.owner_user_id === user?.uid ? (isEs ? 'Tú' : 'You') : (isEs ? 'Miembro verificado' : 'Verified member'),
+        when: new Date(row.created_at).toLocaleDateString(isEs ? 'es-MX' : 'en-US'),
+        apps: 0,
+        status: 'aprobada',
+        body: row.description,
+        mine: row.owner_user_id === user?.uid,
+      })));
+    })();
+    return () => { cancelled = true; };
+  }, [user?.uid, isEs]);
+
   // Google sign in
   const handleGoogleSignIn = async () => {
     try {
