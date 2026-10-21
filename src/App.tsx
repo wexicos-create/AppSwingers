@@ -5,7 +5,6 @@ import {
   googleProvider, 
   syncUserProfile, 
   recordSwipe, 
-  recordMatch, 
   fetchUserMatches, 
   fetchDiscoverableProfiles,
   testConnection 
@@ -284,6 +283,7 @@ export default function App() {
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      if (currentUser?.displayName) setUserProfile(prev => ({ ...prev, alias: currentUser.displayName || prev.alias }));
       setCurrentIndex(0);
       if (!currentUser) {
         setProfiles([]);
