@@ -91,14 +91,14 @@ export default function App() {
     maxKm: number;
     locationCity: string;
   }>({
-    alias: 'Pareja Fuego',
-    kind: 'Pareja',
-    bio: 'Pareja liberal de San Luis Potosí. Reglas claras, respeto y química mutua.',
-    interests: ['Swinger', 'Fiestas privadas', 'Intercambio suave', 'Antifaz'],
-    seeking: ['Parejas', 'Mujeres'],
-    ages: ['26–39'],
+    alias: 'Mi perfil',
+    kind: 'Individual',
+    bio: '',
+    interests: [],
+    seeking: [],
+    ages: [],
     maxKm: 30,
-    locationCity: 'San Luis Potosí, SLP',
+    locationCity: '',
   });
 
   // Active navigation tab & subscription tier
@@ -1107,7 +1107,7 @@ export default function App() {
         <MatchModal
           isOpen={!!matchModalProfile}
           matchProfile={matchModalProfile}
-          currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+          currentUserPhoto={user?.photoURL || ''}
           currentUserName={userProfile.alias}
           isEs={isEs}
           onClose={() => setMatchModalProfile(null)}
