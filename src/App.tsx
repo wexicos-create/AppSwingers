@@ -1043,8 +1043,8 @@ export default function App() {
           lang={lang}
           region={region}
           initialData={userProfile}
-          onSave={(data) => {
-            setUserProfile({
+          onSave={async (data) => {
+            const nextProfile = {
               alias: data.alias,
               kind: data.kind,
               bio: data.bio,
@@ -1052,10 +1052,29 @@ export default function App() {
               seeking: data.seeking,
               ages: data.ages,
               maxKm: data.maxKm,
-              locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
-            });
+              locationCity: data.locationCity || '',
+            };
+            setUserProfile(nextProfile);
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            if (!user || !supabase) {
+              setPushToast({ title: isEs ? 'Cambios locales' : 'Local changes only', body: isEs ? 'Inicia sesión para guardar el perfil de forma persistente.' : 'Sign in to persist your profile.' });
+              return;
+            }
+            const { error } = await supabase.from('profiles').update({
+              display_name: data.alias,
+              profile_kind: data.kind,
+              bio: data.bio,
+              interests: data.interests,
+              seeking: data.seeking,
+              preferred_age_ranges: data.ages,
+              max_distance_km: data.maxKm,
+              city: data.locationCity || null,
+              country_code: region,
+              updated_at: new Date().toISOString(),
+            }).eq('id', user.uid);
+            setPushToast(error
+              ? { title: isEs ? 'Perfil no guardado' : 'Profile not saved', body: isEs ? 'El servidor rechazó los cambios. Revisa la conexión y los requisitos de verificación.' : 'The server rejected the changes. Check connection and verification requirements.' }
+              : { title: isEs ? 'Perfil guardado' : 'Profile saved', body: isEs ? 'Los cambios quedaron guardados en tu cuenta.' : 'Your changes were saved to your account.' });
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
@@ -1068,7 +1087,7 @@ export default function App() {
           region={region}
           isEs={isEs}
           currentTier={subscriptionTier}
-          onSelectTier={(tier) => setSubscriptionTier(tier)}
+          onSelectTier={(tier) => setPushToast({ title: isEs ? 'Membresía no activada' : 'Membership not activated', body: isEs ? `El plan ${tier.toUpperCase()} requiere pago real confirmado por el servidor.` : `The ${tier.toUpperCase()} plan requires server-confirmed real payment.` })}
         />
 
         {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}
