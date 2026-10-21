@@ -133,7 +133,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
     if (!activeChat || !currentUserId || !supabase) return;
     let cancelled = false;
     const targetId = activeChat.profile.id;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
+    let channel: any = null;
     setMessagesLoading(true);
     (async () => {
       try {
@@ -254,24 +254,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const stopAndSendVoiceRecording = () => {
-    if (!activeChat) return;
     clearInterval(recordingTimerRef.current);
     setIsRecordingVoice(false);
-
-    const seconds = recordingSeconds || 4;
-    const durStr = `00:${seconds < 10 ? '0' : ''}${seconds}`;
-    const chatKey = activeChat.profile.id;
-
-    const newVoiceMsg: ChatMessage = {
-      id: `voice_${Date.now()}`,
-      me: true,
-      ts: Date.now(),
-      voiceUrl: 'voice_audio_record',
-      voiceDuration: durStr,
-      t: `Nota de voz (${durStr})`,
-    };
-
-    showToast('Las notas de voz requieren carga segura de audio; no se guardó ningún audio.');
+    setRecordingSeconds(0);
+    showToast('Las notas de voz aún no están conectadas al almacenamiento seguro; no se envió ningún audio.');
   };
 
   const cancelVoiceRecording = () => {
@@ -282,24 +268,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   // Image attachment handler (Paperclip 📎)
   const handleAttachImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !activeChat) return;
-
-    const chatKey = activeChat.profile.id;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const imgUrl = reader.result as string;
-      const newImgMsg: ChatMessage = {
-        id: `img_${Date.now()}`,
-        me: true,
-        ts: Date.now(),
-        img: imgUrl,
-      };
-
-      showToast('El envío de fotos requiere almacenamiento seguro; no se guardó ningún archivo.');
-    };
-    reader.readAsDataURL(file);
+    if (!e.target.files?.[0]) return;
     e.target.value = '';
+    showToast('El envío de fotos aún no está conectado al almacenamiento seguro; no se guardó ningún archivo.');
   };
 
 
