@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 import { AppRegion, PaymentItem } from '../types';
-import { X, CreditCard, Lock, ShieldCheck, Sparkles, CheckCircle2, DollarSign, Smartphone } from 'lucide-react';
+import { X, CreditCard, Lock, ShieldCheck, CheckCircle2, Clock3, AlertTriangle } from 'lucide-react';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -11,173 +13,103 @@ interface PaymentModalProps {
   onSuccessPayment: (payment: PaymentItem) => void;
 }
 
-export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPayment }: PaymentModalProps) {
-  const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8892');
-  const [cardHolder, setCardHolder] = useState('J. Cervantes');
-  const [expiry, setExpiry] = useState('12/28');
-  const [cvv, setCvv] = useState('389');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [success, setSuccess] = useState(false);
+export function PaymentModal({ isOpen, onClose, item, region, isEs }: PaymentModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen || !item) return null;
 
   const isMx = region === 'MX';
   const currencyCode = isMx ? 'MXN' : 'USD';
-  const currencySymbol = isMx ? '$' : '$';
-
-  // 16% tax (IVA / Tax)
   const baseAmount = item.amount;
-  const taxAmount = Math.round(baseAmount * 0.16 * 100) / 100;
+  const taxAmount = isMx ? Math.round(baseAmount * 0.16 * 100) / 100 : 0;
   const totalAmount = Math.round((baseAmount + taxAmount) * 100) / 100;
 
-  const handlePay = (e: React.FormEvent) => {
+  const createPendingOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
-    setTimeout(() => {
-      setIsProcessing(false);
-      setSuccess(true);
-      const newPayment: PaymentItem = {
-        id: 'pay_' + Date.now(),
-        kind: item.kind,
-        ref: item.ref,
-        label: item.label,
+    setError(null);
+    const user = auth.currentUser;
+    if (!user) {
+      setError(isEs ? 'Inicia sesión antes de crear un pedido.' : 'Sign in before creating an order.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const order = await addDoc(collection(db, 'orders'), {
+        userId: user.uid,
+        itemKind: item.kind,
+        itemRef: item.ref,
+        itemLabel: item.label,
         amount: totalAmount,
-        status: 'confirmado',
-        ts: Date.now(),
-      };
-      onSuccessPayment(newPayment);
-      setTimeout(() => {
-        setSuccess(false);
-        onClose();
-      }, 2000);
-    }, 1500);
+        currency: currencyCode,
+        paymentMethod: 'SPEI',
+        paymentStatus: 'pending',
+        membershipStatus: 'inactive',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        reviewRequired: true,
+      });
+      setOrderId(order.id);
+    } catch {
+      setError(isEs
+        ? 'No se pudo registrar el pedido. No realices una transferencia hasta recibir instrucciones bancarias verificadas.'
+        : 'The order could not be registered. Do not transfer funds until verified bank instructions are provided.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4">
-      <div className="w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-purple-500/30 shadow-2xl flex flex-col gap-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-full bg-white/10 text-white/80 hover:bg-white/20 transition"
-        >
+      <div className="w-full max-w-md p-6 rounded-3xl bg-zinc-950 border border-purple-500/30 shadow-2xl flex flex-col gap-5 relative max-h-[90vh] overflow-y-auto">
+        <button onClick={onClose} aria-label={isEs ? 'Cerrar' : 'Close'} className="absolute top-4 right-4 p-2 rounded-full bg-white/10 text-white/80 hover:bg-white/20 transition">
           <X className="w-5 h-5" />
         </button>
-
-        <div className="text-center">
+        <div className="text-center pr-8">
           <div className="w-12 h-12 rounded-2xl bg-purple-600/20 text-purple-400 flex items-center justify-center mx-auto mb-3 border border-purple-500/30">
             <CreditCard className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-bold text-white">
-            {isEs ? 'Pasarela de Pago Segura' : 'Secure Payment Gateway'}
-          </h2>
-          <p className="text-xs text-purple-300 mt-1">
-            {isEs ? 'Cifrado SSL de 256 bits • Cumplimiento PCI-DSS' : '256-bit SSL Encryption • PCI-DSS Compliant'}
-          </p>
+          <h2 className="text-xl font-bold text-white">{isEs ? 'Pedido y pago por SPEI' : 'Order and SPEI payment'}</h2>
+          <p className="text-xs text-purple-200/80 mt-1">{isEs ? 'La membresía no se activa hasta que administración verifique el ingreso.' : 'Membership stays inactive until an administrator verifies the funds.'}</p>
         </div>
 
-        {success ? (
-          <div className="p-6 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-center flex flex-col items-center gap-3 animate-fade-in">
-            <CheckCircle2 className="w-12 h-12 text-emerald-400 animate-bounce" />
-            <div>
-              <h3 className="font-bold text-lg">{isEs ? '¡Pago Aprobado con Éxito!' : 'Payment Approved Successfully!'}</h3>
-              <p className="text-xs text-emerald-200 mt-1">{isEs ? 'Transacción registrada y abonada al monedero virtual.' : 'Transaction processed and credited.'}</p>
-            </div>
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+          <p className="text-xs text-white/50">{isEs ? 'Servicio' : 'Service'}</p>
+          <p className="font-semibold text-white mt-1">{item.label}</p>
+          <div className="flex items-end justify-between mt-4">
+            <span className="text-xs text-white/60">{isEs ? 'Total con impuestos aplicables' : 'Total including applicable tax'}</span>
+            <strong className="text-2xl text-white">${totalAmount.toLocaleString()} <span className="text-sm">{currencyCode}</span></strong>
           </div>
+        </div>
+
+        {!orderId ? (
+          <>
+            <div className="rounded-xl bg-amber-500/10 border border-amber-400/20 p-3 flex gap-2 text-amber-100/90 text-xs leading-relaxed">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>{isEs
+                ? 'Este paso registra únicamente un pedido pendiente. No confirma una transferencia ni habilita la membresía. Las instrucciones bancarias deben estar verificadas antes de transferir.'
+                : 'This step only creates a pending order. It does not confirm a transfer or activate membership. Bank instructions must be verified before transferring.'}</span>
+            </div>
+            {error && <p role="alert" className="text-xs text-rose-300 bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl">{error}</p>}
+            <form onSubmit={createPendingOrder}>
+              <button disabled={isSubmitting} type="submit" className="w-full py-3.5 rounded-xl bg-gradient-to-r from-purple-600 to-fuchsia-600 text-white font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                {isSubmitting ? <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" /> : <Lock className="w-4 h-4" />}
+                {isSubmitting ? (isEs ? 'Registrando pedido…' : 'Registering order…') : (isEs ? 'Crear pedido pendiente' : 'Create pending order')}
+              </button>
+            </form>
+          </>
         ) : (
-          <form onSubmit={handlePay} className="flex flex-col gap-4">
-            {/* Order Summary Box */}
-            <div className="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-2 text-xs">
-              <div className="flex justify-between font-bold text-white text-sm">
-                <span>{item.label}</span>
-                <span>{currencySymbol}{totalAmount.toLocaleString()} {currencyCode}</span>
-              </div>
-              <div className="flex justify-between text-white/60 pt-1 border-t border-white/10">
-                <span>{isEs ? 'Subtotal' : 'Subtotal'}</span>
-                <span>{currencySymbol}{baseAmount.toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-white/60">
-                <span>{isEs ? 'Impuestos (16% IVA / Tax)' : 'Taxes (16%)'}</span>
-                <span>{currencySymbol}{taxAmount.toLocaleString()}</span>
-              </div>
-            </div>
-
-            {/* Quick Digital Wallet buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => alert(isEs ? 'Apple Pay simulado con éxito.' : 'Apple Pay simulated successfully.')}
-                className="py-2.5 px-4 rounded-xl bg-black border border-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/10 transition"
-              >
-                <Smartphone className="w-4 h-4 text-white" />
-                <span>Apple Pay</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => alert(isEs ? 'Google Pay simulado con éxito.' : 'Google Pay simulated successfully.')}
-                className="py-2.5 px-4 rounded-xl bg-black border border-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/10 transition"
-              >
-                <Smartphone className="w-4 h-4 text-pink-400" />
-                <span>Google Pay</span>
-              </button>
-            </div>
-
-            <div className="relative flex py-1 items-center">
-              <div className="flex-grow border-t border-white/10"></div>
-              <span className="flex-shrink mx-4 text-white/40 text-[10px] uppercase">{isEs ? 'O tarjeta de crédito / débito' : 'Or credit / debit card'}</span>
-              <div className="flex-grow border-t border-white/10"></div>
-            </div>
-
-            <div>
-              <label className="text-xs text-white/60 mb-1 block">{isEs ? 'Número de Tarjeta' : 'Card Number'}</label>
-              <input
-                type="text"
-                required
-                value={cardNumber}
-                onChange={(e) => setCardNumber(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-sm font-mono tracking-wider"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-white/60 mb-1 block">{isEs ? 'Expiración (MM/AA)' : 'Expiry (MM/YY)'}</label>
-                <input
-                  type="text"
-                  required
-                  value={expiry}
-                  onChange={(e) => setExpiry(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-sm font-mono text-center"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-white/60 mb-1 block">CVV</label>
-                <input
-                  type="password"
-                  maxLength={4}
-                  required
-                  value={cvv}
-                  onChange={(e) => setCvv(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-sm font-mono text-center tracking-widest"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isProcessing}
-              className="w-full py-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-600 text-white font-bold text-sm shadow-lg shadow-purple-600/30 hover:brightness-110 transition flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
-            >
-              {isProcessing ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Lock className="w-4 h-4" />
-                  <span>{isEs ? `Pagar ${currencySymbol}${totalAmount.toLocaleString()} ${currencyCode}` : `Pay ${currencySymbol}${totalAmount.toLocaleString()} ${currencyCode}`}</span>
-                </>
-              )}
-            </button>
-          </form>
+          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-center">
+            <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+            <h3 className="font-bold text-emerald-200">{isEs ? 'Pedido registrado' : 'Order registered'}</h3>
+            <p className="text-xs text-white/80 mt-2">{isEs ? 'Estado: pendiente de revisión administrativa. No se ha confirmado ningún pago y tu membresía sigue inactiva.' : 'Status: pending administrator review. No payment has been confirmed and your membership remains inactive.'}</p>
+            <p className="text-[11px] text-white/50 mt-3 break-all">{isEs ? 'Folio del pedido' : 'Order ID'}: {orderId}</p>
+            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-amber-200"><Clock3 className="w-4 h-4" />{isEs ? 'Espera las instrucciones oficiales de pago' : 'Wait for official payment instructions'}</div>
+            <button onClick={onClose} className="w-full mt-4 py-3 rounded-xl bg-white/10 text-white font-semibold">{isEs ? 'Cerrar' : 'Close'}</button>
+          </div>
         )}
+        <p className="text-[10px] text-white/40 text-center flex items-center justify-center gap-1"><ShieldCheck className="w-3.5 h-3.5" />{isEs ? 'Registro pendiente; no equivale a comprobante bancario.' : 'Pending record; not proof of bank payment.'}</p>
       </div>
     </div>
   );
