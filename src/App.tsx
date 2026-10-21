@@ -27,12 +27,6 @@ import {
   SubscriptionTier
 } from './types';
 import { 
-  INITIAL_EVENTS, 
-  INITIAL_PROPOSALS, 
-  INITIAL_CREATORS, 
-  INITIAL_LIVES, 
-  INITIAL_REPORTS 
-} from './data/mockProfiles';
 import { SwipeCard } from './components/SwipeCard';
 import { ActionButtons } from './components/ActionButtons';
 import { MatchModal } from './components/MatchModal';
@@ -384,20 +378,8 @@ export default function App() {
   };
 
   // Event reservation handler
-  const handleReserveEvent = (eventId: string, tierId: string | null) => {
-    const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
-    const newReservation: Reservation = {
-      id: `res_${Date.now()}`,
-      eventId,
-      tier: tierId,
-      folio: `F-${Math.floor(100 + Math.random() * 900)}`,
-      code,
-      ts: Date.now(),
-      status: 'pagado',
-    };
-    setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+  const handleReserveEvent = (_eventId: string, _tierId: string | null) => {
+    setPushToast({ title: isEs ? 'Reservas no activadas' : 'Reservations unavailable', body: isEs ? 'No se generará un folio ni se marcará como pagado hasta conectar reserva, inventario y confirmación real de pago.' : 'No pass or paid status is created until reservations, capacity and verified payment are connected.' });
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -405,41 +387,28 @@ export default function App() {
   };
 
   // Proposal handlers with strict weekly quota enforcement
-  const handleApplyProposal = (proposal: Proposal) => {
-    const weeklyLimit = getWeeklyLimit(subscriptionTier);
-    const usedThisWeek = getWeeklyApplicationsCount();
-
-    if (usedThisWeek >= weeklyLimit) {
-      const planName = subscriptionTier === 'free' 
-        ? (isEs ? 'Plan Gratis (máx. 4 por semana)' : 'Free Plan (max 4/week)')
-        : (isEs ? 'Plan VIP Plus (máx. 15 por semana)' : 'VIP Plus Plan (max 15/week)');
-      
-      const nextPlanOffer = subscriptionTier === 'free'
-        ? (isEs ? 'Siguiente plan (15 postulaciones/semana) o Ultra Plan (Ilimitadas)' : 'Next plan (15/week) or Ultra Plan (Unlimited)')
-        : (isEs ? 'Ultra Plan (Postulaciones Ilimitadas)' : 'Ultra Plan (Unlimited postulations)');
-
-      const alertMsg = isEs
-        ? `Has alcanzado el límite semanal de ${weeklyLimit} postulaciones de tu ${planName}.\n\nPara continuar postulándote a fiestas y propuestas exclusivas, sube a: ${nextPlanOffer}.`
-        : `You reached the weekly limit of ${weeklyLimit} applications of your ${planName}.\n\nUpgrade to ${nextPlanOffer} to post unlimited requests.`;
-      
-      alert(alertMsg);
-      setExtrasModalOpen(true);
+  const handleApplyProposal = async (proposal: Proposal) => {
+    if (!user || !supabase) {
+      setRegistrationModalOpen(true);
+      setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Necesitas una cuenta para enviar una postulación.' : 'Sign in to apply.' });
       return;
     }
-
-    const newRecord = {
-      id: `app_${Date.now()}`,
-      proposalId: proposal.id,
-      ts: Date.now(),
-    };
-    setProposalApplications(prev => [newRecord, ...prev]);
-    setAppliedProposalIds(prev => [...prev, proposal.id]);
-
-    const remaining = weeklyLimit === Infinity ? (isEs ? 'Ilimitadas' : 'Unlimited') : (weeklyLimit - (usedThisWeek + 1));
-    const msg = isEs
-      ? `¡Postulación enviada con éxito a "${proposal.title}"!\nTu identidad se mantiene confidencial.\n\nPostulaciones restantes esta semana: ${remaining}.`
-      : `Application sent successfully to "${proposal.title}"!\nConfidentiality preserved.\n\nRemaining applications this week: ${remaining}.`;
-    alert(msg);
+    if (!/^[0-9a-f-]{36}$/i.test(proposal.id)) {
+      setPushToast({ title: isEs ? 'Propuesta no disponible' : 'Proposal unavailable', body: isEs ? 'Esta propuesta no tiene un identificador de servidor válido.' : 'This proposal has no valid server identifier.' });
+      return;
+    }
+    const { error } = await supabase.from('experience_interests').insert({
+      proposal_id: proposal.id,
+      requester_user_id: user.uid,
+      message: isEs ? 'Me interesa esta propuesta. Solicito más información.' : 'I am interested in this proposal. Please share more information.',
+      status: 'pending',
+    });
+    if (error) {
+      setPushToast({ title: isEs ? 'Postulación no enviada' : 'Application not sent', body: isEs ? 'No se confirmó el registro en el servidor. Inténtalo de nuevo.' : 'The server did not confirm the application. Try again.' });
+      return;
+    }
+    setAppliedProposalIds(prev => prev.includes(proposal.id) ? prev : [...prev, proposal.id]);
+    setPushToast({ title: isEs ? 'Postulación registrada' : 'Application recorded', body: isEs ? 'Tu interés se guardó y queda sujeto a la respuesta del organizador.' : 'Your interest was saved and awaits the organizer.' });
   };
 
   const handleToggleSaveProposal = (proposalId: string) => {
@@ -448,62 +417,62 @@ export default function App() {
     );
   };
 
-  const handleCreateProposal = (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
-    const created: Proposal = {
-      id: `prop_${Date.now()}`,
-      title: newProp.title,
-      cat: newProp.cat,
-      author: newProp.limited ? (isEs ? 'Tú (Identidad limitada)' : 'You (Discreet)') : (userProfile.alias || 'Tú'),
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: newProp.body || (isEs ? 'Propuesta privada con reglas claras.' : 'Private proposal with clear boundaries.'),
-      mine: true,
-    };
-    setProposals(prev => [created, ...prev]);
-    alert(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
+  const handleCreateProposal = async (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
+    if (!user || !supabase) {
+      setRegistrationModalOpen(true);
+      setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Inicia sesión para enviar una propuesta a revisión.' : 'Sign in to submit a proposal for review.' });
+      return;
+    }
+    const { error } = await supabase.from('experience_proposals').insert({
+      owner_user_id: user.uid,
+      title: newProp.title.trim().slice(0, 120),
+      description: newProp.body.trim().slice(0, 4000) || (isEs ? 'Propuesta privada con reglas claras.' : 'Private proposal with clear boundaries.'),
+      category: newProp.cat.slice(0, 60),
+      boundaries: newProp.limited ? (isEs ? 'Identidad limitada hasta aceptación' : 'Identity limited until accepted') : '',
+      location_mode: 'city_only',
+      city: userProfile.locationCity || null,
+      status: 'pending',
+    });
+    if (error) {
+      setPushToast({ title: isEs ? 'No se guardó la propuesta' : 'Proposal not saved', body: isEs ? 'El servidor no confirmó el envío. Revisa tu perfil y vuelve a intentarlo.' : 'The server did not confirm submission. Check your profile and retry.' });
+      return;
+    }
+    setPushToast({ title: isEs ? 'En revisión' : 'Pending review', body: isEs ? 'La propuesta se guardó en el servidor y no será pública hasta su aprobación.' : 'The proposal was saved and will remain private until approved.' });
   };
 
   // Collaboration Proposal (Swinger/Gangbang $350 MXN / $80 USD)
-  const handleSubmitCollaboration = (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
-    const fullProposal: CollaborationProposal = {
-      ...proposal,
-      id: `collab_${Date.now()}`,
-      status: 'en revisión',
-      paid: true,
-      createdAt: Date.now(),
-    };
-    // Also insert as a public proposal
-    const asProp: Proposal = {
-      id: fullProposal.id,
-      title: fullProposal.title,
-      cat: fullProposal.eventType,
-      author: `${fullProposal.organizerName} (${fullProposal.organizerType} Verificada)`,
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: `Ciudad: ${fullProposal.city} | Ratio: ${fullProposal.attendeeRatio} | Reglas: ${fullProposal.consentRules} | Salud: ${fullProposal.healthProtocols}`,
-      mine: true,
-    };
-    setProposals(prev => [asProp, ...prev]);
+  const handleSubmitCollaboration = async (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
+    if (!user || !supabase) {
+      setRegistrationModalOpen(true);
+      setPushToast({ title: isEs ? 'Inicia sesión' : 'Sign in', body: isEs ? 'Inicia sesión para enviar la propuesta de colaboración.' : 'Sign in to submit a collaboration proposal.' });
+      return;
+    }
+    const { error } = await supabase.from('experience_proposals').insert({
+      owner_user_id: user.uid,
+      title: proposal.title.trim().slice(0, 120),
+      description: [proposal.description, 'Organizador: ' + proposal.organizerName, 'Ciudad: ' + proposal.city, 'Ratio: ' + proposal.attendeeRatio, 'Reglas: ' + proposal.consentRules, 'Protocolos: ' + proposal.healthProtocols].filter(Boolean).join('\n').slice(0, 4000),
+      category: proposal.eventType.slice(0, 60),
+      boundaries: proposal.consentRules.slice(0, 1200),
+      location_mode: 'city_only',
+      city: proposal.city.slice(0, 100),
+      status: 'pending',
+    });
+    if (error) setPushToast({ title: isEs ? 'No se guardó' : 'Not saved', body: isEs ? 'No se confirmó la propuesta en el servidor.' : 'The server did not confirm the proposal.' });
+    else setPushToast({ title: isEs ? 'Propuesta enviada a revisión' : 'Proposal submitted for review', body: isEs ? 'No se cobró ningún pago ni se publicó automáticamente.' : 'No payment was taken and nothing was auto-published.' });
   };
 
   // Creator subscriptions
-  const handleSubscribeCreator = (creator: Creator) => {
-    setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    alert(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
+  const handleSubscribeCreator = (_creator: Creator) => {
+    setPushToast({ title: isEs ? 'Suscripciones no activadas' : 'Subscriptions unavailable', body: isEs ? 'No se registrará una suscripción ni se cobrará hasta conectar el sistema de membresías de creadoras.' : 'No subscription or charge is created until creator billing is connected.' });
   };
 
-  const handleBuyLiveAccess = (live: LiveStream) => {
-    setLiveAccessIds(prev => [...prev, live.id]);
-    alert(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
+  const handleBuyLiveAccess = (_live: LiveStream) => {
+    setPushToast({ title: isEs ? 'Acceso virtual no activado' : 'Virtual access unavailable', body: isEs ? 'No se marcará un pase como comprado sin pago y permisos reales.' : 'No access pass is granted without real payment and entitlements.' });
   };
 
   // Club reward redemption
   const handleRedeemClubReward = () => {
-    const folio = `CLB-${Math.floor(1000 + Math.random() * 9000)}`;
-    setRedeemedClubFolio(folio);
-    alert(isEs ? `¡Felicidades! Has canjeado tu recompensa del Club de Experiencias. Folio: ${folio}` : `Club reward redeemed! Folio: ${folio}`);
+    setPushToast({ title: isEs ? 'Recompensas en preparación' : 'Rewards not active', body: isEs ? 'No se genera un folio de canje hasta que el programa de asistencia esté conectado al servidor.' : 'No redemption code is issued until attendance tracking is server-backed.' });
   };
 
   // Data privacy wipe
@@ -911,8 +880,7 @@ export default function App() {
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                setPushToast({ title: isEs ? 'Membresía no activada' : 'Membership not activated', body: isEs ? `El plan ${tier.toUpperCase()} no se activará hasta confirmar un pago real por SPEI y recibir la confirmación del servidor.` : `The ${tier.toUpperCase()} plan will not activate until a real SPEI payment is confirmed by the server.` });
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
