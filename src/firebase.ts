@@ -93,6 +93,7 @@ function mapProfile(row: any, photoUrl: string | null): Profile {
     kind: kinds.includes(row.profile_kind) ? row.profile_kind : 'Individual',
     age: Number.isFinite(Number(row.age)) ? Number(row.age) : undefined,
     km: 0,
+    distance: 'Distancia no disponible',
     location: row.city ?? undefined,
     country: row.country_code === 'US' ? 'US' : 'MX',
     verify: 'verificado',
