@@ -166,10 +166,10 @@ export default function App() {
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
       id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
+      title: isEs ? 'Bienvenido a AppSwinger' : 'Welcome to AppSwinger',
       body: isEs 
-        ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
-        : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
+        ? 'Comunidad para adultos. La disponibilidad depende de perfiles y funciones verificados en tu región.' 
+        : 'Adults-only community. Availability depends on verified profiles and features in your region.',
       ts: Date.now(),
     }
   ]);
@@ -241,35 +241,23 @@ export default function App() {
         (err) => {
           setIsLocating(false);
           console.warn('Geolocation note:', err);
+          setLocationGranted(false);
           if (isManualClick) {
-            setLocationGranted(true);
-            setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
             setPushToast({
-              title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
-              body: isEs 
-                ? `Ubicación configurada en ${cityName}. Cálculo en KM activado.` 
-                : `Location configured in ${cityName}. Distance calculations active.`
+              title: isEs ? 'Ubicación no disponible' : 'Location unavailable',
+              body: isEs ? 'No se concedió acceso GPS. No se calcularán distancias exactas ni se inventará una ciudad.' : 'GPS access was not granted. Exact distances will not be calculated and no city will be invented.'
             });
-          } else {
-            setLocationGranted(false);
           }
         },
         { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
       );
     } else {
       setIsLocating(false);
-      if (isManualClick) {
-        setLocationGranted(true);
-        setLocationBannerDismissed(true);
-        const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-        setUserProfile(prev => ({ ...prev, locationCity: cityName }));
-        setPushToast({
-          title: isEs ? 'Ubicación Activada' : 'Location Activated',
-          body: isEs ? `Ubicación configurada en ${cityName}.` : `Location set in ${cityName}.`
-        });
-      }
+      setLocationGranted(false);
+      if (isManualClick) setPushToast({
+        title: isEs ? 'GPS no disponible' : 'GPS unavailable',
+        body: isEs ? 'Este navegador no ofrece geolocalización. Selecciona tu ciudad manualmente.' : 'This browser does not provide geolocation. Select your city manually.'
+      });
     }
   };
 
@@ -1027,6 +1015,7 @@ export default function App() {
               <div className="flex-1 overflow-hidden">
                 <ChatView
                   matches={matches}
+                  currentUserId={user?.uid}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
                   onOpenReport={async (t) => {
