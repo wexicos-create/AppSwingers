@@ -1,92 +1,145 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper functions for RBAC and ownership
-    function isAuthenticated() {
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
+    // Administrative authority must come from trusted Firebase custom claims.
+    // Never trust a client-editable user document or a magic UID.
     function isAdmin() {
-      return isAuthenticated() && 
-        (request.auth.token.admin == true || 
-         request.auth.uid == "admin" ||
-         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true);
+      return signedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'admin' ||
+        request.auth.token.role == 'superadmin'
+      );
     }
 
-    // Test connection rule
+    function owns(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
     match /test/connection {
       allow read: if true;
+      allow write: if false;
     }
 
-    // Users collection with RBAC and privilege escalation prevention
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false);
-      allow update: if isOwner(userId) && (
-        // Prevent regular users from elevating themselves to admin
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin'])) || 
-        isAdmin()
+      allow read: if owns(userId) || isAdmin();
+      allow create: if owns(userId)
+        && (!('isAdmin' in request.resource.data) || request.resource.data.isAdmin == false)
+        && !('role' in request.resource.data)
+        && !('membershipTier' in request.resource.data)
+        && !('membershipExpiresAt' in request.resource.data)
+        && !('identityVerified' in request.resource.data)
+        && !('paymentStatus' in request.resource.data);
+      allow update: if isAdmin() || (
+        owns(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'isAdmin', 'role', 'membershipTier', 'membershipExpiresAt',
+          'identityVerified', 'identityStatus', 'paymentStatus', 'adminNotes',
+          'moderationStatus', 'verificationStatus', 'verifiedAt'
+        ])
       );
-      allow delete: if isAdmin() || isOwner(userId);
+      allow delete: if isAdmin();
 
-      // Subcollections owned by user
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
+      match /{subcollection}/{documentId} {
+        allow read, write: if owns(userId) || isAdmin();
       }
     }
 
-    // Matches collection: strictly validate participants
+    // Client may create an order only for itself and only in a pending state.
+    // Clients cannot mark an order paid, refund it, or activate membership.
+    match /orders/{orderId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.paymentStatus == 'pending'
+        && request.resource.data.membershipStatus == 'inactive'
+        && request.resource.data.reviewRequired == true
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.paymentMethod == 'SPEI';
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /identityVerifications/{verificationId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow read: if signedIn()
+        && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow read, update, delete: if isAdmin();
+    }
+
+    match /supportTickets/{ticketId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'open';
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
+    match /agencyApplications/{applicationId} {
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isAdmin();
+    }
+
     match /matches/{matchId} {
-      allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || 
+      allow read: if signedIn() && (
+        resource.data.userId == request.auth.uid ||
         resource.data.partnerId == request.auth.uid ||
-        (resource.data.participants != null && request.auth.uid in resource.data.participants)
+        (resource.data.participants is list && request.auth.uid in resource.data.participants) ||
+        isAdmin()
       );
-      allow create: if isAuthenticated() && (
-        request.resource.data.userId == request.auth.uid || 
+      allow create: if signedIn() && (
+        request.resource.data.userId == request.auth.uid ||
         request.resource.data.partnerId == request.auth.uid ||
-        (request.resource.data.participants != null && request.auth.uid in request.resource.data.participants)
+        (request.resource.data.participants is list && request.auth.uid in request.resource.data.participants)
       );
-      allow update: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || 
-        resource.data.partnerId == request.auth.uid ||
-        (resource.data.participants != null && request.auth.uid in resource.data.participants)
+      allow update: if isAdmin() || (
+        signedIn() && (
+          resource.data.userId == request.auth.uid ||
+          resource.data.partnerId == request.auth.uid ||
+          (resource.data.participants is list && request.auth.uid in resource.data.participants)
+        )
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'paymentStatus', 'membershipTier', 'isAdmin', 'role', 'moderationStatus'
+        ])
       );
       allow delete: if isAdmin();
     }
 
-    // Reservations collection: strictly validate user ownership
     match /reservations/{reservationId} {
-      allow read: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || isAdmin()
+      allow read: if signedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAdmin() || (
+        signedIn()
+        && resource.data.userId == request.auth.uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'paymentStatus', 'paid', 'membershipTier', 'isAdmin', 'role', 'moderationStatus'
+        ])
       );
-      allow create: if isAuthenticated() && (
-        request.resource.data.userId == request.auth.uid
-      );
-      allow update, delete: if isAuthenticated() && (
-        resource.data.userId == request.auth.uid || isAdmin()
-      );
+      allow delete: if isAdmin();
     }
 
-    // Proposals collection
     match /proposals/{proposalId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAuthenticated() && (
-        resource.data.authorId == request.auth.uid || isAdmin()
-      );
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAdmin() || (signedIn() && resource.data.authorId == request.auth.uid);
     }
 
-    // Reports collection: any authenticated user can create, only admin can read/manage
-    match /reports/{reportId} {
-      allow create: if isAuthenticated() && request.resource.data.reporterId == request.auth.uid;
-      allow read, update, delete: if isAdmin();
-    }
+    // Deny every collection not explicitly matched above.
   }
 }
