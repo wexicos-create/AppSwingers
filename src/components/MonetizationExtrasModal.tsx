@@ -50,8 +50,13 @@ export function MonetizationExtrasModal({
       }, 3000);
       return;
     }
-    onSelectTier(tier);
-    setSuccessMsg(isEs ? `¡Suscripción ${tier.toUpperCase()} activada con éxito!` : `${tier.toUpperCase()} subscription successfully activated!`);
+    if (tier === 'free') {
+      onSelectTier('free');
+      setSuccessMsg(isEs ? 'Plan Gratis activado.' : 'Free plan activated.');
+    } else {
+      onSelectTier(tier);
+      setSuccessMsg(isEs ? '¡Orden de pago SPEI generada! Completa tu transferencia para activar tu plan.' : 'SPEI payment order generated! Complete your transfer to activate your plan.');
+    }
     setTimeout(() => {
       setSuccessMsg(null);
       onClose();

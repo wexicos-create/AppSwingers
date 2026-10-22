@@ -20,6 +20,7 @@ import {
   ReportItem, 
   Reservation, 
   PaymentItem,
+  SpeiOrder,
   SystemAnnouncement,
   AppRegion,
   CollaborationProposal,
@@ -51,6 +52,17 @@ import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { ToastHost, showToast } from './components/Toast';
+import { SpeiModal } from './components/SpeiModal';
+import {
+  newSpeiOrder,
+  upsertLocalSpeiOrder,
+  loadLocalSpeiOrders,
+  saveLocalSpeiOrders,
+  fetchRemoteSpeiOrdersForUser,
+  appendRemoteTimelineAndStatus,
+  createRemoteSpeiOrder,
+  getPlanPricing,
+} from './spei';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -162,6 +174,14 @@ export default function App() {
   // Moderation & Reports
   const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
+
+  // SPEI payment orders (approval flow with automatic benefit activation)
+  const [speiOrders, setSpeiOrders] = useState<SpeiOrder[]>(() => loadLocalSpeiOrders());
+  const [speiModalOpen, setSpeiModalOpen] = useState(false);
+  const [activeSpeiOrder, setActiveSpeiOrder] = useState<SpeiOrder | null>(null);
+  const [appliedSpeiOrderIds, setAppliedSpeiOrderIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('appswinguer_spei_applied') || '[]'); } catch { return []; }
+  });
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
       id: 'ann_1',
@@ -412,6 +432,107 @@ export default function App() {
     setMatchModalProfile(null);
     setChatDrawerOpen(true);
   };
+
+  // ---------- SPEI: plan payment flow with admin approval ----------
+  const persistSpeiOrder = (order: SpeiOrder) => {
+    setSpeiOrders(upsertLocalSpeiOrder(order));
+  };
+
+  // Selecting a paid plan now generates a SPEI order instead of activating instantly.
+  // The tier activates automatically once the admin approves the transfer.
+  const handleRequestPlanPayment = (tier: SubscriptionTier) => {
+    if (tier === 'free') {
+      setSubscriptionTier('free');
+      return;
+    }
+    const pricing = getPlanPricing(region)[tier];
+    if (!pricing) return;
+    const order = newSpeiOrder({
+      kind: 'suscripcion',
+      itemRef: tier,
+      label: isEs ? pricing.labelEs : pricing.labelEn,
+      amount: pricing.total,
+      userName: userProfile.alias,
+      userEmail: user?.email || 'sin-correo@local',
+      userUid: user?.uid || null,
+    });
+    persistSpeiOrder(order);
+    void createRemoteSpeiOrder(order);
+    setActiveSpeiOrder(order);
+    setSpeiModalOpen(true);
+  };
+
+  const handleSpeiTransferSent = (orderId: string) => {
+    const current = speiOrders.find(o => o.id === orderId) || activeSpeiOrder;
+    if (!current) return;
+    const updated: SpeiOrder = {
+      ...current,
+      timeline: [...current.timeline, { ts: Date.now(), text: 'Transferencia SPEI reportada por el usuario. Esperando validación.' }],
+    };
+    persistSpeiOrder(updated);
+    void appendRemoteTimelineAndStatus(current.id, 'pendiente', 'Transferencia SPEI reportada por el usuario. Esperando validación.');
+    setSpeiModalOpen(false);
+    setActiveSpeiOrder(null);
+    showToast(
+      isEs
+        ? 'Transferencia reportada. El administrador validará tu pago y, al aprobarlo, tu plan se activará automáticamente.'
+        : 'Transfer reported. The admin will validate your payment; your plan will activate automatically on approval.',
+      'info'
+    );
+  };
+
+  // SPEI: sync orders (local + remote) and apply admin decisions automatically.
+  // Approval activates the purchased benefit; rejection keeps the account on the free plan.
+  useEffect(() => {
+    let cancelled = false;
+    const readApplied = (): string[] => {
+      try { return JSON.parse(localStorage.getItem('appswinguer_spei_applied') || '[]'); } catch { return []; }
+    };
+    const applyDecisions = (orders: SpeiOrder[]) => {
+      const applied = readApplied();
+      let nextApplied = [...applied];
+      for (const order of orders) {
+        if (nextApplied.includes(order.id)) continue;
+        const isMine = user ? (order.userUid === user.uid || (user.email !== null && order.userEmail === user.email)) : false;
+        if (!isMine) continue;
+        if (order.status === 'aprobado') {
+          // Extend here with future kinds: 'evento' (publicación), 'propuesta_colaboracion', 'premium'
+          if (order.kind === 'suscripcion') {
+            setSubscriptionTier(order.itemRef as SubscriptionTier);
+          }
+          nextApplied = [...nextApplied, order.id];
+          showToast(isEs ? '¡Pago aprobado! Tu ' + order.label + ' ya está activo.' : 'Payment approved! Your ' + order.label + ' is now active.');
+        } else if (order.status === 'rechazado') {
+          nextApplied = [...nextApplied, order.id];
+          showToast(isEs ? 'Tu pago fue rechazado por el administrador. Tu cuenta permanece en Plan Gratis.' : 'Your payment was rejected by the admin. Your account stays on the Free Plan.', 'error');
+        }
+      }
+      if (nextApplied.length !== applied.length) {
+        try { localStorage.setItem('appswinguer_spei_applied', JSON.stringify(nextApplied)); } catch { /* ignore */ }
+        setAppliedSpeiOrderIds(nextApplied);
+      }
+    };
+    const sync = async () => {
+      if (user) {
+        const remote = await fetchRemoteSpeiOrdersForUser(user.uid);
+        if (cancelled) return;
+        if (remote.length > 0) {
+          const local = loadLocalSpeiOrders();
+          const merged = [...remote];
+          for (const l of local) {
+            if (!merged.some(r => r.id === l.id)) merged.push(l);
+          }
+          saveLocalSpeiOrders(merged);
+          applyDecisions(merged);
+          return;
+        }
+      }
+      applyDecisions(loadLocalSpeiOrders());
+    };
+    void sync();
+    const timer = window.setInterval(() => { void sync(); }, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [user, isEs]);
 
   // Event reservation handler
   const handleReserveEvent = (eventId: string, tierId: string | null) => {
@@ -930,10 +1051,7 @@ export default function App() {
               onExportData={handleExportData}
               onWipeData={handleWipeData}
               currentTier={subscriptionTier}
-              onSelectTier={(tier) => {
-                setSubscriptionTier(tier);
-                showToast(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
-              }}
+              onSelectTier={handleRequestPlanPayment}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
               region={region}
@@ -1083,7 +1201,20 @@ export default function App() {
           region={region}
           isEs={isEs}
           currentTier={subscriptionTier}
-          onSelectTier={(tier) => setSubscriptionTier(tier)}
+          onSelectTier={handleRequestPlanPayment}
+        />
+
+        {/* MODAL 2B: SPEI CHECKOUT (instructions + transfer confirmation) */}
+        <SpeiModal
+          isOpen={speiModalOpen}
+          onClose={() => {
+            setSpeiModalOpen(false);
+            setActiveSpeiOrder(null);
+          }}
+          order={activeSpeiOrder}
+          region={region}
+          isEs={isEs}
+          onTransferSent={handleSpeiTransferSent}
         />
 
         {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}

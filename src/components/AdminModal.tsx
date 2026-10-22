@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, 
   ShieldAlert, 
@@ -18,9 +18,20 @@ import {
   FileCheck, 
   Shield, 
   Zap,
-  CheckCircle2
+  CheckCircle2,
+  Landmark
 } from 'lucide-react';
 import { showToast } from './Toast';
+import {
+  loadLocalSpeiOrders,
+  upsertLocalSpeiOrder,
+  fetchAllRemoteSpeiOrders,
+  appendRemoteTimelineAndStatus,
+  runBotValidation,
+  getSpeiConfig,
+  saveSpeiConfig,
+} from '../spei';
+import { SpeiOrder, SpeiOrderStatus } from '../types';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -48,8 +59,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
 
-  // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
-  const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
+  // Active admin tab: 'monetizacion' | 'push' | 'seguridad' | 'spei'
+  const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'spei'>('monetizacion');
   const [broadcastTitle, setBroadcastTitle] = useState(
     isEs ? '🔥 Nuevo evento VIP Swinger en San Luis Potosí' : '🔥 New VIP Lifestyle event announced'
   );
@@ -57,6 +68,32 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     isEs ? 'Cupo limitado para parejas verificadas. Revisa la sección de eventos.' : 'Limited capacity for verified couples. Check events tab.'
   );
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
+
+  // SPEI payments management (bot validation + manual approve/reject)
+  const initialSpeiCfg = getSpeiConfig();
+  const [speiBank, setSpeiBank] = useState(initialSpeiCfg.bank);
+  const [speiClabe, setSpeiClabe] = useState(initialSpeiCfg.clabe);
+  const [speiBeneficiary, setSpeiBeneficiary] = useState(initialSpeiCfg.beneficiary);
+  const [speiOrders, setSpeiOrders] = useState<SpeiOrder[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !isLoggedIn) return;
+    let cancelled = false;
+    const loadOrders = async () => {
+      const remote = await fetchAllRemoteSpeiOrders();
+      if (cancelled) return;
+      const local = loadLocalSpeiOrders();
+      const merged = [...remote];
+      for (const l of local) {
+        if (!merged.some(r => r.id === l.id)) merged.push(l);
+      }
+      merged.sort((a, b) => b.createdAt - a.createdAt);
+      setSpeiOrders(merged);
+    };
+    void loadOrders();
+    const timer = window.setInterval(() => { void loadOrders(); }, 20000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [isOpen, isLoggedIn]);
 
   if (!isOpen) return null;
 
@@ -163,6 +200,65 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     e.preventDefault();
     setBroadcastSuccess(true);
     setTimeout(() => setBroadcastSuccess(false), 4000);
+  };
+
+  // ---------- SPEI order decisions ----------
+  const persistSpeiDecision = (order: SpeiOrder, status: SpeiOrderStatus, note: string) => {
+    const updated: SpeiOrder = { ...order, status, timeline: [...order.timeline, { ts: Date.now(), text: note }] };
+    setSpeiOrders(prev => prev.map(o => (o.id === updated.id ? updated : o)));
+    upsertLocalSpeiOrder(updated);
+    void appendRemoteTimelineAndStatus(order.id, status, note);
+    showToast(isEs ? 'Orden actualizada. El cambio se reflejará automáticamente en la cuenta del usuario.' : 'Order updated. The change will reflect automatically on the user account.');
+  };
+
+  const handleSpeiBotValidate = (order: SpeiOrder) => {
+    const result = runBotValidation(order);
+    if (result.expired) {
+      persistSpeiDecision(order, 'expirado', 'Validación automática: la orden expiró sin transferencia en la ventana de pago.');
+      return;
+    }
+    if (result.passed) {
+      persistSpeiDecision(order, 'verificado', 'Validación automática completada: referencia, concepto y monto verificados. Esperando decisión del administrador.');
+    } else {
+      showToast(isEs ? 'La orden presenta inconsistencias. Revísala manualmente antes de decidir.' : 'The order has inconsistencies. Review it manually before deciding.', 'error');
+    }
+  };
+
+  const handleSpeiApprove = (order: SpeiOrder) => {
+    persistSpeiDecision(order, 'aprobado', 'Pago aprobado por el administrador. El beneficio contratado se activa automáticamente en la cuenta del usuario.');
+  };
+
+  const handleSpeiReject = (order: SpeiOrder) => {
+    persistSpeiDecision(order, 'rechazado', 'Pago rechazado por el administrador. El usuario permanece en Plan Gratis sin el beneficio solicitado.');
+  };
+
+  const handleSaveSpeiConfig = () => {
+    const digits = speiClabe.replace(/[^0-9]/g, '');
+    if (digits.length !== 18) {
+      showToast(isEs ? 'La CLABE debe tener exactamente 18 dígitos.' : 'CLABE must be exactly 18 digits.', 'error');
+      return;
+    }
+    if (!speiBeneficiary.trim()) {
+      showToast(isEs ? 'El beneficiario es obligatorio.' : 'Beneficiary is required.', 'error');
+      return;
+    }
+    saveSpeiConfig({ bank: speiBank.trim() || 'BBVA', clabe: digits, beneficiary: speiBeneficiary.trim() });
+    showToast(isEs ? 'Cuenta receptora SPEI actualizada para todas las órdenes nuevas.' : 'SPEI receiving account updated for all new orders.');
+  };
+
+  const speiStatusMeta = (status: SpeiOrderStatus): { label: string; className: string } => {
+    switch (status) {
+      case 'verificado':
+        return { label: isEs ? 'VERIFICADO' : 'VERIFIED', className: 'bg-purple-500/20 text-purple-300' };
+      case 'aprobado':
+        return { label: isEs ? 'APROBADO' : 'APPROVED', className: 'bg-emerald-500/20 text-emerald-300' };
+      case 'rechazado':
+        return { label: isEs ? 'RECHAZADO' : 'REJECTED', className: 'bg-rose-500/20 text-rose-300' };
+      case 'expirado':
+        return { label: isEs ? 'EXPIRADO' : 'EXPIRED', className: 'bg-white/10 text-white/50' };
+      default:
+        return { label: isEs ? 'PENDIENTE' : 'PENDING', className: 'bg-amber-500/20 text-amber-300' };
+    }
   };
 
   return (
@@ -300,6 +396,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               >
                 <Shield className="w-3.5 h-3.5" />
                 {isEs ? 'Seguridad' : 'Security'}
+              </button>
+              <button
+                onClick={() => setActiveAdminTab('spei')}
+                className={`flex-1 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition ${
+                  activeAdminTab === 'spei' ? 'bg-purple-600 text-white shadow-md' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                <Landmark className="w-3.5 h-3.5" />
+                {isEs ? 'Pagos SPEI' : 'SPEI'}
               </button>
             </div>
 
@@ -476,6 +581,95 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   <Trash2 className="w-3.5 h-3.5" />
                   {isEs ? 'Purgar Todo en Cookies y Dejar APK Limpia en 0' : 'Purge All Cookies & Reset APK to 0'}
                 </button>
+              </div>
+            )}
+
+            {/* TAB 4: PAGOS SPEI - VALIDACIÓN AUTOMÁTICA Y APROBACIÓN MANUAL */}
+            {activeAdminTab === 'spei' && (
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Cuenta receptora de pagos SPEI' : 'SPEI receiving account'}</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      value={speiBank}
+                      onChange={(e) => setSpeiBank(e.target.value)}
+                      placeholder="Banco"
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-xs"
+                    />
+                    <input
+                      value={speiClabe}
+                      onChange={(e) => setSpeiClabe(e.target.value)}
+                      placeholder="CLABE (18 dígitos)"
+                      maxLength={18}
+                      className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-xs font-mono"
+                    />
+                  </div>
+                  <input
+                    value={speiBeneficiary}
+                    onChange={(e) => setSpeiBeneficiary(e.target.value)}
+                    placeholder={isEs ? 'Beneficiario (nombre completo)' : 'Beneficiary (full name)'}
+                    className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSaveSpeiConfig}
+                    className="w-full py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition"
+                  >
+                    {isEs ? 'Guardar cuenta receptora' : 'Save receiving account'}
+                  </button>
+                </div>
+
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-[10px] text-white/60 leading-relaxed">
+                  {isEs
+                    ? 'El bot valida referencia, concepto y monto de cada orden; la decisión final de aprobar o rechazar es del administrador. Al aprobar, el beneficio contratado se activa automáticamente en la cuenta del usuario; al rechazar, el usuario permanece en Plan Gratis.'
+                    : 'The bot validates each order reference, concept and amount; the final approve/reject decision belongs to the admin. On approval the purchased benefit activates automatically on the user account; on rejection the user stays on the Free Plan.'}
+                </div>
+
+                {speiOrders.length === 0 ? (
+                  <p className="text-xs text-white/50 text-center py-6">
+                    {isEs ? 'Sin órdenes de pago por ahora.' : 'No payment orders yet.'}
+                  </p>
+                ) : (
+                  speiOrders.map((order) => {
+                    const meta = speiStatusMeta(order.status);
+                    const decisionPending = order.status === 'pendiente' || order.status === 'verificado';
+                    return (
+                      <div key={order.id} className="p-3.5 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-black text-white">#{order.reference}</span>
+                          <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold ' + meta.className}>{meta.label}</span>
+                        </div>
+                        <div className="text-[11px] text-white/80">
+                          {order.label} — <span className="font-bold text-emerald-400">${order.amount.toLocaleString()}</span>
+                        </div>
+                        <div className="text-[10px] text-white/50">
+                          {isEs ? 'Usuario' : 'User'}: {order.userName} · {order.userEmail}
+                        </div>
+                        <div className="text-[10px] text-white/40 font-mono truncate">{isEs ? 'Concepto' : 'Concept'}: {order.concept}</div>
+                        <div className="space-y-0.5 border-l border-white/10 pl-2">
+                          {order.timeline.slice(-3).map((t, i) => (
+                            <p key={i} className="text-[10px] text-white/50">
+                              [{new Date(t.ts).toLocaleTimeString()}] {t.text}
+                            </p>
+                          ))}
+                        </div>
+                        {decisionPending && (
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => handleSpeiBotValidate(order)} className="flex-1 py-2 rounded-xl bg-blue-600/80 hover:bg-blue-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Validar (bot)' : 'Validate (bot)'}
+                            </button>
+                            <button type="button" onClick={() => handleSpeiApprove(order)} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Aprobar' : 'Approve'}
+                            </button>
+                            <button type="button" onClick={() => handleSpeiReject(order)} className="flex-1 py-2 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Rechazar' : 'Reject'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
 

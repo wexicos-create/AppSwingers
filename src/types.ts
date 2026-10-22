@@ -182,6 +182,28 @@ export interface PaymentItem {
 
 export type SubscriptionTier = 'free' | 'plus' | 'ultra' | 'silver' | 'gold';
 
+export type SpeiOrderKind = 'suscripcion' | 'evento' | 'propuesta_colaboracion' | 'premium';
+export type SpeiOrderStatus = 'pendiente' | 'verificado' | 'aprobado' | 'rechazado' | 'expirado';
+
+// SPEI transfer order: reference is the unique payment ID used in the bank concept.
+// The administrator approves or rejects; on approval the purchased benefit activates automatically.
+export interface SpeiOrder {
+  id: string;
+  reference: string;
+  concept: string;
+  kind: SpeiOrderKind;
+  itemRef: string;
+  label: string;
+  amount: number;
+  userUid: string | null;
+  userName: string;
+  userEmail: string;
+  status: SpeiOrderStatus;
+  createdAt: number;
+  expiresAt: number;
+  timeline: { ts: number; text: string }[];
+}
+
 export interface StoryPost {
   id: string;
   title: string;
