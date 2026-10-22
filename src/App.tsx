@@ -87,6 +87,8 @@ import {
   fetchRemoteWalletForUser,
   fetchRemoteWithdrawalsForUser,
   saveRemoteOrganizerApplication,
+  newIneRecord,
+  saveRemoteIneRecord,
   saveRemoteWalletTransaction,
   createRemoteWithdrawal,
   mergeById,
@@ -532,6 +534,18 @@ export default function App() {
     saveOrganizerApplication(app);
     setOrganizerApplication(app);
     void saveRemoteOrganizerApplication(app);
+    // Legal archive: keep the organizer's INE on file for potential legal disputes.
+    void saveRemoteIneRecord(newIneRecord({
+      userUid: user?.uid || null,
+      userEmail: user?.email || 'sin-correo@local',
+      alias: userProfile.alias,
+      legalName: app.legalName,
+      source: 'organizador',
+      context: 'Expediente de organizador: ' + app.role,
+      ineFront: app.ineFront,
+      ineBack: app.ineBack,
+      selfie: '',
+    }));
     showToast(
       isEs
         ? 'Expediente enviado. El administrador revisará tus documentos y te notificará la decisión.'
@@ -891,6 +905,20 @@ export default function App() {
       mine: true,
     };
     setProposals(prev => [asProp, ...prev]);
+    // Legal archive: persist the collaborator's INE and selfie for potential legal disputes.
+    void saveRemoteIneRecord(newIneRecord({
+      userUid: user?.uid || null,
+      userEmail: user?.email || 'sin-correo@local',
+      alias: userProfile.alias,
+      legalName: fullProposal.organizerName,
+      source: 'colaboracion',
+      context: fullProposal.title,
+      ineFront: fullProposal.ineFrontUrl,
+      ineBack: fullProposal.ineBackUrl,
+      selfie: fullProposal.selfieUrl,
+    })).then(ok => {
+      if (ok) showToast(isEs ? 'Identificación resguardada en el archivo legal de la plataforma.' : 'Identification stored in the platform legal archive.');
+    });
   };
 
   // Creator subscriptions

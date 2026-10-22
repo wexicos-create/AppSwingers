@@ -269,3 +269,72 @@ export async function updateRemoteWithdrawal(wd: WithdrawalRequest): Promise<boo
     return true;
   } catch { return false; }
 }
+
+// ---------- Legal INE archive ----------
+// Identity documents (INE and selfie) are preserved for legal purposes and identity audits.
+export const compressImage = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 800;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('canvas')); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+      img.onerror = () => reject(new Error('image'));
+      img.src = String(reader.result);
+    };
+    reader.onerror = () => reject(new Error('reader'));
+    reader.readAsDataURL(file);
+  });
+
+export type IneRecordSource = 'organizador' | 'colaboracion';
+
+export interface IneRecord {
+  id: string;
+  userUid: string | null;
+  userEmail: string;
+  alias: string;
+  legalName: string;
+  source: IneRecordSource;
+  context: string; // event title or file reference
+  ineFront: string; // dataURL
+  ineBack: string;  // dataURL
+  selfie: string;   // dataURL (empty when the flow does not require it)
+  createdAt: number;
+}
+
+export function newIneRecord(params: {
+  userUid: string | null;
+  userEmail: string;
+  alias: string;
+  legalName: string;
+  source: IneRecordSource;
+  context: string;
+  ineFront: string;
+  ineBack: string;
+  selfie: string;
+}): IneRecord {
+  return { id: 'ine_' + Date.now(), ...params, createdAt: Date.now() };
+}
+
+export async function saveRemoteIneRecord(record: IneRecord): Promise<boolean> {
+  try {
+    await setDoc(doc(db, 'ine_records', record.id), record);
+    return true;
+  } catch { return false; }
+}
+
+export async function fetchAllRemoteIneRecords(): Promise<IneRecord[]> {
+  try {
+    const snap = await getDocs(collection(db, 'ine_records'));
+    return snap.docs.map(d => d.data() as IneRecord);
+  } catch { return []; }
+}

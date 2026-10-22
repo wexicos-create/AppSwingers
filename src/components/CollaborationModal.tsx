@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AppRegion, CollaborationProposal, ProfileKind } from '../types';
+import { compressImage } from '../organizers';
 import { 
   X, 
   ShieldCheck, 
@@ -86,6 +87,7 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successSubmitted, setSuccessSubmitted] = useState(false);
+  const [idWarning, setIdWarning] = useState(false);
 
   if (!isOpen) return null;
 
@@ -94,18 +96,30 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
     setter: (val: string) => void
   ) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setter(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
+    if (!file) return;
+    // Compress on the client so the legal archive fits inside a Firestore document (~1MB limit).
+    void compressImage(file)
+      .then((dataUrl) => {
+        setter(dataUrl);
+        setIdWarning(false);
+      })
+      .catch(() => {
+        // Fallback: original dataURL if canvas compression is unavailable
+        const reader = new FileReader();
+        reader.onload = () => setter(reader.result as string);
+        reader.readAsDataURL(file);
+      });
   };
 
   const handleCompleteSubmission = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isEligible || !title.trim() || !acceptedTerms) return;
+    // Legal requirement: the INE (front and back) and the selfie with document are mandatory.
+    if (!ineFrontPreview || !ineBackPreview || !selfiePreview) {
+      setCurrentStep(5);
+      setIdWarning(true);
+      return;
+    }
 
     setIsSubmitting(true);
     setTimeout(() => {
@@ -627,6 +641,12 @@ export const CollaborationModal: React.FC<CollaborationModalProps> = ({
                     Confirmo que soy mujer o parte de una pareja responsable, que los datos son verídicos y acepto la auditoría legal de {currencyString} para la revisión y publicación oficial del evento en San Luis Potosí o USA.
                   </span>
                 </label>
+
+                {idWarning && (
+                  <div className="p-2.5 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-[11px] text-rose-200 font-semibold text-center leading-snug">
+                    Por disposiciones legales, la INE (frente y reverso) y el selfie con documento son obligatorios. Tu identificación se resguarda en el archivo legal de la plataforma.
+                  </div>
+                )}
 
                 <div className="flex justify-between items-center pt-2">
                   <button

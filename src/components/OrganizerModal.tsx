@@ -12,31 +12,8 @@ import {
   EventPublishFee,
   namesMatch,
   walletBalance,
+  compressImage,
 } from '../organizers';
-
-// Client-side compression so document photos fit inside a Firestore document (~1MB limit).
-const compressImage = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        const max = 800;
-        const scale = Math.min(1, max / Math.max(img.width, img.height));
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(img.width * scale));
-        canvas.height = Math.max(1, Math.round(img.height * scale));
-        const ctx = canvas.getContext('2d');
-        if (!ctx) { reject(new Error('canvas')); return; }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.7));
-      };
-      img.onerror = () => reject(new Error('image'));
-      img.src = String(reader.result);
-    };
-    reader.onerror = () => reject(new Error('reader'));
-    reader.readAsDataURL(file);
-  });
 
 interface OrganizerModalProps {
   isOpen: boolean;

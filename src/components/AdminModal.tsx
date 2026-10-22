@@ -51,6 +51,9 @@ import {
   organizerBenefitState,
   PLATFORM_COMMISSION_PCT,
   ISR_RETENTION_PCT,
+  fetchAllRemoteIneRecords,
+  IneRecord,
+  IneRecordSource,
 } from '../organizers';
 import { SpeiOrder, SpeiOrderStatus } from '../types';
 
@@ -101,6 +104,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [orgApplications, setOrgApplications] = useState<OrganizerApplication[]>([]);
   const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [adminWallet, setAdminWallet] = useState<WalletTransaction[]>([]);
+  const [adminIneRecords, setAdminIneRecords] = useState<IneRecord[]>([]);
   const [eventFeeMx, setEventFeeMx] = useState(String(getEventPublishFee('MX').base));
   const [eventFeeUs, setEventFeeUs] = useState(String(getEventPublishFee('US').base));
 
@@ -128,10 +132,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     if (!isOpen || !isLoggedIn) return;
     let cancelled = false;
     const loadOrganizerData = async () => {
-      const [remoteApps, remoteWithdrawals, remoteWallet] = await Promise.all([
+      const [remoteApps, remoteWithdrawals, remoteWallet, remoteIne] = await Promise.all([
         fetchAllRemoteOrganizerApplications(),
         fetchAllRemoteWithdrawals(),
         fetchAllRemoteWalletTransactions(),
+        fetchAllRemoteIneRecords(),
       ]);
       if (cancelled) return;
       const localApp = loadOrganizerApplication();
@@ -147,6 +152,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
       wds.sort((a, b) => b.createdAt - a.createdAt);
       setAdminWithdrawals(wds);
       setAdminWallet([...remoteWallet].sort((a, b) => b.ts - a.ts));
+      setAdminIneRecords([...remoteIne].sort((a, b) => b.createdAt - a.createdAt));
     };
     void loadOrganizerData();
     const timer = window.setInterval(() => { void loadOrganizerData(); }, 20000);
@@ -384,6 +390,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         return { label: isEs ? 'ASOCIADO' : 'ASSOCIATE', className: 'text-sky-300' };
       default:
         return { label: isEs ? 'ORGANIZADOR' : 'ORGANIZER', className: 'text-amber-300' };
+    }
+  };
+
+  const ineSourceMeta = (source: IneRecordSource): { label: string; className: string } => {
+    switch (source) {
+      case 'organizador':
+        return { label: 'ORGANIZADOR', className: 'text-purple-300' };
+      default:
+        return { label: 'COLABORACIÓN', className: 'text-sky-300' };
     }
   };
 
@@ -891,6 +906,33 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                       <span className="text-sm font-black text-emerald-300">${adminWallet.filter(t => t.net > 0).reduce((s, t) => s + t.net, 0).toLocaleString()}</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Legal INE archive: identity documents stored for potential legal disputes */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Archivo legal INE (identificaciones)' : 'INE legal archive (ID documents)'}</span>
+                  {adminIneRecords.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin identificaciones resguardadas por ahora.' : 'No identification records stored yet.'}</p>
+                  ) : adminIneRecords.map((rec) => {
+                    const srcInfo = ineSourceMeta(rec.source);
+                    return (
+                      <div key={rec.id} className="p-3 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white truncate">{rec.legalName}</span>
+                          <span className={'px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-bold shrink-0 ' + srcInfo.className}>{srcInfo.label}</span>
+                        </div>
+                        <div className="text-[10px] text-white/60">
+                          {rec.alias} · {rec.userEmail} · {rec.context}
+                        </div>
+                        <div className="text-[10px] text-white/40">{new Date(rec.createdAt).toLocaleDateString()}</div>
+                        <div className="flex gap-1.5">
+                          {rec.ineFront && <img src={rec.ineFront} alt="INE" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                          {rec.ineBack && <img src={rec.ineBack} alt="INE reverso" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                          {rec.selfie && <img src={rec.selfie} alt="Selfie" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Organizer applications with document thumbnails */}
