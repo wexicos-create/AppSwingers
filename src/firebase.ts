@@ -97,7 +97,7 @@ export async function syncUserProfile(user: User, customFields?: Partial<Profile
       uid: user.uid,
       email: user.email || '',
       displayName: user.displayName || 'Anonymous Explorer',
-      photoURL: user.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80',
+      photoURL: user.photoURL || '',
       lastSeen: new Date().toISOString(),
       updatedAt: serverTimestamp(),
       ...customFields

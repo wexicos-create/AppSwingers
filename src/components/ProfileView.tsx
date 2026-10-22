@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { Profile, SubscriptionTier, AppRegion, MatchItem } from '../types';
-import { fetchUserMatches } from '../firebase';
+import { db, fetchUserMatches } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 import { 
   LogOut, 
   LogIn, 
@@ -103,12 +105,70 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     return () => { isMounted = false; };
   }, [user, matches]);
 
-  // 9 sample gallery slots
-  const [gallery, setGallery] = useState([
-    { src: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80', vis: 'publica' },
-    { src: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80', vis: 'match' },
-    { src: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=600&q=80', vis: 'match' },
-  ]);
+  // Only show photos uploaded by this authenticated user; never seed the gallery with stock photos.
+  const [gallery, setGallery] = useState<{ src: string; vis: string }[]>([]);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoMessage, setPhotoMessage] = useState('');
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!user) {
+      setGallery([]);
+      return () => { active = false; };
+    }
+    getDoc(doc(db, 'users', user.uid))
+      .then(snapshot => {
+        if (!active) return;
+        const saved = snapshot.data()?.gallery;
+        setGallery(Array.isArray(saved) ? saved.filter((item: any) => typeof item?.src === 'string').slice(0, 9) : []);
+      })
+      .catch(error => {
+        console.error('No se pudo cargar la galería del usuario:', error);
+        if (active) setPhotoMessage('No se pudo cargar tu galería. Comprueba tu conexión e inténtalo de nuevo.');
+      });
+    return () => { active = false; };
+  }, [user?.uid]);
+
+  const handlePhotoSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!user) {
+      setPhotoMessage('Inicia sesión para subir tus fotos.');
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      setPhotoMessage('Selecciona un archivo de imagen válido.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setPhotoMessage('La imagen debe pesar 8 MB o menos.');
+      return;
+    }
+    if (gallery.length >= 9) {
+      setPhotoMessage('Tu galería ya tiene el máximo de 9 fotos.');
+      return;
+    }
+    setUploadingPhoto(true);
+    setPhotoMessage('');
+    try {
+      const storage = getStorage();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const photoRef = ref(storage, `profilePhotos/${user.uid}/${Date.now()}_${safeName}`);
+      await uploadBytes(photoRef, file, { contentType: file.type });
+      const url = await getDownloadURL(photoRef);
+      const updatedGallery = [...gallery, { src: url, vis: 'match' }].slice(0, 9);
+      await setDoc(doc(db, 'users', user.uid), { gallery: updatedGallery }, { merge: true });
+      setGallery(updatedGallery);
+      setPhotoMessage('Foto subida y guardada en tu cuenta.');
+    } catch (error) {
+      console.error('Error al subir la foto:', error);
+      setPhotoMessage('No se pudo subir la foto. Revisa los permisos de Firebase Storage y vuelve a intentarlo.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   return (
     <div className="w-full max-w-md mx-auto p-4 pb-28 text-white overflow-y-auto">
@@ -133,14 +193,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       <div className="relative p-6 rounded-[36px] bg-gradient-to-b from-[#1b0f34] via-[#100720] to-[#080310] border border-purple-500/30 shadow-2xl mb-5 flex flex-col items-center text-center">
         {/* Avatar with glow */}
         <div className="relative mb-3">
-          <img
-            src={
-              user?.photoURL ||
-              'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'
-            }
-            alt={user?.displayName || 'Explorador'}
-            className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/60 shadow-[0_0_25px_rgba(177,76,255,0.5)]"
-          />
+          {user?.photoURL ? (
+            <img
+              src={user.photoURL}
+              alt={user.displayName || 'Mi perfil'}
+              className="w-24 h-24 rounded-full object-cover border-4 border-purple-500/60 shadow-[0_0_25px_rgba(177,76,255,0.5)]"
+            />
+          ) : (
+            <div aria-label="Sin foto de perfil" className="w-24 h-24 rounded-full border-4 border-purple-500/60 bg-neutral-800 flex items-center justify-center text-purple-200 text-2xl font-black">
+              {user?.displayName?.trim()?.charAt(0)?.toUpperCase() || '?'}
+            </div>
+          )}
           <div className="absolute bottom-0 right-0 p-1.5 rounded-full bg-gradient-to-tr from-pink-500 to-purple-600 text-white shadow-lg">
             <Flame className="w-4 h-4 fill-white" />
           </div>
@@ -328,19 +391,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           ))}
 
           {gallery.length < 9 && (
-            <div
-              onClick={() => {
-                setGallery(prev => [
-                  ...prev,
-                  { src: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=600&q=80', vis: 'match' }
-                ]);
-              }}
-              className="aspect-[3/4] rounded-2xl border-2 border-dashed border-purple-500/30 bg-white/5 flex flex-col items-center justify-center text-purple-300 hover:border-pink-500/50 hover:bg-purple-950/20 transition cursor-pointer"
+            <button
+              type="button"
+              disabled={!user || uploadingPhoto}
+              onClick={() => photoInputRef.current?.click()}
+              className="aspect-[3/4] rounded-2xl border-2 border-dashed border-purple-500/30 bg-white/5 flex flex-col items-center justify-center text-purple-300 hover:border-pink-500/50 hover:bg-purple-950/20 transition disabled:opacity-40"
             >
               <Camera className="w-6 h-6 text-pink-400 mb-1" />
-              <span className="text-[10px] font-bold">+ Foto</span>
-            </div>
+              <span className="text-[10px] font-bold">{uploadingPhoto ? 'Subiendo…' : '+ Foto'}</span>
+            </button>
           )}
+          <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif" onChange={handlePhotoSelected} className="hidden" aria-label="Seleccionar foto de perfil" />
+          <p className="col-span-3 text-[11px] text-purple-200/70">{user ? 'Solo se muestran las fotos que subiste. Máximo 9 imágenes de hasta 8 MB cada una.' : 'Inicia sesión para subir y guardar tus fotos.'}</p>
+          {photoMessage && <p role="status" className="col-span-3 text-xs text-purple-200">{photoMessage}</p>}
         </div>
       </div>
 

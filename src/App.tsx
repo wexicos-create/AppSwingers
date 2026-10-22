@@ -110,16 +110,17 @@ export default function App() {
   const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
 
   // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
+  // Do not display seeded demo identities as real people. Load only profiles created by actual users.
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
   const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
   const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
@@ -152,14 +153,14 @@ export default function App() {
   };
 
   // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
+  const [creators, setCreators] = useState<Creator[]>([]);
   const [userCreator, setUserCreator] = useState<Creator | null>(null);
   const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
   const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
+  const [lives, setLives] = useState<LiveStream[]>([]);
 
   // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
+  const [reports, setReports] = useState<ReportItem[]>([]);
   const [payments, setPayments] = useState<PaymentItem[]>([]);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
@@ -196,15 +197,12 @@ export default function App() {
   // Discovery Filter (KM Radius)
   const [maxDistance, setMaxDistance] = useState(userProfile.maxKm || 30);
 
-  // Auto-detect IP and Region on startup
+  // Detect interface language only. Never request GPS automatically on page load.
   useEffect(() => {
     detectUserRegionAndLang().then(({ region: r, lang: l }) => {
       setRegion(r);
       setLang(l);
     });
-
-    // Request GPS location automatically
-    requestLocationAccess();
   }, []);
 
   // Location request to determine exact KM distances and country
@@ -355,7 +353,7 @@ export default function App() {
     }
 
     // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
+    const isMatch = action === 'superlike' || (action === 'like' && target.likesYou === true);
 
     if (isMatch) {
       const newMatch: MatchItem = {
@@ -573,7 +571,7 @@ export default function App() {
         <div className="absolute top-2/3 -right-20 w-72 h-72 bg-pink-600/15 rounded-full blur-3xl pointer-events-none" />
 
         {/* Top Bar Header */}
-        <header className="px-4 py-3 flex items-center justify-between border-b border-purple-500/20 bg-[#08050c]/90 backdrop-blur-xl sticky top-0 z-40 shrink-0">
+        <header className="px-3 py-2 flex items-center justify-between gap-2 border-b border-purple-500/20 bg-[#08050c]/95 backdrop-blur-xl sticky top-0 z-40 shrink-0 min-h-[54px]">
           
           {/* Brand Wordmark with Country Switcher in place of ULTRA */}
           <div className="flex items-center gap-1.5">
@@ -587,12 +585,12 @@ export default function App() {
             <div className="leading-none flex items-center gap-1">
               <span 
                 onClick={() => setActiveTab('match')}
-                className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
+                className="font-black text-[11px] sm:text-sm tracking-wide uppercase text-white font-mono cursor-pointer whitespace-nowrap"
               >
                 APPSWINGUER
               </span>
               {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
-              <div className="flex items-center gap-1 ml-1">
+              <div className="hidden sm:flex items-center gap-1 ml-1">
                 <button
                   type="button"
                   onClick={(e) => {
@@ -678,47 +676,10 @@ export default function App() {
           </div>
         </header>
 
-        {/* Location GPS Permission Reminder Banner - Ultra-Compact */}
-        {!locationGranted && !locationBannerDismissed && (
-          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-purple-950/90 border border-purple-500/30 flex items-center justify-between gap-2 text-[10px] shadow-sm shrink-0 z-30">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Navigation className="w-3 h-3 text-pink-400 shrink-0" />
-              <span className="text-purple-200 truncate">
-                {isEs 
-                  ? 'Activa GPS para calcular KM exactos' 
-                  : 'Enable GPS for accurate KM calculations'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                disabled={isLocating}
-                onClick={() => requestLocationAccess(true)}
-                className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-[10px] font-bold text-white shrink-0 active:scale-95 transition flex items-center gap-1 shadow-sm disabled:opacity-60"
-              >
-                {isLocating ? (
-                  <>
-                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                    <span>...</span>
-                  </>
-                ) : (
-                  <span>{isEs ? 'Activar' : 'Enable'}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setLocationBannerDismissed(true)}
-                className="p-0.5 rounded text-purple-300 hover:text-white transition"
-                title={isEs ? 'Cerrar' : 'Dismiss'}
-                aria-label={isEs ? 'Cerrar' : 'Dismiss'}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        )}
-
+        {/* GPS is opt-in from profile/settings; never occupy permanent space in the main feed. */}
         {/* System Announcement Banner - Ultra-Compact */}
         {activeAnnouncement && (
-          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-[10px] shadow-sm flex items-center justify-between gap-2 shrink-0 z-30">
+          <div className="mx-3 mt-2 px-3 py-2 rounded-xl bg-purple-950/70 border border-purple-500/30 text-xs flex items-center justify-between gap-2 shrink-0 z-30">
             <div className="flex items-center gap-1.5 min-w-0">
               <Sparkles className="w-3 h-3 text-pink-400 shrink-0 animate-pulse" />
               <div className="truncate">
@@ -799,11 +760,11 @@ export default function App() {
                       <Sparkles className="w-7 h-7 text-pink-400 animate-pulse" />
                     </div>
                     <h3 className="text-base font-bold text-white mb-1">
-                      {isEs ? 'Has visto todos los perfiles en este radio' : 'No more profiles in this radius'}
+                      {isEs ? 'Todavía no hay perfiles reales disponibles' : 'No real profiles are available yet'}
                     </h3>
                     <p className="text-[11px] text-purple-200/70 max-w-xs mb-3 leading-relaxed">
                       {isEs 
-                        ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en tu región.` 
+                        ? `Los perfiles aparecerán cuando haya usuarios reales con su cuenta y fotos. No mostramos perfiles de muestra.` 
                         : `Expand your ${maxDistance} km radius or explore private parties.`}
                     </p>
                     <div className="flex gap-2">

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../firebase';
 import { 
   X, 
   ShieldAlert, 
@@ -30,16 +32,8 @@ interface AdminModalProps {
 export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [pin, setPin] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
-  const [isChangingCreds, setIsChangingCreds] = useState(false);
-  const [newPass, setNewPass] = useState('');
-  const [newPin, setNewPin] = useState('');
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad'>('monetizacion');
@@ -53,40 +47,26 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
-      return;
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const token = await credential.user.getIdTokenResult(true);
+      const claims = token.claims as Record<string, unknown>;
+      if (!(claims.admin === true || claims.role === 'admin' || claims.role === 'superadmin')) {
+        await auth.signOut();
+        setError(isEs ? 'Esta cuenta no tiene permisos administrativos asignados por el servidor.' : 'This account has no server-assigned administrator privileges.');
+        return;
+      }
+      setIsLoggedIn(true);
+    } catch {
+      setError(isEs ? 'Autenticación fallida. Verifica tus credenciales y los permisos administrativos.' : 'Authentication failed. Check credentials and administrator privileges.');
     }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
-      return;
-    }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
-    }
-    setIsLoggedIn(true);
-  };
-
-  const handleUpdateCreds = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPass) {
-      localStorage.setItem('admin_pass', newPass);
-      setStoredPass(newPass);
-    }
-    if (newPin) {
-      localStorage.setItem('admin_pin', newPin);
-      setStoredPin(newPin);
-    }
-    setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
   };
 
   const handleClearCookiesAndStorage = () => {
-    if (window.confirm(isEs ? '¿Purgar cookies, caché y restablecer datos locales del APK?' : 'Purge all cookies, cache, and local APK storage?')) {
+    if (window.confirm(isEs ? '¿Limpiar datos locales de este navegador? Esto no elimina perfiles ni registros del servidor.' : 'Clear this browser’s local data? This does not delete server profiles or records.')) {
       try {
         localStorage.clear();
         sessionStorage.clear();
@@ -94,7 +74,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         document.cookie.split(";").forEach((c) => {
           document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
         });
-        alert(isEs ? 'Cookies y almacenamiento local purgados al 100%. El APK está limpio en 0.' : 'Cookies & local storage purged 100%. APK is pristine at 0.');
+        alert(isEs ? 'Datos locales de este navegador eliminados. Los perfiles y registros del servidor no se modificaron.' : 'This browser’s local data was cleared. Server profiles and records were not changed.');
         window.location.reload();
       } catch (err) {
         console.warn('Wipe cookies note:', err);
@@ -126,7 +106,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {isEs ? 'Panel Admin & Business Analytics' : 'Admin & Business Analytics'}
           </h2>
           <p className="text-[11px] text-purple-200/70 mt-0.5">
-            {isEs ? 'Acceso seguro para jocervantes99@gmail.com' : 'Secure access for jocervantes99@gmail.com'}
+            {isEs ? 'Acceso restringido por autenticación y rol de servidor' : 'Restricted by authentication and server role'}
           </p>
         </div>
 
@@ -161,26 +141,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
+                placeholder={isEs ? "Contraseña de Firebase" : "Firebase password"}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
-            <div>
-              <label className="text-xs text-white/70 mb-1 flex items-center gap-1.5 font-medium">
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-                {isEs ? 'NIP de Segunda Verificación (6 dígitos)' : 'Secondary PIN (6 digits)'}
-              </label>
-              <input
-                type="password"
-                maxLength={6}
-                required
-                value={pin}
-                onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
-              />
-            </div>
-            <button
+<button
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition mt-1 active:scale-95"
             >
@@ -244,36 +209,36 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 <div className="grid grid-cols-2 gap-2.5">
                   <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
                     <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos México (MXN)' : 'Mexico Revenue'}</span>
-                    <span className="text-xl font-black text-emerald-400 mt-1 block">$148,450 MXN</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% IVA ($20,475)</span>
+                    <span className="text-xl font-black text-emerald-400 mt-1 block">—</span>
+                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Sin datos contables conectados</span>
                   </div>
                   <div className="p-3.5 rounded-2xl bg-black/50 border border-purple-500/30">
                     <span className="text-[10px] text-white/60 uppercase font-bold block">{isEs ? 'Ingresos USA (USD)' : 'USA Revenue'}</span>
-                    <span className="text-xl font-black text-pink-400 mt-1 block">$12,380 USD</span>
-                    <span className="text-[10px] text-purple-200/70 block mt-0.5">Incluye 16% Tax Rate</span>
+                    <span className="text-xl font-black text-pink-400 mt-1 block">—</span>
+                    <span className="text-[10px] text-purple-200/70 block mt-0.5">No verified transactions</span>
                   </div>
                 </div>
 
                 <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2 text-xs">
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Plan Silver ($408 MXN / $100 USD 15d):' : 'Silver Plan:'}</span>
-                    <span className="font-bold text-white">312 suscriptores</span>
+                    <span className="font-bold text-white">Sin datos verificados</span>
                   </div>
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Plan Gold ($800 MXN / $180 USD mes):' : 'Gold Plan:'}</span>
-                    <span className="font-bold text-amber-300">184 miembros VIP</span>
+                    <span className="font-bold text-amber-300">Sin datos verificados</span>
                   </div>
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Sponsored Profiles ($1,500 MXN / $800 USD):' : 'Sponsored Profiles:'}</span>
-                    <span className="font-bold text-pink-400">18 agencias / clubes</span>
+                    <span className="font-bold text-pink-400">Sin datos verificados</span>
                   </div>
                   <div className="flex items-center justify-between pb-1 border-b border-white/5">
                     <span className="text-white/80">{isEs ? 'Propuestas Colaboración ($350 MXN / $80 USD):' : 'Collab Proposals:'}</span>
-                    <span className="font-bold text-emerald-300">42 revisadas</span>
+                    <span className="font-bold text-emerald-300">Sin datos verificados</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-white/80">{isEs ? 'Comisión Creadoras (15% neta + 10% cobro):' : 'Creator Net Commission:'}</span>
-                    <span className="font-bold text-purple-300">15% retenido activo</span>
+                    <span className="font-bold text-purple-300">No conectado</span>
                   </div>
                 </div>
               </div>
@@ -284,11 +249,11 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2 text-center">
                   <div className="p-3 rounded-2xl bg-black/50 border border-white/10">
-                    <span className="text-lg font-bold text-white">1,842</span>
+                    <span className="text-lg font-bold text-white">—</span>
                     <span className="text-[10px] text-white/50 block">{isEs ? 'Dispositivos Registrados' : 'Registered Devices'}</span>
                   </div>
                   <div className="p-3 rounded-2xl bg-black/50 border border-white/10">
-                    <span className="text-lg font-bold text-emerald-400">99.4%</span>
+                    <span className="text-lg font-bold text-emerald-400">—</span>
                     <span className="text-[10px] text-white/50 block">{isEs ? 'Tasa de Entrega Push' : 'Delivery Rate'}</span>
                   </div>
                 </div>
@@ -346,62 +311,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Validación biométrica facial e INE contra duplicados</span>
+                    <span>Verificación de identidad: requiere integración y revisión manual real</span>
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-emerald-300">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <span>Cero tolerancia a extorsión o estafas financieras</span>
+                    <span>Política de prevención: requiere procesos y moderación activos</span>
                   </div>
                 </div>
 
-                {isChangingCreds ? (
-                  <form onSubmit={handleUpdateCreds} className="flex flex-col gap-2.5 p-3.5 rounded-2xl bg-white/5 border border-white/10">
-                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">{isEs ? 'Cambiar Credenciales Admin' : 'Change Admin Credentials'}</h4>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nueva Contraseña' : 'New Password'}</label>
-                      <input
-                        type="password"
-                        value={newPass}
-                        onChange={(e) => setNewPass(e.target.value)}
-                        placeholder="Nueva contraseña"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-white/60 block mb-1">{isEs ? 'Nuevo NIP (6 dígitos)' : 'New PIN (6 digits)'}</label>
-                      <input
-                        type="password"
-                        maxLength={6}
-                        value={newPin}
-                        onChange={(e) => setNewPin(e.target.value)}
-                        placeholder="Nuevo NIP"
-                        className="w-full px-3 py-1.5 rounded-xl bg-black/50 border border-white/15 text-white text-xs tracking-widest text-center"
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setIsChangingCreds(false)}
-                        className="flex-1 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Cancelar' : 'Cancel'}
-                      </button>
-                      <button
-                        type="submit"
-                        className="flex-1 py-2 rounded-xl bg-rose-600 text-white text-xs font-semibold"
-                      >
-                        {isEs ? 'Guardar Cambios' : 'Save Changes'}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <button
-                    onClick={() => setIsChangingCreds(true)}
-                    className="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-semibold hover:bg-white/20 transition"
-                  >
-                    {isEs ? 'Modificar Contraseña o NIP de Verificación' : 'Modify Password or Verification PIN'}
-                  </button>
-                )}
+                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-400/20 text-amber-100/80 text-xs leading-relaxed">{isEs ? 'Las credenciales se gestionan mediante Firebase Authentication. Los permisos administrativos deben asignarse desde un servidor confiable.' : 'Credentials are managed through Firebase Authentication. Administrator privileges must be assigned from a trusted server.'}</div>
 
                 {/* Purge cookies and local data */}
                 <button
@@ -409,7 +327,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                   className="w-full py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  {isEs ? 'Purgar Todo en Cookies y Dejar APK Limpia en 0' : 'Purge All Cookies & Reset APK to 0'}
+                  {isEs ? 'Limpiar datos locales de este navegador' : 'Clear this browser’s local data'}
                 </button>
               </div>
             )}
