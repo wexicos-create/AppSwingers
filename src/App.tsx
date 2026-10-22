@@ -445,7 +445,7 @@ export default function App() {
     }
   };
 
-  const handleOnboardingComplete = (data: { alias: string; kind: ProfileKind; seeking: string[]; ineFront: string; ineBack: string }) => {
+  const handleOnboardingComplete = (data: { alias: string; kind: ProfileKind; seeking: string[]; ineFront: string; ineBack: string; selfie: string; docType: 'ine' | 'pasaporte'; age: number; bio: string; ageMin: number; ageMax: number; photo: string }) => {
     const uid = user?.uid || null;
     // Sensible "busco" defaults per account kind; editable later in Fantasías & Filtros.
     const defaultSeeking: string[] = data.kind === 'Caballero'
@@ -457,8 +457,10 @@ export default function App() {
       ...prev,
       alias: data.alias,
       kind: data.kind,
+      bio: data.bio,
       interests: data.seeking,
       seeking: defaultSeeking,
+      ages: [`${data.ageMin}–${data.ageMax}`],
     }));
     setOnboardingMode(null);
     if (uid) {
@@ -466,23 +468,33 @@ export default function App() {
         alias: data.alias,
         kind: data.kind,
         seeking: data.seeking,
+        age: data.age,
+        bio: data.bio,
+        ageMin: data.ageMin,
+        ageMax: data.ageMax,
+        photo: data.photo,
+        docType: data.docType,
         onboardedAt: Date.now(),
       });
-      // Legal archive: the registration INE is preserved for age verification and potential legal disputes.
+      // Legal archive: the registration INE and liveness selfie are preserved for
+      // age verification and potential legal disputes.
       void saveRemoteIneRecord(newIneRecord({
         userUid: uid,
         userEmail: user?.email || 'sin-correo@local',
         alias: data.alias,
         legalName: data.alias,
         source: 'registro',
-        context: 'Verificación de identidad al registro',
+        context: data.docType === 'ine'
+          ? 'Verificación de identidad al registro (INE)'
+          : 'Verificación de identidad al registro (Pasaporte/ID)',
         ineFront: data.ineFront,
         ineBack: data.ineBack,
-        selfie: '',
+        selfie: data.selfie,
       })).then(ok => {
         if (ok) showToast(isEs ? 'Identificación resguardada en el archivo legal de la plataforma.' : 'Identification stored in the platform legal archive.');
       });
     }
+    setActiveTab('perfil');
     showToast(isEs ? `¡Bienvenido a AppSwinguer, ${data.alias}!` : `Welcome to AppSwinguer, ${data.alias}!`);
   };
 

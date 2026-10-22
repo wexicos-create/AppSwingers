@@ -10,6 +10,12 @@ export interface StoredOnboardingProfile {
   alias: string;
   kind: ProfileKind;
   seeking: string[]; // interest tags selected during onboarding
+  age: number; // age declared by the user (cross-checked by the admin against the INE)
+  bio: string; // guided self-presentation text
+  ageMin: number; // age range sought (18..65)
+  ageMax: number;
+  photo: string; // compressed profile photo dataURL ('' when none)
+  docType: 'ine' | 'pasaporte'; // document used for identity verification
   onboardedAt: number;
 }
 
