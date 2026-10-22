@@ -35,9 +35,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stored admin credentials in localStorage or defaults
-  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || 'Cervantes99');
-  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '300799');
+  // Security: no default credentials exist in source code. The owner configures them at first use.
+  const [storedEmail, setStoredEmail] = useState(localStorage.getItem('admin_email') || '');
+  const [storedPass, setStoredPass] = useState(localStorage.getItem('admin_pass') || '');
+  const [storedPin, setStoredPin] = useState(localStorage.getItem('admin_pin') || '');
+  const isAdminConfigured = Boolean(storedEmail && storedPass && storedPin);
+  const [failedAttempts, setFailedAttempts] = useState(0);
+  const [lockoutUntil, setLockoutUntil] = useState(() => {
+    try { return Number(sessionStorage.getItem('admin_lockout_until') || 0); } catch { return 0; }
+  });
   const [isChangingCreds, setIsChangingCreds] = useState(false);
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
@@ -54,26 +60,76 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   if (!isOpen) return null;
 
+  const registerFailedAttempt = () => {
+    const next = failedAttempts + 1;
+    setFailedAttempts(next);
+    if (next >= 5) {
+      const until = Date.now() + 60000;
+      setLockoutUntil(until);
+      try { sessionStorage.setItem('admin_lockout_until', String(until)); } catch { /* ignore */ }
+      setFailedAttempts(0);
+    }
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (email.trim().toLowerCase() !== 'jocervantes99@gmail.com') {
-      setError(isEs ? 'Correo de administrador no autorizado.' : 'Unauthorized admin email.');
+    const now = Date.now();
+    if (lockoutUntil > now) {
+      const secs = Math.ceil((lockoutUntil - now) / 1000);
+      setError(isEs ? `Demasiados intentos fallidos. Intenta de nuevo en ${secs} segundos.` : `Too many failed attempts. Try again in ${secs} seconds.`);
       return;
     }
-    if (password !== storedPass) {
-      setError(isEs ? 'Contraseña incorrecta (Por defecto: Cervantes99).' : 'Incorrect password (Default: Cervantes99).');
+    if (email.trim().toLowerCase() !== storedEmail || !password || password !== storedPass || !pin || pin !== storedPin) {
+      registerFailedAttempt();
+      setError(isEs ? 'Credenciales de administrador no válidas.' : 'Invalid admin credentials.');
       return;
     }
-    if (pin !== storedPin) {
-      setError(isEs ? 'PIN de segunda verificación incorrecto (Por defecto: 300799).' : 'Incorrect secondary verification PIN (Default: 300799).');
-      return;
-    }
+    setFailedAttempts(0);
     setIsLoggedIn(true);
+  };
+
+  const handleFirstSetup = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    const em = email.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(em)) {
+      setError(isEs ? 'Correo de administrador no válido.' : 'Invalid admin email.');
+      return;
+    }
+    if (password.length < 8) {
+      setError(isEs ? 'La contraseña debe tener al menos 8 caracteres.' : 'Password must be at least 8 characters long.');
+      return;
+    }
+    if (!/^\d{6}$/.test(pin)) {
+      setError(isEs ? 'El NIP debe ser exactamente 6 dígitos.' : 'PIN must be exactly 6 digits.');
+      return;
+    }
+    try {
+      localStorage.setItem('admin_email', em);
+      localStorage.setItem('admin_pass', password);
+      localStorage.setItem('admin_pin', pin);
+    } catch {
+      setError(isEs ? 'No se pudieron guardar las credenciales en este dispositivo.' : 'Could not store credentials on this device.');
+      return;
+    }
+    setStoredEmail(em);
+    setStoredPass(password);
+    setStoredPin(pin);
+    setIsLoggedIn(true);
+    showToast(isEs ? 'Panel administrativo configurado con éxito. Guarda tus credenciales en un lugar seguro.' : 'Admin panel configured successfully. Store your credentials safely.');
   };
 
   const handleUpdateCreds = (e: React.FormEvent) => {
     e.preventDefault();
+    if (newPass && newPass.length < 8) {
+      showToast(isEs ? 'La nueva contraseña debe tener al menos 8 caracteres.' : 'New password must be at least 8 characters long.', 'error');
+      return;
+    }
+    if (newPin && !/^\d{6}$/.test(newPin)) {
+      showToast(isEs ? 'El nuevo NIP debe ser exactamente 6 dígitos.' : 'New PIN must be exactly 6 digits.', 'error');
+      return;
+    }
     if (newPass) {
       localStorage.setItem('admin_pass', newPass);
       setStoredPass(newPass);
@@ -127,12 +183,20 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
             {isEs ? 'Panel Admin & Business Analytics' : 'Admin & Business Analytics'}
           </h2>
           <p className="text-[11px] text-purple-200/70 mt-0.5">
-            {isEs ? 'Acceso seguro para jocervantes99@gmail.com' : 'Secure access for jocervantes99@gmail.com'}
+            {isEs ? 'Acceso exclusivo del propietario' : 'Owner-only access'}
+          </p>
+          <p className="text-[10px] text-amber-300/80 mt-1">
+            {isEs ? 'Métricas de demostración: backend comercial en desarrollo' : 'Demo metrics: commercial backend in development'}
           </p>
         </div>
 
         {!isLoggedIn ? (
-          <form onSubmit={handleLogin} className="flex flex-col gap-3.5">
+          <form onSubmit={isAdminConfigured ? handleLogin : handleFirstSetup} className="flex flex-col gap-3.5">
+            {!isAdminConfigured && (
+              <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-semibold text-center">
+                {isEs ? 'Primer uso: define tu correo, contraseña (mín. 8 caracteres) y NIP de 6 dígitos. Se guardan solo en este dispositivo.' : 'First use: set your email, password (min. 8 chars) and 6-digit PIN. Stored on this device only.'}
+              </div>
+            )}
             {error && (
               <div className="p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-xs font-semibold text-center">
                 {error}
@@ -148,7 +212,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="jocervantes99@gmail.com"
+                placeholder="tucorreo@dominio.com"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
@@ -162,7 +226,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Cervantes99"
+                placeholder="••••••••"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500"
               />
             </div>
@@ -177,7 +241,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 required
                 value={pin}
                 onChange={(e) => setPin(e.target.value)}
-                placeholder="300799"
+                placeholder="••••••"
                 className="w-full px-3.5 py-2.5 rounded-xl bg-black/60 border border-white/15 text-white text-xs focus:outline-none focus:border-rose-500 tracking-widest text-center"
               />
             </div>
@@ -185,7 +249,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               type="submit"
               className="w-full py-3 rounded-xl bg-gradient-to-r from-rose-600 via-pink-600 to-purple-600 text-white font-bold text-xs shadow-lg shadow-rose-600/30 hover:opacity-95 transition mt-1 active:scale-95"
             >
-              {isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System'}
+              {isAdminConfigured ? (isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System') : (isEs ? 'Configurar y Entrar' : 'Configure & Enter')}
             </button>
           </form>
         ) : (
@@ -197,7 +261,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0" />
                 <div>
                   <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión Autorizada (Root Admin)' : 'Authorized Session'}</h4>
-                  <p className="text-[10px] text-emerald-200">jocervantes99@gmail.com</p>
+                  <p className="text-[10px] text-emerald-200">{storedEmail}</p>
                 </div>
               </div>
               <button
@@ -322,7 +386,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
                   {broadcastSuccess && (
                     <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold text-center">
-                      {isEs ? '¡Alerta enviada exitosamente a los 1,842 dispositivos en México y USA!' : 'Alert broadcasted to 1,842 devices!'}
+                      {isEs ? 'Alerta simulada registrada. La difusión real requiere el backend de notificaciones.' : 'Simulated broadcast registered. Real delivery requires the notifications backend.'}
                     </div>
                   )}
 

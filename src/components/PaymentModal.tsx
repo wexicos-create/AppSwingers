@@ -13,10 +13,10 @@ interface PaymentModalProps {
 }
 
 export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPayment }: PaymentModalProps) {
-  const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8892');
-  const [cardHolder, setCardHolder] = useState('J. Cervantes');
-  const [expiry, setExpiry] = useState('12/28');
-  const [cvv, setCvv] = useState('389');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardHolder, setCardHolder] = useState('');
+  const [expiry, setExpiry] = useState('');
+  const [cvv, setCvv] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
 

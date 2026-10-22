@@ -1,6 +1,6 @@
 {
-  "name": "Aura Match - Modern Dating & Connections",
-  "description": "Discover connections with sleek card-based swiping powered by Framer Motion, Google authentication, and Firebase Firestore.",
+  "name": "AppSwinguer Ultra Plus",
+  "description": "Conexiones exclusivas para adultos: perfiles verificados, eventos privados y comunidad liberal en México y USA.",
   "requestFramePermissions": [
     "geolocation",
     "camera",
