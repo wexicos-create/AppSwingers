@@ -97,5 +97,26 @@ service cloud.firestore {
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
+
+    // Organizer registration files: users create and read their own; only the admin approves or rejects.
+    match /organizer_applications/{applicationId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Virtual wallet transactions: users read only their own; buyers create earnings for organizers.
+    match /wallet_transactions/{transactionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // Withdrawal requests: users create and read their own; the admin processes them within the 24h SLA.
+    match /withdrawal_requests/{withdrawalId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
   }
 }

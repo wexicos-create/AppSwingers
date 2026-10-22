@@ -19,7 +19,8 @@ import {
   Shield, 
   Zap,
   CheckCircle2,
-  Landmark
+  Landmark,
+  Briefcase
 } from 'lucide-react';
 import { showToast } from './Toast';
 import {
@@ -31,6 +32,26 @@ import {
   getSpeiConfig,
   saveSpeiConfig,
 } from '../spei';
+import {
+  OrganizerApplication,
+  OrganizerRole,
+  WalletTransaction,
+  WithdrawalRequest,
+  fetchAllRemoteOrganizerApplications,
+  fetchAllRemoteWithdrawals,
+  fetchAllRemoteWalletTransactions,
+  saveRemoteOrganizerApplication,
+  updateRemoteWithdrawal,
+  loadOrganizerApplication,
+  saveOrganizerApplication,
+  loadWithdrawals,
+  saveWithdrawals,
+  getEventPublishFee,
+  saveEventPublishFee,
+  organizerBenefitState,
+  PLATFORM_COMMISSION_PCT,
+  ISR_RETENTION_PCT,
+} from '../organizers';
 import { SpeiOrder, SpeiOrderStatus } from '../types';
 
 interface AdminModalProps {
@@ -59,8 +80,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
 
-  // Active admin tab: 'monetizacion' | 'push' | 'seguridad' | 'spei'
-  const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'spei'>('monetizacion');
+  // Active admin tab: 'monetizacion' | 'push' | 'seguridad' | 'spei' | 'organizadores'
+  const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'spei' | 'organizadores'>('monetizacion');
   const [broadcastTitle, setBroadcastTitle] = useState(
     isEs ? '🔥 Nuevo evento VIP Swinger en San Luis Potosí' : '🔥 New VIP Lifestyle event announced'
   );
@@ -75,6 +96,13 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [speiClabe, setSpeiClabe] = useState(initialSpeiCfg.clabe);
   const [speiBeneficiary, setSpeiBeneficiary] = useState(initialSpeiCfg.beneficiary);
   const [speiOrders, setSpeiOrders] = useState<SpeiOrder[]>([]);
+
+  // Organizers & wallet management (agency/associate/organizer files + withdrawal queue)
+  const [orgApplications, setOrgApplications] = useState<OrganizerApplication[]>([]);
+  const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [adminWallet, setAdminWallet] = useState<WalletTransaction[]>([]);
+  const [eventFeeMx, setEventFeeMx] = useState(String(getEventPublishFee('MX').base));
+  const [eventFeeUs, setEventFeeUs] = useState(String(getEventPublishFee('US').base));
 
   useEffect(() => {
     if (!isOpen || !isLoggedIn) return;
@@ -92,6 +120,36 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     };
     void loadOrders();
     const timer = window.setInterval(() => { void loadOrders(); }, 20000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [isOpen, isLoggedIn]);
+
+  // Organizer files, wallet summary and withdrawal queue (cross-device via Firestore)
+  useEffect(() => {
+    if (!isOpen || !isLoggedIn) return;
+    let cancelled = false;
+    const loadOrganizerData = async () => {
+      const [remoteApps, remoteWithdrawals, remoteWallet] = await Promise.all([
+        fetchAllRemoteOrganizerApplications(),
+        fetchAllRemoteWithdrawals(),
+        fetchAllRemoteWalletTransactions(),
+      ]);
+      if (cancelled) return;
+      const localApp = loadOrganizerApplication();
+      const apps = [...remoteApps];
+      if (localApp && !apps.some(a => a.id === localApp.id)) apps.unshift(localApp);
+      apps.sort((a, b) => b.createdAt - a.createdAt);
+      setOrgApplications(apps);
+      const localWds = loadWithdrawals();
+      const wds = [...remoteWithdrawals];
+      for (const l of localWds) {
+        if (!wds.some(w => w.id === l.id)) wds.push(l);
+      }
+      wds.sort((a, b) => b.createdAt - a.createdAt);
+      setAdminWithdrawals(wds);
+      setAdminWallet([...remoteWallet].sort((a, b) => b.ts - a.ts));
+    };
+    void loadOrganizerData();
+    const timer = window.setInterval(() => { void loadOrganizerData(); }, 20000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [isOpen, isLoggedIn]);
 
@@ -244,6 +302,111 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     }
     saveSpeiConfig({ bank: speiBank.trim() || 'BBVA', clabe: digits, beneficiary: speiBeneficiary.trim() });
     showToast(isEs ? 'Cuenta receptora SPEI actualizada para todas las órdenes nuevas.' : 'SPEI receiving account updated for all new orders.');
+  };
+
+  // ---------- Organizer files, publishing fees and withdrawal queue ----------
+  const persistApplicationDecision = (app: OrganizerApplication, status: 'aprobada' | 'rechazada', note: string) => {
+    const updated: OrganizerApplication = { ...app, status, approvedAt: status === 'aprobada' ? Date.now() : null };
+    setOrgApplications(prev => prev.map(a => a.id === app.id ? updated : a));
+    void saveRemoteOrganizerApplication(updated);
+    // Keep the local copy in sync when the organizer uses this same device.
+    const localApp = loadOrganizerApplication();
+    if (localApp && localApp.id === app.id) saveOrganizerApplication(updated);
+    showToast(note);
+  };
+
+  const handleApproveApplication = (app: OrganizerApplication) => {
+    persistApplicationDecision(
+      app,
+      'aprobada',
+      isEs ? 'Expediente aprobado. El organizador ya puede publicar eventos y recibir ingresos en su cartera.' : 'File approved. The organizer can now publish events and receive wallet earnings.'
+    );
+  };
+
+  const handleRejectApplication = (app: OrganizerApplication) => {
+    persistApplicationDecision(
+      app,
+      'rechazada',
+      isEs ? 'Expediente rechazado. El organizador conserva el Plan Gratis sin beneficios de publicación.' : 'File rejected. The organizer keeps the Free Plan without publishing benefits.'
+    );
+  };
+
+  const handleRenewOrganizerBenefit = (app: OrganizerApplication) => {
+    persistApplicationDecision(
+      app,
+      'aprobada',
+      isEs ? 'Beneficio del organizador ocasional renovado por 30 días.' : 'Occasional organizer benefit renewed for 30 days.'
+    );
+  };
+
+  const persistWithdrawalDecision = (wd: WithdrawalRequest, status: 'transferido' | 'rechazado', note: string) => {
+    const updated: WithdrawalRequest = { ...wd, status, paidAt: status === 'transferido' ? Date.now() : null };
+    setAdminWithdrawals(prev => prev.map(w => w.id === wd.id ? updated : w));
+    void updateRemoteWithdrawal(updated);
+    const localWds = loadWithdrawals();
+    if (localWds.some(w => w.id === wd.id)) saveWithdrawals(localWds.map(w => w.id === wd.id ? updated : w));
+    showToast(note);
+  };
+
+  const handleWithdrawalPaid = (wd: WithdrawalRequest) => {
+    persistWithdrawalDecision(
+      wd,
+      'transferido',
+      isEs ? 'Retiro marcado como transferido dentro del SLA de 24 horas.' : 'Withdrawal marked as transferred within the 24-hour SLA.'
+    );
+  };
+
+  const handleWithdrawalReject = (wd: WithdrawalRequest) => {
+    persistWithdrawalDecision(
+      wd,
+      'rechazado',
+      isEs ? 'Retiro rechazado: el monto se devuelve a la cartera del organizador.' : 'Withdrawal rejected: the amount returns to the organizer wallet.'
+    );
+  };
+
+  const handleSaveEventFee = () => {
+    const mx = Number(eventFeeMx);
+    const us = Number(eventFeeUs);
+    if (!mx || mx <= 0 || !us || us <= 0) {
+      showToast(isEs ? 'Las tarifas deben ser mayores a cero.' : 'Fees must be greater than zero.', 'error');
+      return;
+    }
+    saveEventPublishFee('MX', Math.round(mx * 100) / 100);
+    saveEventPublishFee('US', Math.round(us * 100) / 100);
+    showToast(isEs ? 'Tarifa de publicación actualizada. El IVA de 16% se calcula automáticamente.' : 'Publishing fee updated. The 16% VAT is calculated automatically.');
+  };
+
+  const orgRoleMeta = (role: OrganizerRole): { label: string; className: string } => {
+    switch (role) {
+      case 'agencia':
+        return { label: isEs ? 'AGENCIA' : 'AGENCY', className: 'text-purple-300' };
+      case 'asociado':
+        return { label: isEs ? 'ASOCIADO' : 'ASSOCIATE', className: 'text-sky-300' };
+      default:
+        return { label: isEs ? 'ORGANIZADOR' : 'ORGANIZER', className: 'text-amber-300' };
+    }
+  };
+
+  const appStatusMeta = (status: OrganizerApplication['status']): { label: string; className: string } => {
+    switch (status) {
+      case 'aprobada':
+        return { label: isEs ? 'APROBADO' : 'APPROVED', className: 'bg-emerald-500/20 text-emerald-300' };
+      case 'rechazada':
+        return { label: isEs ? 'RECHAZADO' : 'REJECTED', className: 'bg-rose-500/20 text-rose-300' };
+      default:
+        return { label: isEs ? 'EN REVISIÓN' : 'UNDER REVIEW', className: 'bg-amber-500/20 text-amber-300' };
+    }
+  };
+
+  const wdStatusMeta = (status: WithdrawalRequest['status']): { label: string; className: string } => {
+    switch (status) {
+      case 'transferido':
+        return { label: isEs ? 'TRANSFERIDO' : 'TRANSFERRED', className: 'bg-emerald-500/20 text-emerald-300' };
+      case 'rechazado':
+        return { label: isEs ? 'RECHAZADO' : 'REJECTED', className: 'bg-rose-500/20 text-rose-300' };
+      default:
+        return { label: isEs ? 'SOLICITADO' : 'REQUESTED', className: 'bg-amber-500/20 text-amber-300' };
+    }
   };
 
   const speiStatusMeta = (status: SpeiOrderStatus): { label: string; className: string } => {
@@ -405,6 +568,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               >
                 <Landmark className="w-3.5 h-3.5" />
                 {isEs ? 'Pagos SPEI' : 'SPEI'}
+              </button>
+              <button
+                onClick={() => setActiveAdminTab('organizadores')}
+                className={`flex-1 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition ${
+                  activeAdminTab === 'organizadores' ? 'bg-purple-600 text-white shadow-md' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                <Briefcase className="w-3.5 h-3.5" />
+                {isEs ? 'Organizadores' : 'Organizers'}
               </button>
             </div>
 
@@ -670,6 +842,141 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                     );
                   })
                 )}
+              </div>
+            )}
+
+            {/* TAB 5: ORGANIZADORES - EXPEDIENTES, TARIFAS, CARTERA Y RETIROS */}
+            {activeAdminTab === 'organizadores' && (
+              <div className="space-y-3">
+                {/* Event publishing fee editor */}
+                <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Tarifa de publicación de eventos (+16% IVA)' : 'Event publishing fee (+16% VAT)'}</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] text-white/50 block">MX (MXN)</span>
+                      <input
+                        value={eventFeeMx}
+                        onChange={(e) => setEventFeeMx(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-xs"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-white/50 block">US (USD)</span>
+                      <input
+                        value={eventFeeUs}
+                        onChange={(e) => setEventFeeUs(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-xs"
+                      />
+                    </div>
+                  </div>
+                  <button type="button" onClick={handleSaveEventFee} className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                    {isEs ? 'Guardar tarifas' : 'Save fees'}
+                  </button>
+                </div>
+
+                {/* Wallet summary: platform commission, ISR retention and net credited */}
+                <div className="p-3.5 rounded-2xl bg-black/50 border border-white/10">
+                  <span className="text-xs font-bold text-white block mb-1">{isEs ? 'Resumen de cartera (colaboradores)' : 'Wallet summary (collaborators)'}</span>
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <span className="text-[10px] text-white/50 block">{isEs ? 'Comisión' : 'Commission'} {PLATFORM_COMMISSION_PCT}%</span>
+                      <span className="text-sm font-black text-amber-300">${adminWallet.reduce((s, t) => s + t.commission, 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-white/50 block">ISR {ISR_RETENTION_PCT}%</span>
+                      <span className="text-sm font-black text-sky-300">${adminWallet.reduce((s, t) => s + t.isrRetained, 0).toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-white/50 block">{isEs ? 'Neto acreditado' : 'Net credited'}</span>
+                      <span className="text-sm font-black text-emerald-300">${adminWallet.filter(t => t.net > 0).reduce((s, t) => s + t.net, 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Organizer applications with document thumbnails */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Expedientes de organizadores' : 'Organizer files'}</span>
+                  {orgApplications.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin solicitudes de registro por ahora.' : 'No registration requests yet.'}</p>
+                  ) : orgApplications.map((app) => {
+                    const roleInfo = orgRoleMeta(app.role);
+                    const benefit = organizerBenefitState(app);
+                    return (
+                      <div key={app.id} className="p-3 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white truncate">{app.legalName}</span>
+                          <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ' + appStatusMeta(app.status).className}>{appStatusMeta(app.status).label}</span>
+                        </div>
+                        <div className="text-[10px] text-white/60">
+                          <span className={'font-bold ' + roleInfo.className}>{roleInfo.label}</span> · {app.userEmail}
+                          {app.status === 'aprobada' && app.role === 'organizador' && (
+                            <span className="text-amber-300"> · {benefit.active ? (isEs ? 'Beneficio activo' : 'Benefit active') : (isEs ? 'Beneficio vencido (renovar)' : 'Benefit expired (renew)')}</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-white/50">{isEs ? 'Retiros a' : 'Withdrawals to'}: {app.payoutBank} · CLABE {app.payoutClabe} · {isEs ? 'Titular' : 'Holder'}: {app.payoutHolder}</div>
+                        <div className="flex gap-1.5">
+                          {app.ineFront && <img src={app.ineFront} alt="INE" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                          {app.ineBack && <img src={app.ineBack} alt="INE reverso" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                          {app.bankStatement && <img src={app.bankStatement} alt={isEs ? 'Estado de cuenta' : 'Bank statement'} className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                          {app.fiscalProof && <img src={app.fiscalProof} alt={isEs ? 'Comprobante fiscal' : 'Fiscal proof'} className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
+                        </div>
+                        {(app.status === 'en revisión' || app.status === 'rechazada') && (
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => handleApproveApplication(app)} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Aprobar' : 'Approve'}
+                            </button>
+                            {app.status === 'en revisión' && (
+                              <button type="button" onClick={() => handleRejectApplication(app)} className="flex-1 py-2 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-[11px] font-bold transition">
+                                {isEs ? 'Rechazar' : 'Reject'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {app.status === 'aprobada' && app.role === 'organizador' && !benefit.active && (
+                          <button type="button" onClick={() => handleRenewOrganizerBenefit(app)} className="w-full py-2 rounded-xl bg-amber-600/80 hover:bg-amber-500 text-white text-[11px] font-bold transition">
+                            {isEs ? 'Renovar beneficio 30 días' : 'Renew benefit 30 days'}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Withdrawal queue with 24h SLA */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Cola de retiros (SLA máx. 24 h)' : 'Withdrawal queue (24 h max SLA)'}</span>
+                  {adminWithdrawals.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin retiros solicitados por ahora.' : 'No withdrawal requests yet.'}</p>
+                  ) : adminWithdrawals.map((wd) => {
+                    const wdMeta = wdStatusMeta(wd.status);
+                    const overdue = wd.status === 'solicitado' && Date.now() > wd.slaDeadline;
+                    return (
+                      <div key={wd.id} className="p-3 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white">${wd.amount.toLocaleString()}</span>
+                          <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold ' + wdMeta.className}>{wdMeta.label}</span>
+                        </div>
+                        <div className="text-[10px] text-white/60">{wd.userName} · {wd.bank} · CLABE {wd.clabe} · {isEs ? 'Titular' : 'Holder'}: {wd.holder}</div>
+                        <div className="text-[10px] text-white/40">
+                          {isEs ? 'Solicitado' : 'Requested'}: {new Date(wd.createdAt).toLocaleString()}
+                          {wd.status === 'solicitado' && (overdue
+                            ? <span className="text-rose-400 font-bold"> · {isEs ? 'SLA vencido' : 'SLA overdue'}</span>
+                            : <span> · {isEs ? 'Límite' : 'Deadline'}: {new Date(wd.slaDeadline).toLocaleString()}</span>)}
+                        </div>
+                        {wd.status === 'solicitado' && (
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => handleWithdrawalPaid(wd)} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Marcar transferido' : 'Mark transferred'}
+                            </button>
+                            <button type="button" onClick={() => handleWithdrawalReject(wd)} className="flex-1 py-2 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Rechazar' : 'Reject'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

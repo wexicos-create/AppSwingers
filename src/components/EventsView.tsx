@@ -9,6 +9,7 @@ interface EventsViewProps {
   onReserve: (eventId: string, tierId: string | null) => void;
   onCancelReservation: (reservationId: string) => void;
   onAgencyPromoRequest: (data: { agency: string; title: string; date: string; zone: string; cap: number }) => void;
+  onOpenOrganizerPanel: () => void;
 }
 
 export const EventsView: React.FC<EventsViewProps> = ({
@@ -17,6 +18,7 @@ export const EventsView: React.FC<EventsViewProps> = ({
   onReserve,
   onCancelReservation,
   onAgencyPromoRequest,
+  onOpenOrganizerPanel,
 }) => {
   const [viewTab, setViewTab] = useState<'cartelera' | 'reservas'>('cartelera');
   const [selectedEvent, setSelectedEvent] = useState<ClubEvent | null>(null);
@@ -237,6 +239,20 @@ export const EventsView: React.FC<EventsViewProps> = ({
               </div>
             );
           })}
+
+          {/* Organizer registration banner: agencies, associates and hosts publish with an approved file */}
+          <div
+            onClick={onOpenOrganizerPanel}
+            className="p-4 rounded-3xl bg-gradient-to-r from-purple-950 to-pink-950/40 border border-pink-500/30 flex items-center gap-3.5 cursor-pointer hover:bg-purple-900/40 transition group"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-pink-950 flex items-center justify-center text-pink-300 border border-pink-500/30 group-hover:scale-105 transition-transform">
+              <Plus className="w-6 h-6" />
+            </div>
+            <div className="flex-1">
+              <h4 className="text-sm font-bold text-white">Publica tu evento con expediente aprobado</h4>
+              <p className="text-xs text-purple-200/70">Agencias, asociados y organizadores: registro con documentos, cartera virtual y retiros en 24 h.</p>
+            </div>
+          </div>
 
           {/* Agency Promo Banner */}
           <div

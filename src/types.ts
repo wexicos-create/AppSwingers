@@ -63,6 +63,7 @@ export interface ClubEvent {
   time: string;
   zone: string;
   organizer: string;
+  organizerUid?: string | null;
   own: boolean;
   cap: number;
   sold: number;

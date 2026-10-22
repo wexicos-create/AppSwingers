@@ -30,6 +30,7 @@ import {
 import { 
   INITIAL_PROFILES, 
   INITIAL_EVENTS, 
+  EVENT_TIERS, 
   INITIAL_PROPOSALS, 
   INITIAL_CREATORS, 
   INITIAL_LIVES, 
@@ -53,6 +54,7 @@ import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { ToastHost, showToast } from './components/Toast';
 import { SpeiModal } from './components/SpeiModal';
+import { OrganizerModal } from './components/OrganizerModal';
 import {
   newSpeiOrder,
   upsertLocalSpeiOrder,
@@ -63,6 +65,32 @@ import {
   createRemoteSpeiOrder,
   getPlanPricing,
 } from './spei';
+import {
+  OrganizerApplication,
+  OrganizerApplicationDraft,
+  WalletTransaction,
+  WithdrawalRequest,
+  computeEarningSplit,
+  walletBalance,
+  namesMatch,
+  organizerBenefitState,
+  getEventPublishFee,
+  newOrganizerApplication,
+  newWithdrawalRequest,
+  loadOrganizerApplication,
+  saveOrganizerApplication,
+  loadWallet,
+  saveWallet,
+  loadWithdrawals,
+  saveWithdrawals,
+  fetchRemoteOrganizerApplication,
+  fetchRemoteWalletForUser,
+  fetchRemoteWithdrawalsForUser,
+  saveRemoteOrganizerApplication,
+  saveRemoteWalletTransaction,
+  createRemoteWithdrawal,
+  mergeById,
+} from './organizers';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -128,7 +156,18 @@ export default function App() {
   const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
 
   // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(INITIAL_EVENTS);
+  const [events, setEvents] = useState<ClubEvent[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('appswinguer_user_events') || '[]') as ClubEvent[];
+      return [...INITIAL_EVENTS, ...saved];
+    } catch { return INITIAL_EVENTS; }
+  });
+  // Events published by organizers persist locally so they survive reloads; paid publishing is gated by SPEI approval.
+  useEffect(() => {
+    try {
+      localStorage.setItem('appswinguer_user_events', JSON.stringify(events.filter(e => e.id.startsWith('uev_'))));
+    } catch { /* ignore */ }
+  }, [events]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
 
   // Proposals & Weekly Postulation Quotas
@@ -182,6 +221,12 @@ export default function App() {
   const [appliedSpeiOrderIds, setAppliedSpeiOrderIds] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('appswinguer_spei_applied') || '[]'); } catch { return []; }
   });
+
+  // Organizers: registration file, virtual wallet and withdrawal requests
+  const [organizerApplication, setOrganizerApplication] = useState<OrganizerApplication | null>(() => loadOrganizerApplication());
+  const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>(() => loadWallet());
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>(() => loadWithdrawals());
+  const [organizerModalOpen, setOrganizerModalOpen] = useState(false);
   const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
     {
       id: 'ann_1',
@@ -481,6 +526,117 @@ export default function App() {
     );
   };
 
+  // ---------- Organizers: registration file, SPEI-gated event publishing and virtual wallet ----------
+  const handleSubmitOrganizerApplication = (draft: OrganizerApplicationDraft) => {
+    const app = newOrganizerApplication({ ...draft, userUid: user?.uid || null, userEmail: user?.email || 'sin-correo@local' });
+    saveOrganizerApplication(app);
+    setOrganizerApplication(app);
+    void saveRemoteOrganizerApplication(app);
+    showToast(
+      isEs
+        ? 'Expediente enviado. El administrador revisará tus documentos y te notificará la decisión.'
+        : 'File submitted. The administrator will review your documents and notify you of the decision.',
+      'info'
+    );
+  };
+
+  const handlePublishOrganizerEvent = (data: { title: string; theme: string; date: string; time: string; zone: string; cap: number }) => {
+    if (!organizerApplication || !organizerBenefitState(organizerApplication).active) return;
+    const eventId = 'uev_' + Date.now();
+    const newEvent: ClubEvent = {
+      id: eventId,
+      title: data.title,
+      theme: data.theme,
+      date: data.date,
+      time: data.time,
+      zone: data.zone,
+      organizer: organizerApplication.legalName,
+      organizerUid: user?.uid || null,
+      own: false,
+      cap: data.cap,
+      sold: 0,
+      reqs: [isEs ? 'Perfil verificado' : 'Verified profile', isEs ? 'Mayor de 18 años' : '18+ only'],
+      paid: true,
+      published: false,
+      promoted: false,
+      hue: 280 + Math.floor(Math.random() * 60),
+    };
+    setEvents(prev => [newEvent, ...prev]);
+    const fee = getEventPublishFee(region);
+    const order = newSpeiOrder({
+      kind: 'evento',
+      itemRef: eventId,
+      label: (isEs ? 'Publicación de evento: ' : 'Event publishing: ') + data.title,
+      amount: fee.total,
+      userName: userProfile.alias,
+      userEmail: user?.email || 'sin-correo@local',
+      userUid: user?.uid || null,
+    });
+    persistSpeiOrder(order);
+    void createRemoteSpeiOrder(order);
+    setActiveSpeiOrder(order);
+    setSpeiModalOpen(true);
+  };
+
+  const handleRequestWithdrawal = (amount: number) => {
+    if (!organizerApplication || organizerApplication.status !== 'aprobada') {
+      showToast(
+        isEs ? 'Necesitas un expediente aprobado para retirar fondos.' : 'You need an approved file to withdraw funds.',
+        'error'
+      );
+      return;
+    }
+    const balance = walletBalance(walletTransactions);
+    if (amount <= 0 || amount > balance) {
+      showToast(
+        isEs ? 'Monto inválido: no puede exceder tu saldo disponible.' : 'Invalid amount: it cannot exceed your available balance.',
+        'error'
+      );
+      return;
+    }
+    if (!namesMatch(organizerApplication.legalName, organizerApplication.payoutHolder)) {
+      showToast(
+        isEs ? 'La cuenta de retiro debe estar a nombre del titular del expediente.' : 'The withdrawal account must be in the file holder\u2019s name.',
+        'error'
+      );
+      return;
+    }
+    const wd = newWithdrawalRequest({
+      userUid: user?.uid || null,
+      userName: organizerApplication.legalName,
+      userEmail: user?.email || 'sin-correo@local',
+      amount,
+      bank: organizerApplication.payoutBank,
+      clabe: organizerApplication.payoutClabe,
+      holder: organizerApplication.payoutHolder,
+    });
+    const nextWithdrawals = [wd, ...loadWithdrawals()];
+    saveWithdrawals(nextWithdrawals);
+    setWithdrawals(nextWithdrawals);
+    void createRemoteWithdrawal(wd);
+    const withdrawalTx: WalletTransaction = {
+      id: 'wtx_' + Date.now(),
+      userUid: user?.uid || null,
+      kind: 'retiro',
+      gross: amount,
+      commission: 0,
+      isrRetained: 0,
+      net: -amount,
+      note: (isEs ? 'Solicitud de retiro a cuenta ' : 'Withdrawal request to ') + organizerApplication.payoutBank,
+      ts: Date.now(),
+    };
+    const nextWallet = [...loadWallet(), withdrawalTx];
+    saveWallet(nextWallet);
+    setWalletTransactions(nextWallet);
+    void saveRemoteWalletTransaction(withdrawalTx);
+    showToast(
+      isEs
+        ? 'Retiro solicitado. La transferencia llegará en máximo 24 horas a tu cuenta registrada.'
+        : 'Withdrawal requested. The transfer will arrive within 24 hours to your registered account.',
+      'info'
+    );
+  };
+
   // SPEI: sync orders (local + remote) and apply admin decisions automatically.
   // Approval activates the purchased benefit; rejection keeps the account on the free plan.
   useEffect(() => {
@@ -496,10 +652,13 @@ export default function App() {
         const isMine = user ? (order.userUid === user.uid || (user.email !== null && order.userEmail === user.email)) : false;
         if (!isMine) continue;
         if (order.status === 'aprobado') {
-          // Extend here with future kinds: 'evento' (publicación), 'propuesta_colaboracion', 'premium'
           if (order.kind === 'suscripcion') {
             setSubscriptionTier(order.itemRef as SubscriptionTier);
+          } else if (order.kind === 'evento') {
+            // Publishing fee paid: the event becomes visible to everyone in the cartelera.
+            setEvents(prev => prev.map(e => e.id === order.itemRef ? { ...e, published: true } : e));
           }
+          // Extend here with future kinds: 'propuesta_colaboracion', 'premium'
           nextApplied = [...nextApplied, order.id];
           showToast(isEs ? '¡Pago aprobado! Tu ' + order.label + ' ya está activo.' : 'Payment approved! Your ' + order.label + ' is now active.');
         } else if (order.status === 'rechazado') {
@@ -534,6 +693,73 @@ export default function App() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [user, isEs]);
 
+  // Organizers: sync file, wallet and withdrawals (local + remote) and apply admin decisions automatically.
+  // Application approval enables publishing; withdrawal decisions notify and refund the wallet.
+  useEffect(() => {
+    let cancelled = false;
+    const readAppliedWd = (): string[] => {
+      try { return JSON.parse(localStorage.getItem('appswinguer_wd_applied') || '[]'); } catch { return []; }
+    };
+    const sync = async () => {
+      if (!user) return;
+      const [remoteApp, remoteWallet, remoteWithdrawals] = await Promise.all([
+        fetchRemoteOrganizerApplication(user.uid),
+        fetchRemoteWalletForUser(user.uid),
+        fetchRemoteWithdrawalsForUser(user.uid),
+      ]);
+      if (cancelled) return;
+      if (remoteApp) {
+        const localApp = loadOrganizerApplication();
+        if (!localApp || remoteApp.createdAt >= localApp.createdAt) {
+          saveOrganizerApplication(remoteApp);
+          setOrganizerApplication(remoteApp);
+        }
+      }
+      const wallet = mergeById(loadWallet(), remoteWallet);
+      saveWallet(wallet);
+      setWalletTransactions(wallet);
+      const allWithdrawals = mergeById(loadWithdrawals(), remoteWithdrawals);
+      saveWithdrawals(allWithdrawals);
+      setWithdrawals(allWithdrawals);
+      let appliedWd = readAppliedWd();
+      for (const wd of allWithdrawals) {
+        if (appliedWd.includes(wd.id)) continue;
+        if (wd.status === 'transferido') {
+          appliedWd = [...appliedWd, wd.id];
+          showToast(isEs ? '¡Retiro transferido! Revisa tu cuenta bancaria.' : 'Withdrawal transferred! Check your bank account.');
+        } else if (wd.status === 'rechazado') {
+          appliedWd = [...appliedWd, wd.id];
+          const refundId = 'tx_refund_' + wd.id;
+          const currentWallet = loadWallet();
+          if (!currentWallet.some(t => t.id === refundId)) {
+            const refundTx: WalletTransaction = {
+              id: refundId,
+              userUid: user.uid,
+              kind: 'ajuste',
+              gross: 0,
+              commission: 0,
+              isrRetained: 0,
+              net: wd.amount,
+              note: isEs ? 'Retiro rechazado: monto devuelto a la cartera.' : 'Withdrawal rejected: amount returned to the wallet.',
+              ts: Date.now(),
+            };
+            const nextWallet = [...currentWallet, refundTx];
+            saveWallet(nextWallet);
+            setWalletTransactions(nextWallet);
+            void saveRemoteWalletTransaction(refundTx);
+          }
+          showToast(isEs ? 'Tu retiro fue rechazado. El monto regresó a tu cartera.' : 'Your withdrawal was rejected. The amount returned to your wallet.', 'error');
+        }
+      }
+      if (appliedWd.length !== readAppliedWd().length) {
+        try { localStorage.setItem('appswinguer_wd_applied', JSON.stringify(appliedWd)); } catch { /* ignore */ }
+      }
+    };
+    void sync();
+    const timer = window.setInterval(() => { void sync(); }, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [user, isEs]);
+
   // Event reservation handler
   const handleReserveEvent = (eventId: string, tierId: string | null) => {
     const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
@@ -548,6 +774,34 @@ export default function App() {
     };
     setReservations(prev => [newReservation, ...prev]);
     setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
+    // Virtual wallet credit for the event organizer: 70% after the platform commission, ISR withheld by the platform.
+    const event = events.find(e => e.id === eventId);
+    if (event && event.organizerUid && tierId) {
+      const tier = EVENT_TIERS.find(t => t.id === tierId);
+      if (tier) {
+        const split = computeEarningSplit(tier.price);
+        const earningTx: WalletTransaction = {
+          id: 'wtx_' + Date.now(),
+          userUid: event.organizerUid,
+          kind: 'ingreso_evento',
+          eventId,
+          gross: tier.price,
+          commission: split.commission,
+          isrRetained: split.isrRetained,
+          net: split.net,
+          note: (isEs ? 'Venta de entrada: ' : 'Ticket sale: ') + event.title,
+          ts: Date.now(),
+        };
+        // Persisted to Firestore so the organizer sees the earning on their own device;
+        // full multi-user accounting moves to Cloud Functions in the commercial backend phase.
+        void saveRemoteWalletTransaction(earningTx);
+        if (event.organizerUid === (user?.uid || null)) {
+          const nextWallet = [...loadWallet(), earningTx];
+          saveWallet(nextWallet);
+          setWalletTransactions(nextWallet);
+        }
+      }
+    }
     showToast(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
   };
 
@@ -985,10 +1239,11 @@ export default function App() {
           {/* TAB 3: EVENTOS */}
           {activeTab === 'eventos' && (
             <EventsView
-              events={events}
+              events={events.filter(e => e.published)}
               reservations={reservations}
               onReserve={handleReserveEvent}
               onCancelReservation={handleCancelReservation}
+              onOpenOrganizerPanel={() => setOrganizerModalOpen(true)}
               onAgencyPromoRequest={(data) => {
                 showToast(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
               }}
@@ -1215,6 +1470,25 @@ export default function App() {
           region={region}
           isEs={isEs}
           onTransferSent={handleSpeiTransferSent}
+        />
+
+        {/* MODAL 2C: ORGANIZER PANEL (expediente documental, publicación de eventos y cartera virtual) */}
+        <OrganizerModal
+          isOpen={organizerModalOpen}
+          onClose={() => setOrganizerModalOpen(false)}
+          isEs={isEs}
+          region={region}
+          userEmail={user?.email || 'sin-correo@local'}
+          userUid={user?.uid || null}
+          application={organizerApplication}
+          benefit={organizerBenefitState(organizerApplication)}
+          eventFee={getEventPublishFee(region)}
+          ownEvents={organizerApplication ? events.filter(e => e.organizer === organizerApplication.legalName) : []}
+          wallet={walletTransactions}
+          withdrawals={withdrawals}
+          onSubmitApplication={handleSubmitOrganizerApplication}
+          onPublishEvent={handlePublishOrganizerEvent}
+          onRequestWithdrawal={handleRequestWithdrawal}
         />
 
         {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}
