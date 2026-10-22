@@ -353,7 +353,7 @@ export default function App() {
     }
 
     // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
+    const isMatch = action === 'superlike' || (action === 'like' && target.likesYou === true);
 
     if (isMatch) {
       const newMatch: MatchItem = {
