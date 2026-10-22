@@ -195,20 +195,12 @@ export const SwipeCard: React.FC<SwipeCardProps> = ({
         </span>
       </motion.div>
 
-      {/* Top Floating Badges */}
-      <div className="absolute top-8 left-5 right-5 flex items-center justify-between z-20 pointer-events-none">
-        {profile.online && (
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-black/60 backdrop-blur-md border border-emerald-500/30 rounded-full text-[11px] font-semibold text-emerald-400 shadow-md">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Online
-          </div>
-        )}
-        {profile.matchPercentage ? (
-          <div className="ml-auto px-3.5 py-1 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 backdrop-blur-md border border-white/25 rounded-full text-xs font-bold text-white shadow-lg shadow-purple-900/40">
-            {profile.matchPercentage}% Match
-          </div>
-        ) : null}
-      </div>
+      {/* Do not fabricate presence or compatibility badges; show them only when backed by live, validated data. */}
+      {profile.lastSeenAt && (
+        <div className="absolute top-8 left-5 z-20 pointer-events-none flex items-center gap-1.5 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/15 rounded-full text-[11px] font-semibold text-white/85 shadow-md">
+          {new Date(profile.lastSeenAt).toLocaleDateString()}
+        </div>
+      )}
 
       {/* Bottom Profile Details Container */}
       <div className="absolute bottom-0 inset-x-0 p-3.5 sm:p-4 pt-6 z-20 flex flex-col gap-1.5 sm:gap-2 bg-gradient-to-t from-black via-black/90 to-transparent pointer-events-auto">
