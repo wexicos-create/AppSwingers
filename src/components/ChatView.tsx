@@ -417,7 +417,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
           {/* Quick Action Buttons: VideoCall (PeerJS), Keep Sync, Reportar & Bloquear */}
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setVideoCallOpen(true)}
+              onClick={() => void startVideoCall()}
               className="p-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-pink-300 flex items-center justify-center active:scale-95 transition shadow-sm"
               title="Videollamada segura WebRTC (PeerJS)"
             >

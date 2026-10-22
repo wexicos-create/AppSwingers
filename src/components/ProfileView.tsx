@@ -6,6 +6,7 @@ import { compressImage } from '../organizers';
 import { inspectPublicPhoto, NO_NUDE_PUBLIC_MSG, NO_NUDE_PUBLIC_MSG_EN } from '../content-guard';
 import { showToast } from './Toast';
 import { NameBadges } from './Badges';
+import { DevicePermissionsCard } from './DevicePermissionsCard';
 import { 
   LogOut, 
   LogIn, 
@@ -682,6 +683,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           />
         </div>
       </div>
+
+      {/* PERMISOS DEL DISPOSITIVO: notificaciones push, camara, microfono y ubicacion */}
+      <DevicePermissionsCard isEs={isEs} />
 
       {/* DISCOVERY DISTANCE SLIDER */}
       <div className="p-5 rounded-3xl bg-neutral-900/70 border border-purple-500/20 mb-5 space-y-3">
