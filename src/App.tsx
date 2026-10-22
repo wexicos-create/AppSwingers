@@ -99,12 +99,25 @@ import {
   mergeById,
   fetchIdentityStatus,
   fetchNotificationsForUser,
+  fetchRemoteWalletForCreator,
 } from './organizers';
 import { fetchStatePass } from './premium';
 import { recommendRadiusKm } from './geolocation';
+import {
+  fetchEventPassesForUser,
+  fetchRatingsByUser,
+  fetchAllEventRatings,
+  reputationByOrganizer,
+  isEventDay,
+  isEventPast,
+  OrganizerReputation,
+} from './eventflow';
 import { IdentityGate } from './components/IdentityGate';
 import { PremiumStateSearch } from './components/PremiumStateSearch';
-import { IdentityVerdict, StatePass, AppNotification } from './types';
+import { EventAttendModal } from './components/EventAttendModal';
+import { DonateModal } from './components/DonateModal';
+import { EventRatingModal } from './components/EventRatingModal';
+import { IdentityVerdict, StatePass, AppNotification, EventAccessPass, EventRating, EventTier } from './types';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -290,6 +303,16 @@ export default function App() {
   const [premiumSearchOpen, setPremiumSearchOpen] = useState(false);
   const [statePass, setStatePass] = useState<StatePass | null>(null);
 
+  // Event attendance flow: VIP passes, deposit modal, day-of reminders, ratings
+  const [eventPasses, setEventPasses] = useState<EventAccessPass[]>([]);
+  const [attendModal, setAttendModal] = useState<{ event: ClubEvent; tier: EventTier | null } | null>(null);
+  const [ratingPass, setRatingPass] = useState<EventAccessPass | null>(null);
+  const [organizerReputation, setOrganizerReputation] = useState<Record<string, OrganizerReputation>>({});
+
+  // Creator earnings: donations credit a wallet keyed by creator handle
+  const [donateCreator, setDonateCreator] = useState<Creator | null>(null);
+  const [creatorWallet, setCreatorWallet] = useState<WalletTransaction[]>([]);
+
   // Auto-detect IP and Region on startup
   useEffect(() => {
     detectUserRegionAndLang().then(({ region: r, lang: l }) => {
@@ -412,10 +435,36 @@ export default function App() {
         setIdentityStatus(status);
         setNotifications(notes);
         setStatePass(pass);
+        // Event flow: VIP passes, organizer reputation, day-of alarms and
+        // the post-event rating push (the day after the event).
+        const [passes, myRatings, allRatings] = await Promise.all([
+          fetchEventPassesForUser(currentUser.uid),
+          fetchRatingsByUser(currentUser.uid),
+          fetchAllEventRatings(),
+        ]);
+        setEventPasses(passes);
+        setOrganizerReputation(reputationByOrganizer(allRatings));
+        const todayPasses = passes.filter(p => p.status === 'activo' && isEventDay(p.eventDate));
+        if (todayPasses.length > 0) {
+          const p = todayPasses[0];
+          setPushToast({
+            title: isEs ? '¡Hoy es tu evento!' : 'Your event is today!',
+            body: isEs
+              ? `"${p.eventTitle}" · ${p.eventTime} · Zona: ${p.eventZone}. Presenta tu código VIP en la puerta.`
+              : `"${p.eventTitle}" · ${p.eventTime} · Zone: ${p.eventZone}. Show your VIP code at the door.`,
+          });
+          setTimeout(() => setPushToast(null), 9000);
+        }
+        const ratedEventIds = new Set(myRatings.map(r => r.eventId));
+        const toRate = passes.find(p => p.status === 'usado' && isEventPast(p.eventDate) && !ratedEventIds.has(p.eventId));
+        if (toRate) setRatingPass(toRate);
       } else {
         setIdentityStatus(null);
         setNotifications([]);
         setStatePass(null);
+        setEventPasses([]);
+        setRatingPass(null);
+        setOrganizerReputation({});
       }
     });
 
@@ -956,7 +1005,9 @@ export default function App() {
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [user, isEs]);
 
-  // Event reservation handler
+  // Event reservation handler (free events only: paid events go through the
+  // attendance deposit modal — one SPEI payment per user, VIP pass issued by
+  // the admin, and the organizer is paid at settlement, not at reservation).
   const handleReserveEvent = (eventId: string, tierId: string | null) => {
     const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
     const newReservation: Reservation = {
@@ -970,39 +1021,40 @@ export default function App() {
     };
     setReservations(prev => [newReservation, ...prev]);
     setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    // Virtual wallet credit for the event organizer: 70% after the platform commission, ISR withheld by the platform.
-    const event = events.find(e => e.id === eventId);
-    if (event && event.organizerUid && tierId) {
-      const tier = EVENT_TIERS.find(t => t.id === tierId);
-      if (tier) {
-        const split = computeEarningSplit(tier.price);
-        const earningTx: WalletTransaction = {
-          id: 'wtx_' + Date.now(),
-          userUid: event.organizerUid,
-          kind: 'ingreso_evento',
-          eventId,
-          gross: tier.price,
-          commission: split.commission,
-          isrRetained: split.isrRetained,
-          net: split.net,
-          note: (isEs ? 'Venta de entrada: ' : 'Ticket sale: ') + event.title,
-          ts: Date.now(),
-        };
-        // Persisted to Firestore so the organizer sees the earning on their own device;
-        // full multi-user accounting moves to Cloud Functions in the commercial backend phase.
-        void saveRemoteWalletTransaction(earningTx);
-        if (event.organizerUid === (user?.uid || null)) {
-          const nextWallet = [...loadWallet(), earningTx];
-          saveWallet(nextWallet);
-          setWalletTransactions(nextWallet);
-        }
-      }
-    }
     showToast(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+  };
+
+  // Paid event: open the attendance deposit modal (SPEI once per user; the
+  // admin approves and issues the 12-digit VIP access pass).
+  const handleAttendEvent = (eventId: string, tierId: string | null) => {
+    const event = events.find(e => e.id === eventId);
+    if (!event) return;
+    const tier = EVENT_TIERS.find(t => t.id === tierId) || null;
+    setAttendModal({ event, tier });
+  };
+
+  // Post-event rating push (opened automatically the day after the event).
+  const handleRatePass = (pass: EventAccessPass) => {
+    setRatingPass(pass);
+  };
+
+  const handleRated = (rating: EventRating) => {
+    setRatingPass(null);
+    void fetchAllEventRatings().then(all => setOrganizerReputation(reputationByOrganizer(all)));
+    showToast(isEs ? '¡Gracias por calificar el evento! Tu opinión genera el estatus de la agencia u organizador.' : 'Thanks for rating the event! Your feedback builds the agency/organizer status.', 'success');
   };
 
   const handleCancelReservation = (reservationId: string) => {
     setReservations(prev => prev.map(r => r.id === reservationId ? { ...r, status: 'cancelado' } : r));
+  };
+
+  // Settlement released instantly (attendance >= 50%): the organizer's wallet
+  // is credited locally and remotely so the money appears on their device.
+  const handleOrganizerWalletCredit = (tx: WalletTransaction) => {
+    const nextWallet = [...loadWallet(), tx];
+    saveWallet(nextWallet);
+    setWalletTransactions(nextWallet);
+    void saveRemoteWalletTransaction(tx);
   };
 
   // Proposal handlers with strict weekly quota enforcement
@@ -1103,16 +1155,118 @@ export default function App() {
     });
   };
 
-  // Creator subscriptions
+  // Creator subscriptions (content earnings credit the creator's virtual card,
+  // keyed by handle; the 85% net rule after 30% commission minus ISR is the
+  // same breakdown used for events and donations)
+  const creditCreatorEarning = (creator: Creator, gross: number, concept: string) => {
+    const split = computeEarningSplit(gross);
+    const tx: WalletTransaction = {
+      id: 'wtx_c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      userUid: null,
+      kind: 'ingreso_contenido',
+      creatorHandle: creator.handle,
+      gross,
+      commission: split.commission,
+      isrRetained: split.isrRetained,
+      net: split.net,
+      note: `${concept}: ${creator.name} (${creator.handle})`,
+      ts: Date.now(),
+    };
+    void saveRemoteWalletTransaction(tx);
+    if (userCreator && userCreator.handle === creator.handle) {
+      setCreatorWallet(prev => [tx, ...prev]);
+    }
+  };
+
   const handleSubscribeCreator = (creator: Creator) => {
     setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
+    creditCreatorEarning(creator, creator.price, isEs ? 'Suscripción' : 'Subscription');
     showToast(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
   };
 
   const handleBuyLiveAccess = (live: LiveStream) => {
     setLiveAccessIds(prev => [...prev, live.id]);
+    const hostCreator = creators.find(c => c.handle === live.host || c.name === live.host);
+    if (hostCreator) {
+      creditCreatorEarning(hostCreator, live.price, isEs ? 'Acceso a directo' : 'Live access');
+    }
     showToast(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
   };
+
+  // Donations to creators: user pays IVA + the donated amount; the creator
+  // sees which profile sent it and the value is credited to her virtual card.
+  const handleDonate = (creator: Creator) => {
+    setDonateCreator(creator);
+  };
+
+  // Creator withdrawal request (the creator's card is a balance ledger: money
+  // enters from subscriptions, lives and donations; withdrawals run through
+  // the same 24-36 h SPEI queue as the organizers).
+  const handleCreatorWithdrawal = (amount: number) => {
+    if (!organizerApplication || organizerApplication.status !== 'aprobada') {
+      showToast(
+        isEs
+          ? 'Para retirar fondos de tu tarjeta de creadora registra y aprueba tu expediente con cuenta de retiro (banco y CLABE a tu nombre). Puedes hacerlo desde el Panel de Organizadores, sección Registro.'
+          : 'To withdraw funds from your creator card, register and get your payout file approved (bank and CLABE in your name). You can do it from the Organizer Panel, File section.',
+        'error'
+      );
+      return;
+    }
+    const balance = walletBalance(mergeById(walletTransactions, creatorWallet));
+    if (amount <= 0 || amount > balance) {
+      showToast(
+        isEs ? 'Monto inválido: no puede exceder tu saldo disponible.' : 'Invalid amount: it cannot exceed your available balance.',
+        'error'
+      );
+      return;
+    }
+    const wd = newWithdrawalRequest({
+      userUid: user?.uid || null,
+      userName: organizerApplication.legalName,
+      userEmail: user?.email || 'sin-correo@local',
+      amount,
+      bank: organizerApplication.payoutBank,
+      clabe: organizerApplication.payoutClabe,
+      holder: organizerApplication.payoutHolder,
+    });
+    const nextWithdrawals = [wd, ...loadWithdrawals()];
+    saveWithdrawals(nextWithdrawals);
+    setWithdrawals(nextWithdrawals);
+    void createRemoteWithdrawal(wd);
+    const withdrawalTx: WalletTransaction = {
+      id: 'wtx_cwd_' + Date.now(),
+      userUid: user?.uid || null,
+      kind: 'retiro',
+      creatorHandle: userCreator?.handle,
+      gross: amount,
+      commission: 0,
+      isrRetained: 0,
+      net: -amount,
+      note: isEs ? 'Solicitud de retiro (tarjeta de creadora)' : 'Withdrawal request (creator card)',
+      ts: Date.now(),
+    };
+    setCreatorWallet(prev => [withdrawalTx, ...prev]);
+    void saveRemoteWalletTransaction(withdrawalTx);
+    showToast(isEs
+      ? 'Retiro solicitado: transferencia en máximo 24-36 h a tu cuenta registrada.'
+      : 'Withdrawal requested: transfer within 24-36 h to your registered account.', 'success');
+  };
+
+  // Creator card balance: transactions keyed by the creator handle (remote)
+  // merged with the local organizer wallet.
+  useEffect(() => {
+    const handle = userCreator?.handle;
+    if (!handle) { setCreatorWallet([]); return; }
+    let cancelled = false;
+    void fetchRemoteWalletForCreator(handle).then(list => {
+      if (!cancelled) setCreatorWallet(prev => {
+        const merged = [...list];
+        for (const t of prev) if (!merged.some(m => m.id === t.id)) merged.push(t);
+        return merged.sort((a, b) => b.ts - a.ts);
+      });
+    }).catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, [userCreator?.handle, donateCreator]);
 
   // Club reward redemption
   const handleRedeemClubReward = () => {
@@ -1546,8 +1700,12 @@ export default function App() {
             <EventsView
               events={events.filter(e => e.published)}
               reservations={reservations}
+              passes={eventPasses}
+              reputation={organizerReputation}
               onReserve={handleReserveEvent}
+              onAttend={handleAttendEvent}
               onCancelReservation={handleCancelReservation}
+              onRatePass={handleRatePass}
               onOpenOrganizerPanel={() => setOrganizerModalOpen(true)}
               onAgencyPromoRequest={(data) => {
                 showToast(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
@@ -1565,8 +1723,10 @@ export default function App() {
               liveAccessIds={liveAccessIds}
               region={region}
               lang={lang}
+              walletTransactions={mergeById(walletTransactions, creatorWallet)}
               onSubscribe={handleSubscribeCreator}
               onBuyLiveAccess={handleBuyLiveAccess}
+              onDonate={handleDonate}
               onRegisterCreator={(c) => {
                 setUserCreator(c);
                 setCreators(prev => [c, ...prev]);
@@ -1575,6 +1735,7 @@ export default function App() {
               onUploadMedia={(data) => {
                 showToast(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
               }}
+              onRequestWithdrawal={handleCreatorWithdrawal}
             />
           )}
 
@@ -1785,6 +1946,7 @@ export default function App() {
           isEs={isEs}
           region={region}
           userEmail={user?.email || 'sin-correo@local'}
+          userName={userProfile.alias}
           userUid={user?.uid || null}
           application={organizerApplication}
           benefit={organizerBenefitState(organizerApplication)}
@@ -1795,6 +1957,7 @@ export default function App() {
           onSubmitApplication={handleSubmitOrganizerApplication}
           onPublishEvent={handlePublishOrganizerEvent}
           onRequestWithdrawal={handleRequestWithdrawal}
+          onWalletCredit={handleOrganizerWalletCredit}
         />
 
         {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}
@@ -1875,6 +2038,48 @@ export default function App() {
           events={events}
           onConnect={(p) => { void handleStatePassConnect(p); }}
           onPassChange={(p) => setStatePass(p)}
+        />
+
+        {/* MODAL 10: EVENT ATTENDANCE DEPOSIT (paid events: one SPEI payment
+            per user, VIP pass issued by the admin, same-day location release) */}
+        <EventAttendModal
+          isOpen={!!attendModal}
+          onClose={() => setAttendModal(null)}
+          isEs={isEs}
+          region={region}
+          event={attendModal?.event || null}
+          tier={attendModal?.tier || null}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          userEmail={user?.email || 'sin-correo@local'}
+          passes={eventPasses}
+          onPassChange={(list) => setEventPasses(list)}
+        />
+
+        {/* MODAL 11: DONATION TO CREATOR (user pays IVA + amount; the creator
+            sees which profile donated; credited to her virtual card) */}
+        <DonateModal
+          isOpen={!!donateCreator}
+          onClose={() => setDonateCreator(null)}
+          isEs={isEs}
+          region={region}
+          creator={donateCreator}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          userProfileName={userProfile.alias}
+          userEmail={user?.email || 'sin-correo@local'}
+        />
+
+        {/* MODAL 12: POST-EVENT RATING (5 stars + comment; builds the agency
+            reputation and raises admin alerts on bad references) */}
+        <EventRatingModal
+          isOpen={!!ratingPass}
+          onClose={() => setRatingPass(null)}
+          isEs={isEs}
+          pass={ratingPass}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          onRated={handleRated}
         />
 
         {/* GLOBAL IN-APP TOASTS (replaces native alert dialogs) */}

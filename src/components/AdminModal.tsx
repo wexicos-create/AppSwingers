@@ -20,7 +20,10 @@ import {
   Zap,
   CheckCircle2,
   Landmark,
-  Briefcase
+  Briefcase,
+  TicketCheck,
+  Star,
+  LifeBuoy
 } from 'lucide-react';
 import { showToast } from './Toast';
 import {
@@ -60,7 +63,26 @@ import {
   IneRecordSource,
 } from '../organizers';
 import { activateStatePass, stateNameByCode, fetchAllStatePasses, getStatePassPrice } from '../premium';
-import { SpeiOrder, SpeiOrderStatus, StatePass } from '../types';
+import {
+  fetchAllPayouts,
+  updateRemotePayout,
+  fetchAllTickets,
+  updateRemoteTicket,
+  fetchAllDonations,
+  updateRemoteDonation,
+  fetchAllEventRatings,
+  fetchAllEventPasses,
+  fetchEventPassesForEvent,
+  updateRemoteEventPass,
+  generateVipAccessCode,
+  saveRemoteEventPass,
+  reputationByOrganizer,
+  RATING_ALERT_THRESHOLD,
+  purgeExpiredEventPasses,
+  pushRemoteNotification,
+} from '../eventflow';
+import { saveRemoteWalletTransaction, computeEarningSplit } from '../organizers';
+import { SpeiOrder, SpeiOrderStatus, StatePass, EventAccessPass, EventPayoutRequest, EventRating, DonationRecord, SupportTicket } from '../types';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -88,8 +110,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
 
-  // Active admin tab: 'monetizacion' | 'push' | 'seguridad' | 'spei' | 'organizadores'
-  const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'spei' | 'organizadores'>('monetizacion');
+  // Active admin tab: 'monetizacion' | 'push' | 'seguridad' | 'spei' | 'eventos' | 'organizadores'
+  const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'spei' | 'eventos' | 'organizadores'>('monetizacion');
   const [broadcastTitle, setBroadcastTitle] = useState(
     isEs ? '🔥 Nuevo evento VIP Swinger en San Luis Potosí' : '🔥 New VIP Lifestyle event announced'
   );
@@ -117,6 +139,16 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [eventFeeMx, setEventFeeMx] = useState(String(getEventPublishFee('MX').base));
   const [eventFeeUs, setEventFeeUs] = useState(String(getEventPublishFee('US').base));
 
+  // Event flow: VIP passes, settlement payout review, ratings, donations, support
+  const [adminPayouts, setAdminPayouts] = useState<EventPayoutRequest[]>([]);
+  const [adminEventPasses, setAdminEventPasses] = useState<EventAccessPass[]>([]);
+  const [adminRatings, setAdminRatings] = useState<EventRating[]>([]);
+  const [adminDonations, setAdminDonations] = useState<DonationRecord[]>([]);
+  const [adminTickets, setAdminTickets] = useState<SupportTicket[]>([]);
+  const [ticketReplies, setTicketReplies] = useState<Record<string, string>>({});
+  const [payoutBusyId, setPayoutBusyId] = useState<string | null>(null);
+  const [payoutNotes, setPayoutNotes] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (!isOpen || !isLoggedIn) return;
     let cancelled = false;
@@ -141,11 +173,16 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     if (!isOpen || !isLoggedIn) return;
     let cancelled = false;
     const loadOrganizerData = async () => {
-      const [remoteApps, remoteWithdrawals, remoteWallet, remoteIne] = await Promise.all([
+      const [remoteApps, remoteWithdrawals, remoteWallet, remoteIne, remotePayouts, remoteTickets, remoteRatings, remoteDonations, remotePasses] = await Promise.all([
         fetchAllRemoteOrganizerApplications(),
         fetchAllRemoteWithdrawals(),
         fetchAllRemoteWalletTransactions(),
         fetchAllRemoteIneRecords(),
+        fetchAllPayouts(),
+        fetchAllTickets(),
+        fetchAllEventRatings(),
+        fetchAllDonations(),
+        fetchAllEventPasses(),
       ]);
       if (cancelled) return;
       const localApp = loadOrganizerApplication();
@@ -170,7 +207,14 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         setAdminIneRecords([...remaining].sort((a, b) => b.createdAt - a.createdAt));
         setPurgeNote(isEs ? `${purged} expediente(s) de credenciales retenidas vencidas fueron eliminados permanentemente.` : `${purged} expired retained credential file(s) permanently deleted.`);
       }
+      // Monthly VIP pass purge (at least once a month, avoids code repetition).
+      await purgeExpiredEventPasses();
       setAdminStatePasses(await fetchAllStatePasses());
+      setAdminPayouts(remotePayouts);
+      setAdminTickets(remoteTickets);
+      setAdminRatings(remoteRatings);
+      setAdminDonations(remoteDonations);
+      setAdminEventPasses(remotePasses);
     };
     void loadOrganizerData();
     const timer = window.setInterval(() => { void loadOrganizerData(); }, 20000);
@@ -326,6 +370,92 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
           : (isEs ? 'No se pudo escribir el pase en Firestore. Verifica las reglas.' : 'Could not write the pass to Firestore. Check the rules.'),
           ok ? 'success' : 'error');
       });
+      return;
+    }
+    // Event deposit: approving the order issues the VIP access pass
+    // (three groups of four digits, unique against all retained passes).
+    if (order.kind === 'evento' && order.userUid) {
+      void (async () => {
+        const now = Date.now();
+        let meta: Record<string, unknown> = {};
+        try { meta = order.meta ? JSON.parse(order.meta) : {}; } catch { meta = {}; }
+        const existingCodes = (await fetchAllEventPasses()).map(p => p.code);
+        const code = generateVipAccessCode(existingCodes);
+        const pass: EventAccessPass = {
+          id: 'pass_' + order.id,
+          code,
+          eventId: String(meta.eventId || order.itemRef),
+          eventTitle: String(meta.eventTitle || order.label),
+          eventDate: String(meta.eventDate || ''),
+          eventTime: String(meta.eventTime || ''),
+          eventZone: String(meta.eventZone || ''),
+          organizerUid: (meta.organizerUid as string) || null,
+          organizerName: String(meta.organizerName || ''),
+          userUid: order.userUid,
+          userName: order.userName,
+          tierId: (meta.tierId as string) || null,
+          tierLabel: String(meta.tierLabel || ''),
+          amount: order.amount,
+          orderId: order.id,
+          orderRef: order.reference,
+          createdAt: now,
+          status: 'activo',
+          usedAt: null,
+          refundedAt: null,
+        };
+        const ok = await saveRemoteEventPass(pass);
+        if (ok) {
+          await pushRemoteNotification({
+            userUid: order.userUid,
+            kind: 'evento',
+            title: isEs ? 'Pase VIP emitido' : 'VIP pass issued',
+            body: isEs
+              ? `Tu depósito del evento "${pass.eventTitle}" fue confirmado. Código de acceso: ${pass.code}. La ubicación exacta se libera el mismo día del evento; descarga tu ficha técnica desde la sección de eventos (ID de orden: ${pass.orderRef}).`
+              : `Your deposit for "${pass.eventTitle}" was confirmed. Access code: ${pass.code}. The exact location is released on event day; download your technical sheet from the events tab (order ID: ${pass.orderRef}).`,
+          });
+        }
+        showToast(ok
+          ? (isEs ? `Pase VIP emitido: ${code}` : `VIP pass issued: ${code}`)
+          : (isEs ? 'No se pudo escribir el pase en Firestore. Verifica las reglas.' : 'Could not write the pass to Firestore. Check the rules.'),
+          ok ? 'success' : 'error');
+      })();
+      return;
+    }
+    // Donation: approving the order credits the creator's virtual card with
+    // the donor profile name (so she knows who donated) and notifies both.
+    if (order.kind === 'donacion' && order.userUid) {
+      void (async () => {
+        const now = Date.now();
+        let meta: Record<string, unknown> = {};
+        try { meta = order.meta ? JSON.parse(order.meta) : {}; } catch { meta = {}; }
+        const donationId = 'don_' + order.id;
+        const base = Number(meta.amount) || 0;
+        const split = computeEarningSplit(base);
+        await updateRemoteDonation(donationId, { status: 'aprobada', decidedAt: now });
+        const tx: WalletTransaction = {
+          id: 'wtx_don_' + order.id,
+          userUid: null,
+          kind: 'donacion',
+          creatorHandle: String(meta.creatorHandle || order.itemRef),
+          gross: base,
+          commission: split.commission,
+          isrRetained: split.isrRetained,
+          net: split.net,
+          note: `${isEs ? 'Donación de' : 'Donation from'} ${String(meta.donorProfileName || meta.donorName || order.userName)}${meta.message ? ' · "' + String(meta.message) + '"' : ''}`,
+          ts: now,
+        };
+        await saveRemoteWalletTransaction(tx);
+        await pushRemoteNotification({
+          userUid: order.userUid,
+          kind: 'donacion',
+          title: isEs ? 'Donación acreditada' : 'Donation credited',
+          body: isEs
+            ? `Tu donación de ${order.amount.toLocaleString()} (incluye IVA) a ${String(meta.creatorName || '')} fue confirmada. Ella verá que fuiste tú quien la envió.`
+            : `Your ${order.amount.toLocaleString()} donation to ${String(meta.creatorName || '')} was confirmed. She will see it came from you.`,
+        });
+        showToast(isEs ? 'Donación acreditada a la tarjeta virtual de la creadora.' : 'Donation credited to the creator virtual card.', 'success');
+      })();
+      return;
     }
   };
 
@@ -356,13 +486,129 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   const handleManualPurge = async () => {
     const purged = await purgeExpiredRetainedRecords();
-    if (purged > 0) {
-      const refreshed = await fetchAllRemoteIneRecords();
+    const purgedPasses = await purgeExpiredEventPasses();
+    if (purged > 0 || purgedPasses > 0) {
+      const [refreshed, refreshedPasses] = await Promise.all([
+        fetchAllRemoteIneRecords(),
+        fetchAllEventPasses(),
+      ]);
       setAdminIneRecords([...refreshed].sort((a, b) => b.createdAt - a.createdAt));
+      setAdminEventPasses(refreshedPasses);
     }
-    setPurgeNote(purged > 0
-      ? (isEs ? `${purged} expediente(s) retenido(s) vencido(s) eliminado(s) permanentemente.` : `${purged} expired retained file(s) permanently deleted.`)
-      : (isEs ? 'No hay credenciales retenidas con retención vencida.' : 'No retained credentials with expired retention.'));
+    setPurgeNote(purged > 0 || purgedPasses > 0
+      ? (isEs ? `${purged} expediente(s) retenido(s) y ${purgedPasses} pase(s) VIP vencido(s) eliminados permanentemente.` : `${purged} expired retained file(s) and ${purgedPasses} expired VIP pass(es) permanently deleted.`)
+      : (isEs ? 'No hay credenciales retenidas ni pases VIP con retención vencida.' : 'No retained credentials or passes with expired retention.'));
+  };
+
+  // ---------- Event settlement review: release, or reject with full refunds ----------
+  const refreshPayouts = async () => {
+    setAdminPayouts(await fetchAllPayouts());
+  };
+
+  const handlePayoutRelease = async (payout: EventPayoutRequest) => {
+    setPayoutBusyId(payout.id);
+    const now = Date.now();
+    const ok = await updateRemotePayout(payout.id, { status: 'liberado', decidedAt: now, note: payoutNotes[payout.id] || payout.note });
+    if (ok) {
+      const tx: WalletTransaction = {
+        id: 'wtx_pay_' + payout.id,
+        userUid: payout.organizerUid,
+        kind: 'ingreso_evento',
+        eventId: payout.eventId,
+        gross: payout.gross,
+        commission: payout.commission,
+        isrRetained: payout.isrRetained,
+        net: payout.net,
+        note: `${isEs ? 'Liquidación evento' : 'Event settlement'}: ${payout.eventTitle} (${payout.attendedCount} ${isEs ? 'asistente(s)' : 'attendee(s)'}, ${payout.noShowCount} no-show)`,
+        ts: now,
+      };
+      await saveRemoteWalletTransaction(tx);
+      if (payout.organizerUid) {
+        await pushRemoteNotification({
+          userUid: payout.organizerUid,
+          kind: 'evento',
+          title: isEs ? 'Liquidación liberada' : 'Payout released',
+          body: isEs
+            ? `El administrador liberó la liquidación de "${payout.eventTitle}": ${payout.net.toLocaleString()} netos acreditados a tu cartera.`
+            : `The administrator released the payout for "${payout.eventTitle}": ${payout.net.toLocaleString()} net credited to your wallet.`,
+        });
+      }
+      showToast(isEs ? `Liquidación liberada: ${payout.net.toLocaleString()} netos acreditados al organizador.` : `Payout released: ${payout.net.toLocaleString()} net credited to the organizer.`, 'success');
+    } else {
+      showToast(isEs ? 'No se pudo liberar la liquidación.' : 'Could not release the payout.', 'error');
+    }
+    await refreshPayouts();
+    setPayoutBusyId(null);
+  };
+
+  const handlePayoutReject = async (payout: EventPayoutRequest) => {
+    setPayoutBusyId(payout.id);
+    const now = Date.now();
+    const ok = await updateRemotePayout(payout.id, { status: 'rechazado', decidedAt: now, note: payoutNotes[payout.id] || payout.note });
+    if (ok) {
+      // Verified phantom event / verified complaint: every paid pass of the
+      // event is refunded, no matter its previous status.
+      const passes = await fetchEventPassesForEvent(payout.eventId);
+      let refunded = 0;
+      for (const p of passes) {
+        if (p.status === 'activo' || p.status === 'usado') {
+          const okPass = await updateRemoteEventPass(p.id, { status: 'reembolsado', refundedAt: now });
+          if (okPass) {
+            refunded++;
+            if (p.userUid) {
+              await pushRemoteNotification({
+                userUid: p.userUid,
+                kind: 'evento',
+                title: isEs ? 'Reembolso total de tu depósito' : 'Full refund of your deposit',
+                body: isEs
+                  ? `Tras revisión, se reembolsará tu depósito de ${p.amount.toLocaleString()} del evento "${p.eventTitle}". Lamentamos la experiencia.`
+                  : `After review, your ${p.amount.toLocaleString()} deposit for "${p.eventTitle}" will be refunded. We apologize for the experience.`,
+              });
+            }
+          }
+        }
+      }
+      showToast(isEs
+        ? `Liquidación rechazada: ${refunded} depósito(s) reembolsado(s) a los asistentes.`
+        : `Payout rejected: ${refunded} deposit(s) refunded to attendees.`, 'info');
+    } else {
+      showToast(isEs ? 'No se pudo rechazar la liquidación.' : 'Could not reject the payout.', 'error');
+    }
+    await refreshPayouts();
+    setPayoutBusyId(null);
+  };
+
+  // ---------- Support tickets: reply (satisfaction first) and close ----------
+  const handleTicketReply = async (ticket: SupportTicket) => {
+    const reply = (ticketReplies[ticket.id] || '').trim();
+    if (!reply) {
+      showToast(isEs ? 'Escribe una respuesta antes de enviar.' : 'Write a reply before sending.', 'error');
+      return;
+    }
+    const now = Date.now();
+    const ok = await updateRemoteTicket(ticket.id, { status: 'respondido', reply, repliedAt: now });
+    if (ok) {
+      if (ticket.userUid) {
+        await pushRemoteNotification({
+          userUid: ticket.userUid,
+          kind: 'soporte',
+          title: isEs ? 'Respuesta de soporte AppSwinguer' : 'AppSwinguer support reply',
+          body: reply,
+        });
+      }
+      setAdminTickets(prev => prev.map(t => t.id === ticket.id ? { ...t, status: 'respondido', reply, repliedAt: now } : t));
+      showToast(isEs ? 'Respuesta enviada: el usuario recibió la notificación.' : 'Reply sent: the user received the notification.', 'success');
+    } else {
+      showToast(isEs ? 'No se pudo enviar la respuesta.' : 'Could not send the reply.', 'error');
+    }
+  };
+
+  const handleTicketClose = async (ticket: SupportTicket) => {
+    const ok = await updateRemoteTicket(ticket.id, { status: 'cerrado' });
+    if (ok) {
+      setAdminTickets(prev => prev.map(t => t.id === ticket.id ? { ...t, status: 'cerrado' } : t));
+      showToast(isEs ? 'Solicitud cerrada.' : 'Request closed.', 'info');
+    }
   };
 
   const handleSaveSpeiConfig = () => {
@@ -656,6 +902,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 {isEs ? 'Pagos SPEI' : 'SPEI'}
               </button>
               <button
+                onClick={() => setActiveAdminTab('eventos')}
+                className={`flex-1 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition ${
+                  activeAdminTab === 'eventos' ? 'bg-purple-600 text-white shadow-md' : 'text-white/60 hover:text-white'
+                }`}
+              >
+                <TicketCheck className="w-3.5 h-3.5" />
+                {isEs ? 'Eventos' : 'Events'}
+              </button>
+              <button
                 onClick={() => setActiveAdminTab('organizadores')}
                 className={`flex-1 py-1.5 rounded-lg font-bold flex items-center justify-center gap-1 transition ${
                   activeAdminTab === 'organizadores' ? 'bg-purple-600 text-white shadow-md' : 'text-white/60 hover:text-white'
@@ -931,7 +1186,178 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               </div>
             )}
 
-            {/* TAB 5: ORGANIZADORES - EXPEDIENTES, TARIFAS, CARTERA Y RETIROS */}
+            {/* TAB 5: EVENTOS - LIQUIDACIONES, REPUTACIÓN, DONACIONES Y SOPORTE */}
+            {activeAdminTab === 'eventos' && (
+              <div className="space-y-3">
+
+                {/* Settlement payout queue (harmonized anti-scam logic) */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Liquidaciones de eventos' : 'Event settlements'}</span>
+                  <div className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[10px] text-white/60 leading-relaxed">
+                    {isEs
+                      ? 'Regla armonizada: se paga al organizador por asistentes confirmados e inasistencias no reembolsables (regla aceptada antes de pagar), menos 30% de comisión e ISR. Si la asistencia declarada es menor al 50% de los pases pagados, la liquidación llega aquí en revisión: liberar si es legítima o rechazar para reembolsar todo (evento fantasma).'
+                      : 'Harmonized rule: the organizer is paid for confirmed attendees and non-refunded no-shows (rule accepted before paying), minus 30% commission and ISR. If declared attendance is below 50% of paid passes, the payout arrives here under review: release if legitimate or reject to refund everyone (phantom event).'}
+                  </div>
+                  {adminPayouts.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin liquidaciones registradas.' : 'No settlements registered.'}</p>
+                  ) : adminPayouts.map((payout) => (
+                    <div key={payout.id} className="p-3 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-white truncate">{payout.eventTitle}</span>
+                        <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ' + (
+                          payout.status === 'liberado' ? 'bg-emerald-500/20 text-emerald-300'
+                          : payout.status === 'rechazado' ? 'bg-rose-500/20 text-rose-300'
+                          : 'bg-amber-500/20 text-amber-300'
+                        )}>
+                          {payout.status === 'liberado' ? (isEs ? 'LIBERADO' : 'RELEASED') : payout.status === 'rechazado' ? (isEs ? 'RECHAZADO' : 'REJECTED') : (isEs ? 'EN REVISIÓN' : 'UNDER REVIEW')}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-white/60">
+                        {payout.organizerName} · {isEs ? 'asistieron' : 'attended'} {payout.attendedCount}/{payout.paidCount} · no-show {payout.noShowCount} · {isEs ? 'reembolsos' : 'refunds'} {payout.refundCount} (${payout.refundTotal.toLocaleString()})
+                      </div>
+                      <div className="text-[10px] text-white/80 font-bold">
+                        {isEs ? 'Neto al organizador' : 'Organizer net'}: ${payout.net.toLocaleString()}
+                        <span className="text-white/40 font-normal"> ({isEs ? 'bruto' : 'gross'} ${payout.gross.toLocaleString()} · -${payout.commission.toLocaleString()} {isEs ? 'comisión' : 'commission'} · -${payout.isrRetained.toLocaleString()} ISR)</span>
+                      </div>
+                      {payout.status === 'revision' && (
+                        <>
+                          <textarea
+                            value={payoutNotes[payout.id] || ''}
+                            onChange={(e) => setPayoutNotes(prev => ({ ...prev, [payout.id]: e.target.value }))}
+                            rows={2}
+                            placeholder={isEs ? 'Nota de decisión (opcional)' : 'Decision note (optional)'}
+                            className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-[11px]"
+                          />
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => void handlePayoutRelease(payout)} disabled={payoutBusyId === payout.id} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition disabled:opacity-50">
+                              {isEs ? 'Liberar pago' : 'Release payout'}
+                            </button>
+                            <button type="button" onClick={() => void handlePayoutReject(payout)} disabled={payoutBusyId === payout.id} className="flex-1 py-2 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-[11px] font-bold transition disabled:opacity-50">
+                              {isEs ? 'Rechazar y reembolsar todo' : 'Reject and refund all'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                      {payout.note && <p className="text-[10px] text-white/40">{payout.note}</p>}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Reputation alerts from post-event ratings */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Reputación de agencias y organizadores' : 'Agency and organizer reputation'}</span>
+                  {(() => {
+                    const rep = reputationByOrganizer(adminRatings);
+                    const entries = Object.entries(rep);
+                    if (entries.length === 0) {
+                      return <p className="text-[11px] text-white/50">{isEs ? 'Sin calificaciones de eventos todavía.' : 'No event ratings yet.'}</p>;
+                    }
+                    return entries.map(([name, r]) => (
+                      <div key={name} className={'p-2.5 rounded-xl border flex items-center justify-between gap-2 ' + (r.alert ? 'bg-rose-500/10 border-rose-500/40' : 'bg-black/50 border-white/10')}>
+                        <div className="min-w-0">
+                          <p className="text-[11px] font-bold text-white truncate">{name}</p>
+                          <p className="text-[10px] text-white/50">
+                            {r.count} {isEs ? 'calificación(es)' : 'rating(s)'}
+                            {r.alert && (
+                              <span className="text-rose-300 font-bold"> · {isEs ? `promedio ${r.avg} < ${RATING_ALERT_THRESHOLD}: revisar referencias y denuncias` : `avg ${r.avg} < ${RATING_ALERT_THRESHOLD}: review references and reports`}</span>
+                            )}
+                          </p>
+                        </div>
+                        <span className={'text-xs font-black shrink-0 flex items-center gap-1 ' + (r.alert ? 'text-rose-300' : 'text-amber-300')}>
+                          <Star className="w-3.5 h-3.5 fill-current" />
+                          {r.avg > 0 ? r.avg.toFixed(1) : '—'}
+                        </span>
+                      </div>
+                    ));
+                  })()}
+                </div>
+
+                {/* Donations overview */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? 'Donaciones a creadoras' : 'Creator donations'}</span>
+                  {adminDonations.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin donaciones registradas.' : 'No donations registered.'}</p>
+                  ) : adminDonations.slice(0, 12).map((don) => (
+                    <div key={don.id} className="p-2.5 rounded-xl bg-black/50 border border-white/10">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-white/80 truncate">{don.donorProfileName || don.donorName} → {don.creatorName}</span>
+                        <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ' + (don.status === 'aprobada' ? 'bg-emerald-500/20 text-emerald-300' : don.status === 'rechazada' ? 'bg-rose-500/20 text-rose-300' : 'bg-amber-500/20 text-amber-300')}>
+                          {don.status === 'aprobada' ? (isEs ? 'ACREDITADA' : 'CREDITED') : don.status === 'rechazada' ? (isEs ? 'RECHAZADA' : 'REJECTED') : (isEs ? 'PENDIENTE' : 'PENDING')}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-white/50">
+                        ${don.amount.toLocaleString()} + ${don.tax.toLocaleString()} {isEs ? 'IVA' : 'tax'} = ${don.total.toLocaleString()} · {new Date(don.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* VIP passes overview */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white block">{isEs ? `Pases VIP emitidos (${adminEventPasses.length})` : `Issued VIP passes (${adminEventPasses.length})`}</span>
+                  <p className="text-[10px] text-white/50">
+                    {isEs
+                      ? 'Los pases se purgan por completo después de 30 días (purga automática al abrir este panel y con el botón de la pestaña Seguridad). Esto evita que el registro acumule códigos y que se repitan.'
+                      : 'Passes are fully purged after 30 days (automatic purge on opening this panel and via the Security tab button). This keeps the registry small and avoids repeated codes.'}
+                  </p>
+                  {adminEventPasses.slice(0, 8).map((p) => (
+                    <div key={p.id} className="p-2 rounded-xl bg-black/50 border border-white/10 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono text-white/80">{p.code}</span>
+                      <span className="text-[10px] text-white/50 truncate">{p.eventTitle}</span>
+                      <span className={'text-[10px] font-bold shrink-0 ' + (p.status === 'activo' ? 'text-emerald-300' : p.status === 'usado' ? 'text-blue-300' : 'text-rose-300')}>{p.status}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Support tickets: satisfaction first for agencies, promoters, associates, creators */}
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <LifeBuoy className="w-3.5 h-3.5 text-emerald-400" />
+                    {isEs ? 'Soporte a agencias, promotoras, asociados y creadoras' : 'Support for agencies, promoters, associates and creators'}
+                  </span>
+                  {adminTickets.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin solicitudes de soporte.' : 'No support requests.'}</p>
+                  ) : adminTickets.map((tk) => (
+                    <div key={tk.id} className="p-3 rounded-2xl bg-black/50 border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-bold text-white truncate">{tk.subject}</span>
+                        <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ' + (tk.status === 'abierto' ? 'bg-amber-500/20 text-amber-300' : tk.status === 'respondido' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/50')}>
+                          {tk.status === 'abierto' ? (isEs ? 'ABIERTO' : 'OPEN') : tk.status === 'respondido' ? (isEs ? 'RESPONDIDO' : 'ANSWERED') : (isEs ? 'CERRADO' : 'CLOSED')}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-white/60">
+                        {tk.userName} · {tk.userEmail} · {tk.requester}
+                      </div>
+                      <p className="text-[10px] text-white/70">{tk.message}</p>
+                      {tk.reply && (
+                        <p className="text-[10px] text-emerald-200 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2">{tk.reply}</p>
+                      )}
+                      {tk.status !== 'cerrado' && (
+                        <>
+                          <textarea
+                            value={ticketReplies[tk.id] || ''}
+                            onChange={(e) => setTicketReplies(prev => ({ ...prev, [tk.id]: e.target.value }))}
+                            rows={2}
+                            placeholder={isEs ? 'Respuesta (busca la satisfacción más que ganar la controversia)' : 'Reply (seek satisfaction over winning the controversy)'}
+                            className="w-full px-3 py-2 rounded-xl bg-black/60 border border-white/15 text-white text-[11px]"
+                          />
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => void handleTicketReply(tk)} className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Responder y notificar' : 'Reply and notify'}
+                            </button>
+                            <button type="button" onClick={() => void handleTicketClose(tk)} className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold transition">
+                              {isEs ? 'Cerrar' : 'Close'}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 6: ORGANIZADORES - EXPEDIENTES, TARIFAS, CARTERA Y RETIROS */}
             {activeAdminTab === 'organizadores' && (
               <div className="space-y-3">
                 {/* Event publishing fee editor */}
