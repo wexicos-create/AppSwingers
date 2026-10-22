@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, User } from 'firebase/auth';
 import { 
   auth, 
   googleProvider, 
@@ -50,6 +50,9 @@ import { AdminModal } from './components/AdminModal';
 import { LegalModal } from './components/LegalModal';
 import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
+import { LandingScreen } from './components/LandingScreen';
+import { OnboardingWizard } from './components/OnboardingWizard';
+import { saveOnboardingProfile, fetchOnboardingProfile } from './onboarding';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
 import { ToastHost, showToast } from './components/Toast';
@@ -255,6 +258,9 @@ export default function App() {
   const [legalModalOpen, setLegalModalOpen] = useState(false);
   const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
+  // Public funnel: landing gate + onboarding wizard (register/login/resume)
+  const [onboardingMode, setOnboardingMode] = useState<'register' | 'login' | 'resume' | null>(null);
+  const [legalTopic, setLegalTopic] = useState<string | null>(null);
   const [extrasModalOpen, setExtrasModalOpen] = useState(false);
   const [pushLookupOpen, setPushLookupOpen] = useState(false);
   const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
@@ -370,6 +376,13 @@ export default function App() {
         } catch (e) {
           console.warn('Firebase user sync note:', e);
         }
+        // Cross-device funnel state: a user without a completed onboarding profile must finish the wizard.
+        const storedOnboarding = await fetchOnboardingProfile(currentUser.uid);
+        if (storedOnboarding) {
+          setOnboardingMode(null);
+        } else {
+          setOnboardingMode(prev => (prev === 'register' || prev === 'login') ? prev : 'resume');
+        }
       }
     });
 
@@ -395,9 +408,82 @@ export default function App() {
     try {
       await fbSignOut(auth);
       setUser(null);
+      setOnboardingMode(null);
     } catch (e) {
       console.warn('Sign Out error:', e);
     }
+  };
+
+  // ---------- Public funnel: email/password accounts + onboarding wizard ----------
+  const handleCreateAccount = async (email: string, password: string): Promise<string | null> => {
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await syncUserProfile(cred.user);
+      return null;
+    } catch (e: any) {
+      return e?.code || 'error';
+    }
+  };
+
+  const handleLoginAccount = async (email: string, password: string): Promise<string | null> => {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await syncUserProfile(cred.user);
+      return null;
+    } catch (e: any) {
+      return e?.code || 'error';
+    }
+  };
+
+  const handleAbortOnboarding = async () => {
+    setOnboardingMode(null);
+    try {
+      await fbSignOut(auth);
+      setUser(null);
+    } catch (e) {
+      console.warn('Abort onboarding sign out note:', e);
+    }
+  };
+
+  const handleOnboardingComplete = (data: { alias: string; kind: ProfileKind; seeking: string[]; ineFront: string; ineBack: string }) => {
+    const uid = user?.uid || null;
+    // Sensible "busco" defaults per account kind; editable later in Fantasías & Filtros.
+    const defaultSeeking: string[] = data.kind === 'Caballero'
+      ? ['Mujeres', 'Parejas']
+      : data.kind === 'Dama'
+        ? ['Hombres', 'Parejas']
+        : ['Parejas'];
+    setUserProfile(prev => ({
+      ...prev,
+      alias: data.alias,
+      kind: data.kind,
+      interests: data.seeking,
+      seeking: defaultSeeking,
+    }));
+    setOnboardingMode(null);
+    if (uid) {
+      void saveOnboardingProfile(uid, {
+        alias: data.alias,
+        kind: data.kind,
+        seeking: data.seeking,
+        onboardedAt: Date.now(),
+      });
+      // Legal archive: the registration INE is preserved for age verification and potential legal disputes.
+      void saveRemoteIneRecord(newIneRecord({
+        userUid: uid,
+        userEmail: user?.email || 'sin-correo@local',
+        alias: data.alias,
+        legalName: data.alias,
+        source: 'registro',
+        context: 'Verificación de identidad al registro',
+        ineFront: data.ineFront,
+        ineBack: data.ineBack,
+        selfie: '',
+      })).then(ok => {
+        if (ok) showToast(isEs ? 'Identificación resguardada en el archivo legal de la plataforma.' : 'Identification stored in the platform legal archive.');
+      });
+    }
+    showToast(isEs ? `¡Bienvenido a AppSwinguer, ${data.alias}!` : `Welcome to AppSwinguer, ${data.alias}!`);
   };
 
   // Regional & Distance filtered profiles (México vs USA)
@@ -966,6 +1052,47 @@ export default function App() {
     a.download = `appswinguer-data-${Date.now()}.json`;
     a.click();
   };
+
+  // ---------- PUBLIC GATE 1: landing screen for visitors without a session ----------
+  if (!user && !onboardingMode) {
+    return (
+      <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
+        <LandingScreen
+          isEs={isEs}
+          onRegister={() => setOnboardingMode('register')}
+          onLogin={() => setOnboardingMode('login')}
+          onGoogleSignIn={handleGoogleSignIn}
+          onOpenLegal={(topic) => { setLegalTopic(topic || null); setLegalModalOpen(true); }}
+        />
+        {legalModalOpen && (
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTopic={legalTopic} />
+        )}
+        <ToastHost />
+      </div>
+    );
+  }
+
+  // ---------- PUBLIC GATE 2: onboarding wizard until the funnel (profile + INE) is complete ----------
+  if (onboardingMode) {
+    return (
+      <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
+        <OnboardingWizard
+          mode={onboardingMode}
+          isEs={isEs}
+          region={region}
+          onCreateAccount={handleCreateAccount}
+          onLoginAccount={handleLoginAccount}
+          onComplete={handleOnboardingComplete}
+          onAbort={handleAbortOnboarding}
+          onOpenLegal={(topic) => { setLegalTopic(topic || null); setLegalModalOpen(true); }}
+        />
+        {legalModalOpen && (
+          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTopic={legalTopic} />
+        )}
+        <ToastHost />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050307] text-[#f5eeff] flex justify-center font-sans select-none antialiased overflow-x-hidden">
@@ -1568,6 +1695,7 @@ export default function App() {
           <LegalModal
             isOpen={legalModalOpen}
             onClose={() => setLegalModalOpen(false)}
+            initialTopic={legalTopic}
           />
         )}
 

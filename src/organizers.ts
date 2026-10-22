@@ -295,7 +295,7 @@ export const compressImage = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
-export type IneRecordSource = 'organizador' | 'colaboracion';
+export type IneRecordSource = 'organizador' | 'colaboracion' | 'registro';
 
 export interface IneRecord {
   id: string;

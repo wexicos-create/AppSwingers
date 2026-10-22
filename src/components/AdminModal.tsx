@@ -397,6 +397,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     switch (source) {
       case 'organizador':
         return { label: 'ORGANIZADOR', className: 'text-purple-300' };
+      case 'registro':
+        return { label: 'REGISTRO', className: 'text-amber-300' };
       default:
         return { label: 'COLABORACIÓN', className: 'text-sky-300' };
     }
