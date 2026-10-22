@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Creator, LiveStream, AppRegion } from '../types';
+import { WalletTransaction, walletBalance } from '../organizers';
 import { 
   Video, 
   Radio, 
@@ -29,10 +30,13 @@ interface VirtualViewProps {
   liveAccessIds: string[];
   region: AppRegion;
   lang: 'es' | 'en';
+  walletTransactions: WalletTransaction[];
   onSubscribe: (creator: Creator) => void;
   onBuyLiveAccess: (live: LiveStream) => void;
+  onDonate: (creator: Creator) => void;
   onRegisterCreator: (creatorData: Creator) => void;
   onUploadMedia: (uploadData: { caption: string; isPremium: boolean; price: number }) => void;
+  onRequestWithdrawal: (amount: number) => void;
 }
 
 export const VirtualView: React.FC<VirtualViewProps> = ({
@@ -43,10 +47,13 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   liveAccessIds,
   region,
   lang,
+  walletTransactions,
   onSubscribe,
   onBuyLiveAccess,
+  onDonate,
   onRegisterCreator,
   onUploadMedia,
+  onRequestWithdrawal,
 }) => {
   const isEs = lang === 'es';
   const isMx = region === 'MX';
@@ -54,6 +61,23 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
   const currencyCode = isMx ? 'MXN' : 'USD';
   const taxLabel = isMx ? 'IVA (16% ley mexicana)' : 'Tax (Max 20% US)';
   const taxRate = isMx ? 0.16 : 0.20;
+
+  // Real virtual earnings card balance: donations + content earnings - withdrawals.
+  // Event deposits do NOT credit this card: event money lives in the organizer
+  // wallet (Organizer panel) and is settled by the attendance-based payout flow.
+  const virtualCardBalance = walletBalance(walletTransactions);
+  const sortedCardTransactions = [...walletTransactions].sort((a, b) => b.ts - a.ts);
+
+  const conceptLabel = (kind: WalletTransaction['kind']): string => {
+    switch (kind) {
+      case 'donacion': return isEs ? 'Donación' : 'Donation';
+      case 'ingreso_contenido': return isEs ? 'Contenido (PPV / Suscripción)' : 'Content (PPV / Subscription)';
+      case 'ingreso_evento': return isEs ? 'Evento' : 'Event';
+      case 'ingreso_colaboracion': return isEs ? 'Colaboración' : 'Collaboration';
+      case 'retiro': return isEs ? 'Retiro' : 'Withdrawal';
+      default: return isEs ? 'Ajuste' : 'Adjustment';
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<'creadoras' | 'vivo' | 'subir'>('creadoras');
   const [selectedCreator, setSelectedCreator] = useState<Creator | null>(null);
@@ -91,9 +115,6 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
       date: 'Hace 1 día',
     }
   ]);
-
-  // Virtual card balance
-  const [virtualCardBalance, setVirtualCardBalance] = useState(2450);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -169,7 +190,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
           <button
             onClick={() => setVirtualCardModalOpen(true)}
             className="px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/40 text-xs font-bold text-pink-300 flex items-center gap-1.5 shadow-md active:scale-95 transition"
-            title={isEs ? 'Tarjeta virtual de ingresos y eventos' : 'Virtual Earnings Card'}
+            title={isEs ? 'Tarjeta virtual de ingresos de creadoras' : 'Creator Earnings Card'}
           >
             <CreditCard className="w-3.5 h-3.5 text-pink-400" />
             <span>${virtualCardBalance} {currencyCode}</span>
@@ -277,19 +298,29 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                     <p className="text-xs text-purple-300/80 font-mono">{c.handle} &bull; {c.followers} {isEs ? 'seguidores' : 'followers'}</p>
                   </div>
 
-                  {isSubscribed ? (
-                    <span className="px-3 py-1.5 rounded-xl bg-purple-900/50 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1">
-                      <Check className="w-3.5 h-3.5" />
-                      {isEs ? 'Suscrito' : 'Subscribed'}
-                    </span>
-                  ) : (
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    {isSubscribed ? (
+                      <span className="px-3 py-1.5 rounded-xl bg-purple-900/50 text-emerald-400 border border-emerald-500/30 text-xs font-bold flex items-center gap-1">
+                        <Check className="w-3.5 h-3.5" />
+                        {isEs ? 'Suscrito' : 'Subscribed'}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setSelectedCreator(c)}
+                        className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold text-xs shadow-md shadow-pink-600/30 active:scale-95 transition"
+                      >
+                        {isEs ? 'Suscribir' : 'Subscribe'}
+                      </button>
+                    )}
                     <button
-                      onClick={() => setSelectedCreator(c)}
-                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 text-white font-bold text-xs shadow-md shadow-pink-600/30 active:scale-95 transition"
+                      onClick={() => onDonate(c)}
+                      className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-pink-400/40 text-pink-300 font-bold text-[11px] active:scale-95 transition flex items-center justify-center gap-1"
+                      title={isEs ? 'Donar a la creadora (paga el IVA el usuario)' : 'Donate to the creator (user pays the tax)'}
                     >
-                      {isEs ? 'Suscribir' : 'Subscribe'}
+                      <Heart className="w-3.5 h-3.5" />
+                      {isEs ? 'Donar' : 'Donate'}
                     </button>
-                  )}
+                  </div>
                 </div>
 
                 <p className="text-xs text-neutral-300 leading-relaxed font-normal bg-white/5 p-3 rounded-2xl border border-white/5">
@@ -359,7 +390,6 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                       <button
                         onClick={() => {
                           onBuyLiveAccess(l);
-                          setVirtualCardBalance(prev => prev + totalLivePrice);
                         }}
                         className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold text-xs shadow-md active:scale-95 transition"
                       >
@@ -520,8 +550,8 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
               </div>
               <div className="text-[10px] text-emerald-400 pt-1">
                 {isEs 
-                  ? `Se abona a la tarjeta virtual de la creadora (${Math.round(selectedCreator.price * 0.85)} MXN).` 
-                  : `Credited to creator's virtual earnings card.`}
+                  ? `Se abona a la tarjeta virtual de la creadora (${Math.round(selectedCreator.price * 0.85)} MXN) y ella ve el concepto en su historial.` 
+                  : `Credited to the creator's virtual earnings card with the concept in her history.`}
               </div>
             </div>
 
@@ -534,9 +564,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
               </button>
               <button
                 onClick={() => {
-                  const amt = Math.round(selectedCreator.price * (1.1 + taxRate));
                   onSubscribe(selectedCreator);
-                  setVirtualCardBalance(prev => prev + Math.round(selectedCreator.price * 0.85));
                   setSelectedCreator(null);
                 }}
                 className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white text-xs font-bold shadow-lg"
@@ -557,8 +585,8 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
             </h3>
             <p className="text-xs text-purple-200/70">
               {isEs 
-                ? 'Requisito indispensable: Verificación de perfil con INE y rostro facial. Las ganancias se abonan a tu tarjeta virtual.' 
-                : 'Mandatory requirement: ID and facial verification.'}
+                ? 'Requisito indispensable: Verificación de perfil con INE y rostro facial. Las ganancias y donaciones se abonan a tu tarjeta virtual.' 
+                : 'Mandatory requirement: ID and facial verification. Earnings and donations are credited to your virtual card.'}
             </p>
 
             <form onSubmit={handleRegisterSubmit} className="space-y-3 text-xs">
@@ -643,7 +671,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
         </div>
       )}
 
-      {/* MODAL 3: TARJETA VIRTUAL DE INGRESOS & RETIROS */}
+      {/* MODAL 3: TARJETA VIRTUAL DE INGRESOS & RETIROS (creadoras: donaciones y contenido) */}
       {virtualCardModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
           <div className="w-full max-w-sm rounded-3xl bg-gradient-to-br from-[#1e0f38] via-[#100720] to-[#080310] border border-purple-500/50 p-6 shadow-2xl text-white space-y-4">
@@ -678,9 +706,36 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
 
             <p className="text-[11px] text-purple-200/80 leading-relaxed">
               {isEs 
-                ? 'Este saldo se abona automáticamente por la venta de contenido exclusivo (PPV), suscripciones y por tu participación como asociado verificado en eventos presenciales.' 
-                : 'This balance is credited from content sales, subscriptions, and verified event hosting.'}
+                ? 'Este saldo se abona con las donaciones que recibes (siempre sabrás qué perfil te las mandó), la venta de contenido exclusivo (PPV) y tus suscripciones. Los ingresos de eventos no pasan por esta tarjeta: se liquidan por asistencia en el panel de organizadores.'
+                : 'This balance is credited with the donations you receive (you always know which profile sent them), your PPV content sales and your subscriptions. Event earnings do not go through this card: they are settled by attendance in the organizer panel.'}
             </p>
+
+            {/* Transaction history by concept */}
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-bold text-purple-300 uppercase tracking-wider block">
+                {isEs ? 'Historial por conceptos' : 'Transaction history by concept'}
+              </span>
+              {sortedCardTransactions.length === 0 ? (
+                <p className="text-[11px] text-white/50">
+                  {isEs ? 'Sin movimientos aún. Las donaciones y ventas aparecerán aquí desglosadas.' : 'No transactions yet. Donations and sales will appear here.'}
+                </p>
+              ) : sortedCardTransactions.slice(0, 8).map((t) => (
+                <div key={t.id} className="p-2.5 rounded-xl bg-black/50 border border-white/10">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-white/80 truncate">{t.note}</span>
+                    <span className={'text-[11px] font-black shrink-0 ' + (t.net >= 0 ? 'text-emerald-300' : 'text-rose-300')}>
+                      {t.net >= 0 ? '+' : '-'}{currencySymbol}{Math.abs(t.net).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-[9px] text-white/40 mt-0.5">
+                    {conceptLabel(t.kind)} · {new Date(t.ts).toLocaleString()}
+                    {t.gross > 0 && t.kind !== 'retiro' && t.kind !== 'ajuste' && (
+                      <> · {isEs ? 'bruto' : 'gross'} ${t.gross.toLocaleString()} · -30% ${t.commission.toLocaleString()} · -ISR ${t.isrRetained.toLocaleString()}</>
+                    )}
+                  </p>
+                </div>
+              ))}
+            </div>
 
             <button
               type="button"
@@ -689,13 +744,12 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
                   showToast(isEs ? 'Saldo insuficiente para retirar.' : 'Insufficient balance.', 'error');
                   return;
                 }
-                showToast(isEs ? `¡Retiro de ${virtualCardBalance} ${currencyCode} solicitado a tu cuenta bancaria asociada!` : `Withdrawal requested!`);
-                setVirtualCardBalance(0);
+                onRequestWithdrawal(virtualCardBalance);
               }}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-lg active:scale-95 transition flex items-center justify-center gap-2"
             >
               <DollarSign className="w-4 h-4" />
-              <span>{isEs ? 'Retirar Dinero a Cuenta Bancaria' : 'Withdraw Funds to Bank Account'}</span>
+              <span>{isEs ? 'Solicitar Retiro (24-36 h a cuenta bancaria)' : 'Request Withdrawal (24-36 h to bank account)'}</span>
             </button>
           </div>
         </div>

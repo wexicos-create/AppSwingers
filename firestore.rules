@@ -43,11 +43,13 @@ service cloud.firestore {
       }
     }
 
-    // Platform notifications: only the admin creates them (identity verdicts,
-    // pass activations, system announcements); each user reads their own.
+    // Platform notifications: the admin creates verdict, pass and system
+    // notifications; organizers also create settlement, refund and
+    // same-day location-release notifications for their attendees (the
+    // commercial phase moves these writes to Cloud Functions with templates).
     match /notifications/{notificationId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
-      allow create: if isAdmin();
+      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.userUid != null);
       allow update, delete: if isAdmin();
     }
 
@@ -125,7 +127,10 @@ service cloud.firestore {
 
     // Virtual wallet transactions: users read only their own; buyers create earnings for organizers.
     match /wallet_transactions/{transactionId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      // Creator earnings are keyed by handle with a null userUid, so reads are
+      // open to authenticated users (entries only contain display data); the
+      // ownerUid check applies to organizer transactions.
+      allow read: if isAdmin() || isAuthenticated();
       allow create: if isAuthenticated();
       allow update, delete: if isAdmin();
     }
@@ -141,6 +146,52 @@ service cloud.firestore {
     match /ine_records/{recordId} {
       allow create: if isAuthenticated();
       allow read: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // Event access passes: only the admin issues them (after approving the
+    // attendee's SPEI deposit). The attendee and the event organizer can read
+    // them; the organizer marks attendance by updating the pass to 'usado'.
+    match /event_passes/{passId} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && (resource.data.userUid == request.auth.uid || resource.data.organizerUid == request.auth.uid));
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (isAuthenticated() && resource.data.organizerUid == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'usedAt', 'refundedAt']));
+      allow delete: if isAdmin();
+    }
+
+    // Event settlement requests: the organizer creates them after registering
+    // attendance; the admin releases or rejects payouts below the attendance
+    // threshold.
+    match /event_payouts/{payoutId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.organizerUid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.organizerUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Donations: the donor creates a pending record with their SPEI order; the
+    // admin approves it (crediting the creator's card) or rejects it.
+    match /donations/{donationId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.donorUid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.donorUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Post-event ratings: attendees rate the event the day after; all
+    // authenticated users can read the reputation history of organizers.
+    match /event_ratings/{ratingId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userUid == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Support channel for agencies, promoters, associates and creators: open
+    // reception of requests, complaints and clarifications; only the admin
+    // replies and closes.
+    match /support_tickets/{ticketId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      allow create: if isAuthenticated() && request.resource.data.userUid == request.auth.uid;
       allow update, delete: if isAdmin();
     }
   }

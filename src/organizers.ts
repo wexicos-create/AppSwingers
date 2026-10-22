@@ -30,14 +30,15 @@ export type OrganizerApplicationDraft = Omit<OrganizerApplication, 'id' | 'statu
 
 export interface WalletTransaction {
   id: string;
-  userUid: string | null; // wallet owner (the organizer receiving the earning)
-  kind: 'ingreso_evento' | 'ingreso_colaboracion' | 'retiro' | 'ajuste';
+  userUid: string | null; // wallet owner (the organizer/creator receiving the earning)
+  kind: 'ingreso_evento' | 'ingreso_colaboracion' | 'ingreso_contenido' | 'donacion' | 'retiro' | 'ajuste';
   eventId?: string;
+  creatorHandle?: string; // creator earnings (donations, subscriptions, PPV) are also keyed by handle
   gross: number;
   commission: number;  // platform commission (30%)
   isrRetained: number; // ISR withheld by the platform
   net: number;         // credited amount (negative for withdrawals/adjustments)
-  note: string;
+  note: string;        // concept label shown in the transaction history
   ts: number;
 }
 
@@ -230,6 +231,17 @@ export async function fetchRemoteWalletForUser(uid: string): Promise<WalletTrans
     const q = query(collection(db, 'wallet_transactions'), where('userUid', '==', uid));
     const snap = await getDocs(q);
     return snap.docs.map(d => d.data() as WalletTransaction);
+  } catch { return []; }
+}
+
+// Creator earnings (donations, subscriptions, PPV) are keyed by handle so a
+// creator sees their own virtual earnings card balance on any device.
+export async function fetchRemoteWalletForCreator(handle: string): Promise<WalletTransaction[]> {
+  if (!handle) return [];
+  try {
+    const q = query(collection(db, 'wallet_transactions'), where('creatorHandle', '==', handle));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data() as WalletTransaction).sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }
 

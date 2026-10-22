@@ -11,7 +11,7 @@ export type IdentityVerdict = 'pendiente' | 'aprobada' | 'rechazada' | 'baneada'
 export interface AppNotification {
   id: string;
   userUid: string;
-  kind: 'identidad' | 'pase' | 'sistema';
+  kind: 'identidad' | 'pase' | 'sistema' | 'donacion' | 'evento' | 'soporte';
   title: string;
   body: string;
   ts: number;
@@ -218,7 +218,7 @@ export interface PaymentItem {
 
 export type SubscriptionTier = 'free' | 'plus' | 'ultra' | 'silver' | 'gold';
 
-export type SpeiOrderKind = 'suscripcion' | 'evento' | 'propuesta_colaboracion' | 'premium' | 'pase_estado';
+export type SpeiOrderKind = 'suscripcion' | 'evento' | 'propuesta_colaboracion' | 'premium' | 'pase_estado' | 'donacion';
 export type SpeiOrderStatus = 'pendiente' | 'verificado' | 'aprobado' | 'rechazado' | 'expirado';
 
 // SPEI transfer order: reference is the unique payment ID used in the bank concept.
@@ -238,6 +238,10 @@ export interface SpeiOrder {
   createdAt: number;
   expiresAt: number;
   timeline: { ts: number; text: string }[];
+  // JSON payload with the context the administrator needs to activate the
+  // benefit automatically: event data for the access pass, creator and donor
+  // data for donations.
+  meta?: string;
 }
 
 export interface StoryPost {
@@ -262,3 +266,111 @@ export interface ForumPost {
   messages: { id: string; author: string; text: string; time: string }[];
 }
 
+
+// ---------- Event attendance, settlement, donations, ratings and support ----------
+// Access pass issued by the administrator when the attendee's SPEI deposit is
+// approved. Stored in `event_passes/{id}`; the pass carries the VIP access
+// code presented at the door. Passes are purged monthly (they never
+// accumulate forever), which also keeps code repetition extremely unlikely.
+export interface EventAccessPass {
+  id: string;
+  code: string; // 'VIP 7365 6145 0880' (always VIP first, three groups of four)
+  eventId: string;
+  eventTitle: string;
+  eventDate: string; // as published in the event (free text or ISO)
+  eventTime: string;
+  eventZone: string; // approximate zone; the exact location is released the same day
+  organizerUid: string | null;
+  organizerName: string;
+  userUid: string; // attendee
+  userName: string;
+  tierId: string | null;
+  tierLabel: string;
+  amount: number; // deposit actually paid (tax included)
+  orderId: string; // SPEI order id (the technical sheet ID is the order reference)
+  orderRef: string; // 'ASW-XXXXXX' — printed as the ticket ID on the technical sheet
+  createdAt: number;
+  status: 'pendiente_pago' | 'activo' | 'usado' | 'reembolsado' | 'cancelado';
+  usedAt: number | null;
+  refundedAt: number | null;
+}
+
+// Settlement the organizer requests after registering attendance. When the
+// declared attendance is at or above EVENT_MIN_ATTENDANCE_RATIO of the paid
+// passes, the payout releases instantly; below the threshold it goes to
+// administrative review (anti "phantom event" protection).
+export interface EventPayoutRequest {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  organizerUid: string | null;
+  organizerName: string;
+  organizerEmail: string;
+  paidCount: number;
+  attendedCount: number;
+  noShowCount: number;
+  refundCount: number;
+  gross: number;
+  commission: number;
+  isrRetained: number;
+  net: number;
+  refundTotal: number;
+  status: 'revision' | 'liberado' | 'rechazado';
+  createdAt: number;
+  decidedAt: number | null;
+  note: string;
+}
+
+// Donation from a user to a content creator. The donor pays the donation plus
+// tax (IVA 16% in Mexico, ~8% sales tax in the US); the creator is notified
+// with the donor's profile name and the amount is credited to the creator's
+// virtual earnings card when the administrator approves the SPEI payment.
+export interface DonationRecord {
+  id: string;
+  donorUid: string | null;
+  donorName: string; // account name
+  donorProfileName: string; // profile alias shown to the creator
+  creatorHandle: string;
+  creatorName: string;
+  amount: number; // donation before tax
+  tax: number;
+  total: number; // amount actually paid by the donor
+  message: string;
+  status: 'pendiente' | 'aprobada' | 'rechazada';
+  orderId: string;
+  createdAt: number;
+  decidedAt: number | null;
+}
+
+// Post-event rating pushed to attendees the day after the event (5 stars +
+// optional comment). Accumulated bad references raise admin alerts about the
+// agency / promoter / associate.
+export interface EventRating {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  organizerUid: string | null;
+  organizerName: string;
+  userUid: string;
+  userName: string;
+  stars: number; // 1..5
+  comment: string;
+  ts: number;
+}
+
+// Support channel for agencies, promoters, associates and creators: total
+// openness to handle their requests, complaints and clarifications, always
+// seeking their satisfaction over winning any controversy.
+export interface SupportTicket {
+  id: string;
+  userUid: string | null;
+  userName: string;
+  userEmail: string;
+  requester: 'agencia' | 'asociado' | 'organizador' | 'creadora';
+  subject: string;
+  message: string;
+  status: 'abierto' | 'respondido' | 'cerrado';
+  reply: string | null;
+  createdAt: number;
+  repliedAt: number | null;
+}

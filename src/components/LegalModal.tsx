@@ -77,6 +77,37 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             'Si en un evento se presenta una persona extra no contemplada ni registrada, la plataforma no responde ni la considera; cualquier ajuste se arregla directamente con la agencia organizadora.',
             'Explotar ese margen conlleva la suspensión de la agencia por un mínimo de 6 meses, e incluso de forma permanente según la gravedad.',
           ]
+        },
+        {
+          title: 'Depósitos de Asistencia, Pases VIP y Liquidación',
+          items: [
+            'Cada usuario paga una sola vez su depósito de asistencia por SPEI para apartar su lugar; al confirmarlo el administrador, se emite un código de acceso VIP de 12 dígitos (tres grupos de cuatro, siempre con VIP al inicio).',
+            'La ficha técnica (comprobante con marca de agua APPSWINGER, cuyo ID es el número de orden) se descarga desde la app, pero NO se presenta en el evento: en la puerta únicamente se presenta el código de acceso VIP.',
+            'Por seguridad, la ubicación exacta del evento se libera únicamente el mismo día del evento a los asistentes con pase activo.',
+            'Si el usuario no asiste al evento, su depósito NO es reembolsable. Esta regla se aclara de forma explícita y obligatoria antes de realizar el pago.',
+            'Únicamente se reembolsa el depósito cuando el organizador declara que no admitió al usuario, cuando el evento se cancela, o cuando el administrador lo determina tras quejas verificadas.',
+            'Liquidación armonizada: el organizador registra la asistencia en un solo formulario validado contra los pases emitidos; se le paga por los asistentes confirmados y por las inasistencias no reembolsables (menos comisión e ISR). Si declara menos asistentes de los que pagaron, solo se le liquidan los declarados y el resto se reembolsa.',
+            'Si la asistencia declarada es menor al 50% de los pases pagados, la liquidación pasa a revisión del administrador, quien puede liberarla (si es legítima) o reembolsar a todos los asistentes (evento fantasma).',
+            'Los pases VIP se eliminan por completo de los registros después de 30 días, lo que evita la acumulación y repetición de códigos.',
+          ]
+        },
+        {
+          title: 'Donaciones a Creadoras y Tarjeta Virtual',
+          items: [
+            'Las donaciones a creadoras de contenido son voluntarias: el usuario paga el importe que decida donar más el IVA correspondiente.',
+            'La creadora siempre puede saber qué perfil le envió la donación y el motivo anexado; ese importe se abona a su tarjeta virtual de ingresos.',
+            'La tarjeta virtual de creadoras es un saldo contable: acumula suscripciones, accesos a directos y donaciones. Los retiros se procesan por transferencia en un máximo de 24 a 36 horas a la cuenta registrada a nombre de la creadora.',
+            'Los ingresos de eventos no pasan por la tarjeta virtual: se liquidan evento por evento desde el panel del organizador.',
+          ]
+        },
+        {
+          title: 'Calificaciones, Reputación y Soporte a Agencias',
+          items: [
+            'Al día siguiente o posterior a cada evento, los asistentes reciben en la app la solicitud de calificación (estrellas y comentario). Las calificaciones generan el estatus público de la agencia, promotora o asociado que publica eventos.',
+            'Los promedios bajos o las denuncias acumuladas generan avisos automáticos al administrador; cuando la experiencia fue mala se invita al usuario a contactar a la plataforma o a reportar directamente al publicador.',
+            'Mantenemos un canal de soporte con apertura total para agencias, promotoras, asociados de eventos y creadoras: recibimos solicitudes, quejas y aclaraciones buscando su satisfacción más que ganar cualquier controversia, y el administrador responde por el mismo canal con notificación dentro de la app.',
+            'Los asociados son figuras exclusivas de eventos; no participan de otro tipo de esquemas de la plataforma.',
+          ]
         }
       ]
     },
@@ -102,6 +133,7 @@ export const LegalModal: React.FC<LegalModalProps> = ({
             'Si el administrador no puede validar tu identidad, se te notificará que no pudimos validar quién dice ser y tu cuenta con sus credenciales será eliminada.',
             'En caso de ban de un usuario, las credenciales de identificación se retienen durante un año por cualquier tema legal posterior; transcurrido ese plazo se borra todo dato existente.',
             'Los mensajes cuentan con un respaldo de seguridad de hasta 3 meses para atender reportes y controversias; cada 3 meses se depura el almacenamiento de mensajes vencidos.',
+            'Los pases de acceso VIP de eventos se eliminan por completo después de 30 días, junto con su registro de códigos.',
           ]
         },
         {

@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
-import { ClubEvent, Reservation, EventTier } from '../types';
+import { ClubEvent, EventAccessPass, Reservation, EventTier } from '../types';
 import { EVENT_TIERS } from '../data/mockProfiles';
-import { Calendar, MapPin, Ticket, ShieldCheck, Plus, CheckCircle2, Megaphone, X } from 'lucide-react';
+import { Calendar, MapPin, Ticket, ShieldCheck, Plus, CheckCircle2, Megaphone, X, Star, Download, BellRing } from 'lucide-react';
+import { downloadEventTicket, isEventDay, isEventPast, type OrganizerReputation } from '../eventflow';
 
 interface EventsViewProps {
   events: ClubEvent[];
   reservations: Reservation[];
+  passes: EventAccessPass[];
+  reputation: Record<string, OrganizerReputation>;
   onReserve: (eventId: string, tierId: string | null) => void;
+  onAttend: (eventId: string, tierId: string | null) => void;
   onCancelReservation: (reservationId: string) => void;
+  onRatePass: (pass: EventAccessPass) => void;
   onAgencyPromoRequest: (data: { agency: string; title: string; date: string; zone: string; cap: number }) => void;
   onOpenOrganizerPanel: () => void;
 }
@@ -15,8 +20,12 @@ interface EventsViewProps {
 export const EventsView: React.FC<EventsViewProps> = ({
   events,
   reservations,
+  passes,
+  reputation,
   onReserve,
+  onAttend,
   onCancelReservation,
+  onRatePass,
   onAgencyPromoRequest,
   onOpenOrganizerPanel,
 }) => {
@@ -36,7 +45,13 @@ export const EventsView: React.FC<EventsViewProps> = ({
 
   const handleConfirmReservation = () => {
     if (!selectedEvent) return;
-    onReserve(selectedEvent.id, selectedEvent.paid ? selectedTier : null);
+    // Paid events: one SPEI deposit per user; the admin confirms and issues
+    // the VIP access pass. Free events keep the direct reservation.
+    if (selectedEvent.paid) {
+      onAttend(selectedEvent.id, selectedTier);
+    } else {
+      onReserve(selectedEvent.id, null);
+    }
     setSelectedEvent(null);
   };
 
@@ -64,14 +79,91 @@ export const EventsView: React.FC<EventsViewProps> = ({
           className="px-3 py-1.5 rounded-xl bg-purple-950 border border-purple-500/30 text-xs font-semibold text-purple-200 flex items-center gap-1.5 shadow-md active:scale-95 transition"
         >
           <Ticket className="w-3.5 h-3.5 text-pink-400" />
-          <span>{viewTab === 'cartelera' ? `Mis Boletos (${activeReservations.length})` : 'Ver Cartelera'}</span>
+          <span>{viewTab === 'cartelera' ? `Mis Boletos (${activeReservations.length + passes.length})` : 'Ver Cartelera'}</span>
         </button>
       </div>
 
       {/* VIEW: MIS RESERVAS & PASES DIGITALES */}
       {viewTab === 'reservas' && (
         <div className="space-y-4">
-          {activeReservations.length === 0 ? (
+          {/* VIP passes (paid attendance deposits confirmed by the admin) */}
+          {passes.length > 0 && (
+            <div className="space-y-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-pink-400 flex items-center gap-1.5">
+                <Ticket className="w-3.5 h-3.5" />
+                Pases VIP ({passes.length})
+              </span>
+              {passes.map((pass) => {
+                const dayOf = isEventDay(pass.eventDate);
+                const past = isEventPast(pass.eventDate);
+                return (
+                  <div
+                    key={pass.id}
+                    className={`rounded-3xl bg-gradient-to-b from-purple-950/40 via-neutral-900 to-black border overflow-hidden shadow-2xl ${dayOf ? 'border-amber-400/60 shadow-[0_0_25px_rgba(251,191,36,0.25)]' : 'border-purple-500/30'}`}
+                  >
+                    {/* Pass stub */}
+                    <div className="p-5 border-b border-dashed border-purple-500/30 relative">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${dayOf ? 'text-amber-300' : 'text-pink-400'}`}>
+                          {pass.status === 'usado' ? 'Pase utilizado' : pass.status === 'reembolsado' ? 'Reembolsado' : dayOf ? '¡Hoy es tu evento!' : pass.status === 'activo' ? 'Pase activo' : 'Pago pendiente'}
+                        </span>
+                        <span className="text-xs text-white/60 font-medium">
+                          {pass.eventDate} &bull; {pass.eventTime}
+                        </span>
+                      </div>
+                      <h3 className="text-lg font-bold text-white leading-snug">{pass.eventTitle}</h3>
+                      <p className="text-xs text-purple-300/80 mt-1">{pass.tierLabel} &bull; ${pass.amount.toLocaleString()}</p>
+                      <p className="text-xs text-white/60 mt-0.5 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        {dayOf
+                          ? `${pass.eventZone} · ubicación liberada HOY`
+                          : `Zona ${pass.eventZone} · ubicación el mismo día del evento`}
+                      </p>
+                      <div className="absolute -bottom-3 -left-3 w-6 h-6 rounded-full bg-[#090514] border-r border-purple-500/30" />
+                      <div className="absolute -bottom-3 -right-3 w-6 h-6 rounded-full bg-[#090514] border-l border-purple-500/30" />
+                    </div>
+
+                    {/* Code + actions */}
+                    <div className="p-4 bg-purple-950/20 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-white/40 uppercase tracking-widest block">Código de acceso</span>
+                          <span className="text-base font-mono font-black text-pink-300">{pass.code}</span>
+                          <span className="text-[9px] text-white/40 block">ID de orden: {pass.orderRef}</span>
+                        </div>
+                        {dayOf && (
+                          <span className="px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 text-[10px] font-bold flex items-center gap-1">
+                            <BellRing className="w-3.5 h-3.5" />
+                            Hoy
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => downloadEventTicket(pass, true)}
+                          className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-purple-200 text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          Ficha técnica
+                        </button>
+                        {past && pass.status === 'usado' && (
+                          <button
+                            onClick={() => onRatePass(pass)}
+                            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-pink-600 text-black text-[11px] font-black flex items-center justify-center gap-1.5 transition"
+                          >
+                            <Star className="w-3.5 h-3.5" />
+                            Calificar
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {activeReservations.length === 0 && passes.length === 0 ? (
             <div className="py-12 text-center text-white/50 text-xs bg-white/5 rounded-3xl p-6 border border-white/10">
               No tienes reservaciones activas. Elige un evento de la cartelera para apartar tu lugar.
             </div>
@@ -214,11 +306,18 @@ export const EventsView: React.FC<EventsViewProps> = ({
 
                   {/* Actions */}
                   <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-purple-300/80">
-                      Organiza: <strong className="text-white">{ev.organizer}</strong>
+                    <span className="text-[11px] text-purple-300/80 flex items-center gap-1">
+                      <span>Organiza: <strong className="text-white">{ev.organizer}</strong></span>
+                      {reputation[ev.organizer] && reputation[ev.organizer].count > 0 && (
+                        <span className="flex items-center gap-0.5 text-amber-300 font-bold">
+                          <Star className="w-3 h-3 fill-amber-300" />
+                          {reputation[ev.organizer].avg}
+                          <span className="text-white/40 font-normal">({reputation[ev.organizer].count})</span>
+                        </span>
+                      )}
                     </span>
 
-                    {hasReservation ? (
+                    {hasReservation || passes.some(p => p.eventId === ev.id && p.status !== 'cancelado') ? (
                       <span className="px-3 py-1 rounded-xl bg-purple-900/40 text-purple-200 border border-purple-400/30 text-xs font-bold flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5 text-pink-400" />
                         Reservado
@@ -348,7 +447,7 @@ export const EventsView: React.FC<EventsViewProps> = ({
               onClick={handleConfirmReservation}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-sm shadow-xl shadow-purple-600/40 active:scale-95 transition"
             >
-              {selectedEvent.paid ? 'Apartar Entrada y Recibir Folio' : 'Confirmar Reserva Gratuita'}
+              {selectedEvent.paid ? 'Apartar Entrada · Pagar Depósito' : 'Confirmar Reserva Gratuita'}
             </button>
           </div>
         </div>
