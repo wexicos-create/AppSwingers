@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { Profile, SubscriptionTier, AppRegion, MatchItem } from '../types';
+import { Profile, SubscriptionTier, AppRegion, BadgeKind, MatchItem } from '../types';
 import { fetchUserMatches } from '../firebase';
+import { compressImage } from '../organizers';
+import { inspectPublicPhoto, NO_NUDE_PUBLIC_MSG, NO_NUDE_PUBLIC_MSG_EN } from '../content-guard';
+import { showToast } from './Toast';
+import { NameBadges } from './Badges';
 import { 
   LogOut, 
   LogIn, 
@@ -56,6 +60,9 @@ interface ProfileViewProps {
   isEs?: boolean;
   onOpenExtrasModal?: () => void;
   matches?: MatchItem[];
+  identityBadge?: BadgeKind | null; // 'verificada' (creators/agencies/coordinators) | 'oro' (socios/admins)
+  adminUser?: boolean; // shows the gold ADMIN stamp
+  identityApproved?: boolean; // INE approved by the admin (shown as text, not badge)
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -81,12 +88,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   isEs = true,
   onOpenExtrasModal,
   matches = [],
+  identityBadge = null,
+  adminUser = false,
+  identityApproved = false,
 }) => {
   const [premiumModalOpen, setPremiumModalOpen] = useState(false);
   const [discreetNotifs, setDiscreetNotifs] = useState(true);
   const [photosMatchOnly, setPhotosMatchOnly] = useState(true);
   const [hideDistance, setHideDistance] = useState(false);
-  const [activePhotoSlot, setActivePhotoSlot] = useState<number | null>(null);
   const [firestoreMatches, setFirestoreMatches] = useState<MatchItem[]>(matches);
 
   React.useEffect(() => {
@@ -109,6 +118,52 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     { src: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80', vis: 'match' },
     { src: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=600&q=80', vis: 'match' },
   ]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const photoInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Real photo upload: compress, then apply the public-photo decency filter.
+  // New photos start private (solo con Match); the user can publish them with
+  // one tap, which re-runs the filter. Nudes are never allowed on public info;
+  // explicit content may only be shared through private messages.
+  const handleGalleryFile = async (file: File) => {
+    setPhotoBusy(true);
+    try {
+      const data = await compressImage(file);
+      const inspection = await inspectPublicPhoto(data);
+      if (!inspection.ok) {
+        showToast(isEs ? NO_NUDE_PUBLIC_MSG : NO_NUDE_PUBLIC_MSG_EN, 'error');
+        return;
+      }
+      setGallery(prev => (prev.length >= 9 ? prev : [...prev, { src: data, vis: 'match' }]));
+      showToast(isEs
+        ? 'Foto guardada como privada (solo con Match). Toca la etiqueta para publicarla; las fotos públicas se revisan automáticamente.'
+        : 'Photo saved as private (Match only). Tap the label to publish it; public photos are automatically screened.');
+    } catch {
+      showToast(isEs ? 'No se pudo procesar la foto. Inténtalo con otra imagen.' : 'Could not process the photo. Try another image.', 'error');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
+  const toggleGalleryVisibility = async (index: number) => {
+    const item = gallery[index];
+    if (!item) return;
+    if (item.vis === 'match') {
+      setPhotoBusy(true);
+      try {
+        const inspection = await inspectPublicPhoto(item.src);
+        if (!inspection.ok) {
+          showToast(isEs ? NO_NUDE_PUBLIC_MSG : NO_NUDE_PUBLIC_MSG_EN, 'error');
+          return;
+        }
+        setGallery(prev => prev.map((g, i) => (i === index ? { ...g, vis: 'publica' } : g)));
+      } finally {
+        setPhotoBusy(false);
+      }
+    } else {
+      setGallery(prev => prev.map((g, i) => (i === index ? { ...g, vis: 'match' } : g)));
+    }
+  };
 
   return (
     <div className="w-full max-w-md mx-auto p-4 pb-28 text-white overflow-y-auto">
@@ -148,10 +203,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
         <h3 className="text-xl font-bold text-white flex items-center gap-1.5">
           {user?.displayName || 'Pareja / Explorador Liberal'}
-          <CheckCircle2 className="w-4 h-4 text-blue-400 fill-blue-400/20" />
+          {/* Badge policy: blue badge only for creators/agencies/coordinators; gold badge + ADMIN stamp for socios and admins. */}
+          <NameBadges badge={identityBadge} admin={adminUser} />
         </h3>
         <p className="text-xs text-purple-200/70 mt-0.5">
-          {user?.email || 'Nivel de confianza: Verificado en WhatsApp & Google'}
+          {identityApproved
+            ? (isEs ? 'Identidad verificada ante la plataforma' : 'Identity verified with the platform')
+            : (user?.email || 'Nivel de confianza: Verificado en WhatsApp & Google')}
         </p>
 
         {/* Stats Strip */}
@@ -315,33 +373,55 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           {gallery.map((img, i) => (
             <div
               key={i}
-              onClick={() => setActivePhotoSlot(i)}
-              className="group relative aspect-[3/4] rounded-2xl overflow-hidden border border-purple-500/30 cursor-pointer shadow-md"
+              className="group relative aspect-[3/4] rounded-2xl overflow-hidden border border-purple-500/30 shadow-md"
             >
-              <img src={img.src} alt={`Foto ${i + 1}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-              <span className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1">
+              <img src={img.src} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+              <button
+                type="button"
+                onClick={() => { void toggleGalleryVisibility(i); }}
+                disabled={photoBusy}
+                className="absolute bottom-1.5 left-1.5 px-2 py-0.5 rounded-full bg-black/70 backdrop-blur-md text-[9px] font-bold text-white uppercase tracking-wider flex items-center gap-1 enabled:hover:bg-black/90 transition disabled:opacity-50"
+                title={img.vis === 'match'
+                  ? (isEs ? 'Toca para publicar (se revisa automáticamente)' : 'Tap to publish (auto-screened)')
+                  : (isEs ? 'Toca para hacerla privada (solo con Match)' : 'Tap to make private (Match only)')}
+              >
                 {img.vis === 'match' && <Lock className="w-2.5 h-2.5 text-pink-400" />}
                 {img.vis}
-              </span>
+              </button>
             </div>
           ))}
 
           {gallery.length < 9 && (
             <div
-              onClick={() => {
-                setGallery(prev => [
-                  ...prev,
-                  { src: 'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?auto=format&fit=crop&w=600&q=80', vis: 'match' }
-                ]);
-              }}
+              onClick={() => photoInputRef.current?.click()}
               className="aspect-[3/4] rounded-2xl border-2 border-dashed border-purple-500/30 bg-white/5 flex flex-col items-center justify-center text-purple-300 hover:border-pink-500/50 hover:bg-purple-950/20 transition cursor-pointer"
             >
-              <Camera className="w-6 h-6 text-pink-400 mb-1" />
+              {photoBusy ? (
+                <div className="w-6 h-6 border-2 border-pink-400 border-t-transparent rounded-full animate-spin mb-1" />
+              ) : (
+                <Camera className="w-6 h-6 text-pink-400 mb-1" />
+              )}
               <span className="text-[10px] font-bold">+ Foto</span>
             </div>
           )}
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) { void handleGalleryFile(f); }
+              e.currentTarget.value = '';
+            }}
+          />
         </div>
+        <p className="text-[9px] text-white/40 leading-relaxed">
+          {isEs
+            ? 'Política de contenido: la información pública de tu perfil no debe mostrar desnudos ni semi-desnudos; el contenido explícito únicamente puede compartirse por mensaje privado. Las fotos públicas se analizan automáticamente y las denunciadas pasan a revisión humana.'
+            : 'Content policy: your public profile information must not show nudes or semi-nudes; explicit content may only be shared through private messages. Public photos are automatically screened and reported ones go to human review.'}
+        </p>
       </div>
 
       {/* PLANES & MEMBRESÍAS: COMPARATIVA SIDE-BY-SIDE (GRATIS, PLUS, ULTRA) */}
@@ -621,6 +701,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           onChange={(e) => onChangeMaxDistance(Number(e.target.value))}
           className="w-full accent-pink-500 h-2 bg-neutral-800 rounded-lg cursor-pointer"
         />
+
+        {/* Quick options: with your GPS location we recommend starting at 5-6 km */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider">{isEs ? 'Sugerido con tu ubicación:' : 'Suggested with your location:'}</span>
+          {[5, 6, 15, 30, 50, 100].map(km => (
+            <button
+              key={km}
+              type="button"
+              onClick={() => onChangeMaxDistance(km)}
+              className={'px-2.5 py-1 rounded-xl text-[10px] font-bold transition ' + (maxDistance === km
+                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-md'
+                : 'bg-white/5 border border-white/10 text-white/60 hover:border-purple-400/40')}
+            >
+              {km} km{km === 6 ? (isEs ? ' · recomendado' : ' · recommended') : ''}
+            </button>
+          ))}
+        </div>
 
         <div className="flex justify-between text-[10px] text-white/40">
           <span>2 km (Local)</span>

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut as fbSignOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, deleteUser, User } from 'firebase/auth';
+import { deleteDoc, doc } from 'firebase/firestore';
 import { 
   auth, 
+  db,
   googleProvider, 
   syncUserProfile, 
   recordSwipe, 
@@ -95,7 +97,14 @@ import {
   saveRemoteWalletTransaction,
   createRemoteWithdrawal,
   mergeById,
+  fetchIdentityStatus,
+  fetchNotificationsForUser,
 } from './organizers';
+import { fetchStatePass } from './premium';
+import { recommendRadiusKm } from './geolocation';
+import { IdentityGate } from './components/IdentityGate';
+import { PremiumStateSearch } from './components/PremiumStateSearch';
+import { IdentityVerdict, StatePass, AppNotification } from './types';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -114,7 +123,9 @@ import {
   Users,
   BookOpen,
   Bell,
-  Loader2
+  Loader2,
+  MapPin as MapPinIcon,
+  Crown as CrownIcon
 } from 'lucide-react';
 
 export default function App() {
@@ -270,6 +281,15 @@ export default function App() {
   // Discovery Filter (KM Radius)
   const [maxDistance, setMaxDistance] = useState(userProfile.maxKm || 30);
 
+  // Identity verdict & account gates (admin second validation)
+  const [identityStatus, setIdentityStatus] = useState<IdentityVerdict | null>(null);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+
+  // Premium state-search day pass (travelers & tourists)
+  const [premiumSearchOpen, setPremiumSearchOpen] = useState(false);
+  const [statePass, setStatePass] = useState<StatePass | null>(null);
+
   // Auto-detect IP and Region on startup
   useEffect(() => {
     detectUserRegionAndLang().then(({ region: r, lang: l }) => {
@@ -383,6 +403,19 @@ export default function App() {
         } else {
           setOnboardingMode(prev => (prev === 'register' || prev === 'login') ? prev : 'resume');
         }
+        // Identity verdict, platform notifications and premium state pass.
+        const [status, notes, pass] = await Promise.all([
+          fetchIdentityStatus(currentUser.uid),
+          fetchNotificationsForUser(currentUser.uid),
+          fetchStatePass(currentUser.uid),
+        ]);
+        setIdentityStatus(status);
+        setNotifications(notes);
+        setStatePass(pass);
+      } else {
+        setIdentityStatus(null);
+        setNotifications([]);
+        setStatePass(null);
       }
     });
 
@@ -496,6 +529,57 @@ export default function App() {
     }
     setActiveTab('perfil');
     showToast(isEs ? `¡Bienvenido a AppSwinguer, ${data.alias}!` : `Welcome to AppSwinguer, ${data.alias}!`);
+  };
+
+  // ---------- Identity verdict consequences: rejected accounts self-delete ----------
+  // Firebase client rules: an account can only delete its own Auth user. When
+  // the admin rejects an identity, the owner deletes account + credentials
+  // from this gate on next login.
+  const handleDeleteRejectedAccount = async () => {
+    if (!user) return;
+    setDeletingAccount(true);
+    try {
+      await deleteDoc(doc(db, 'users', user.uid));
+      await deleteUser(user);
+      setUser(null);
+      setIdentityStatus(null);
+      setNotifications([]);
+      setOnboardingMode(null);
+      showToast(isEs ? 'Tu cuenta y tus credenciales fueron eliminadas por completo.' : 'Your account and credentials were fully deleted.');
+    } catch (e: any) {
+      if (e?.code === 'auth/requires-recent-login') {
+        showToast(isEs
+          ? 'Por seguridad debes iniciar sesión de nuevo: cierra sesión y vuelve a entrar; después podrás eliminar tu cuenta desde este aviso.'
+          : 'For security you must sign in again: sign out and sign back in; then you can delete your account from this notice.', 'error');
+      } else {
+        showToast(isEs ? 'No se pudo eliminar la cuenta en este momento. Inténtalo de nuevo.' : 'Could not delete the account right now. Try again.', 'error');
+      }
+    }
+    setDeletingAccount(false);
+  };
+
+  // ---------- Premium state search: interest from another state ----------
+  const handleStatePassConnect = async (profile: Profile) => {
+    if (matches.some(m => m.profile.id === profile.id)) {
+      showToast(isEs ? `Ya enviaste interés a ${profile.name}. Harán Match si la persona accede.` : `You already sent interest to ${profile.name}. You will match if the person accepts.`, 'info');
+      return;
+    }
+    const newMatch: MatchItem = {
+      id: `match_${profile.id}_${Date.now()}`,
+      profile,
+      matchedAt: new Date().toISOString(),
+      lastMessage: isEs ? 'Interés desde Búsqueda por Estado. Si accede al Match, pueden acordar una cita.' : 'Interest from State Search. If they accept the match, you can arrange a date.',
+      unreadCount: 1,
+    };
+    setMatches(prev => [newMatch, ...prev]);
+    if (user) {
+      try {
+        await recordMatch(user.uid, profile);
+      } catch (err) {
+        console.warn('Error saving state-pass match:', err);
+      }
+    }
+    showToast(isEs ? `Interés enviado a ${profile.name}. Harán Match si la persona accede.` : `Interest sent to ${profile.name}. You will match if the person accepts.`);
   };
 
   // Regional & Distance filtered profiles (México vs USA)
@@ -1106,6 +1190,27 @@ export default function App() {
     );
   }
 
+  // ---------- IDENTITY GATE: accounts rejected or banned by the admin ----------
+  // Reject: the owner is notified that we could not validate who they claim to
+  // be and deletes account + credentials here. Ban: credentials stay retained
+  // for one year (legal window) and the account remains blocked.
+  if (user && (identityStatus === 'rechazada' || identityStatus === 'baneada')) {
+    return (
+      <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
+        <IdentityGate
+          mode={identityStatus}
+          isEs={isEs}
+          alias={userProfile.alias}
+          notifications={notifications}
+          deleting={deletingAccount}
+          onDeleteAccount={() => { void handleDeleteRejectedAccount(); }}
+          onSignOut={() => { void handleSignOut(); }}
+        />
+        <ToastHost />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#050307] text-[#f5eeff] flex justify-center font-sans select-none antialiased overflow-x-hidden">
       {/* Mobile Screen Shell container */}
@@ -1294,6 +1399,39 @@ export default function App() {
                     <span>{isEs ? 'Radio:' : 'Radius:'} <strong className="text-white">{maxDistance} km</strong></span>
                   </span>
 
+                  {/* Radius recommendation based on the granted GPS location */}
+                  {locationGranted && maxDistance > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const suggested = recommendRadiusKm();
+                        setMaxDistance(suggested);
+                        setUserProfile(prev => ({ ...prev, maxKm: suggested }));
+                        showToast(isEs
+                          ? `Con tu ubicación te recomendamos un radio de ${suggested} km: perfiles cercanos y mayor seguridad.`
+                          : `Based on your location we recommend a ${suggested} km radius: nearby profiles and higher safety.`);
+                      }}
+                      className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-[9px] font-bold text-emerald-300 flex items-center gap-1 active:scale-95 transition"
+                    >
+                      <MapPinIcon className="w-2.5 h-2.5" />
+                      {isEs ? `Sugerido: ${recommendRadiusKm()} km` : `Suggested: ${recommendRadiusKm()} km`}
+                    </button>
+                  )}
+
+                  {/* Premium state-search pass entry (travelers & tourists) */}
+                  <button
+                    onClick={() => setPremiumSearchOpen(true)}
+                    className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/25 to-pink-500/25 hover:from-amber-500/40 hover:to-pink-500/40 border border-amber-400/50 text-[10px] font-bold text-amber-200 flex items-center gap-1 active:scale-95 transition shadow-sm"
+                    title={isEs ? 'Búsqueda por estado para viajeros (pase premium de 24 horas)' : 'State search for travelers (24-hour premium pass)'}
+                  >
+                    <CrownIcon className="w-3 h-3 text-amber-300" />
+                    <span>
+                      {statePass
+                        ? `${statePass.stateName} · ${Math.max(0, Math.ceil((statePass.expiresAt - Date.now()) / 3600000))} h`
+                        : (isEs ? 'Búsqueda por estado' : 'Search by state')}
+                    </span>
+                  </button>
+
                   {/* Extras Modal button safely placed here */}
                   <button
                     onClick={() => setExtrasModalOpen(true)}
@@ -1480,6 +1618,7 @@ export default function App() {
               isEs={isEs}
               onOpenExtrasModal={() => setExtrasModalOpen(true)}
               matches={matches}
+              identityApproved={identityStatus === 'aprobada'}
             />
           )}
         </main>
@@ -1721,6 +1860,21 @@ export default function App() {
             setPushToast({ title, body });
             setTimeout(() => setPushToast(null), 5500);
           }}
+        />
+
+        {/* MODAL 9: PREMIUM STATE SEARCH (travelers & tourists, 24-hour SPEI pass) */}
+        <PremiumStateSearch
+          isOpen={premiumSearchOpen}
+          onClose={() => setPremiumSearchOpen(false)}
+          isEs={isEs}
+          region={region}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          userEmail={user?.email || 'sin-correo@local'}
+          profiles={profiles}
+          events={events}
+          onConnect={(p) => { void handleStatePassConnect(p); }}
+          onPassChange={(p) => setStatePass(p)}
         />
 
         {/* GLOBAL IN-APP TOASTS (replaces native alert dialogs) */}

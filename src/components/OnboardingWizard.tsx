@@ -202,6 +202,9 @@ export function OnboardingWizard({
         'Prohibido robar, estafar o agredir a cualquier usuario.',
         'No nos hacemos responsables del uso que se dé a la plataforma; sí garantizamos y nos esforzamos por otorgar seguridad a los usuarios, evitar sucesos ilegales y formalizar de forma segura, en especial para las mujeres, un tema tan controversial.',
         'Reglas de sana convivencia: consentimiento mutuo, respeto y discreción en todo momento.',
+        'La información pública de tu perfil no debe mostrar desnudos ni semi-desnudos; el contenido explícito únicamente por mensaje privado.',
+        'Si el administrador no puede validar tu identidad, se te notificará y tu cuenta con credenciales será eliminada; en caso de ban, las credenciales se retienen un año por cualquier tema legal y después se borran.',
+        'No manejamos reembolsos salvo una causa realmente justificada. Todas las membresías y comisiones incluyen IVA.',
       ]
     : [
         'Child content: absolute prohibition. It means permanent ban and handing data over to the corresponding authority.',
@@ -209,6 +212,9 @@ export function OnboardingWizard({
         'Stealing, scamming or attacking any user is prohibited.',
         'We are not responsible for the use given to the platform; we do guarantee and strive to provide security to users, prevent illegal events and formalize safely, especially for women, such a controversial topic.',
         'Healthy coexistence rules: mutual consent, respect and discretion at all times.',
+        'Your public profile information must not show nudes or semi-nudes; explicit content only through private messages.',
+        'If the administrator cannot validate your identity, you will be notified and your account with credentials will be deleted; in case of ban, credentials are retained for one year for any legal matter and then purged.',
+        'We do not handle refunds unless truly justified. All memberships and commissions include tax.',
       ];
 
   return (

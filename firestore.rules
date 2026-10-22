@@ -28,17 +28,35 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && (request.resource.data.isAdmin == null || request.resource.data.isAdmin == false);
-      allow update: if isOwner(userId) && (
+      // The admin needs to publish identity verdicts (reject/ban) and account
+      // flags on user documents; regular owners still cannot touch 'isAdmin'.
+      allow update: if isAdmin() || (isOwner(userId) && (
         // Prevent regular users from elevating themselves to admin
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin'])) || 
         isAdmin()
-      );
+      ));
       allow delete: if isAdmin() || isOwner(userId);
 
       // Subcollections owned by user
       match /{allSubcollections=**} {
         allow read, write: if isOwner(userId);
       }
+    }
+
+    // Platform notifications: only the admin creates them (identity verdicts,
+    // pass activations, system announcements); each user reads their own.
+    match /notifications/{notificationId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
+      allow create: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
+    // Premium state-search day passes: only the admin activates them (after
+    // approving the SPEI payment). The owner can read their own pass; a user
+    // can never issue a pass to themselves.
+    match /state_passes/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
     // Matches collection: strictly validate participants

@@ -1,6 +1,6 @@
-import { doc, setDoc, getDocs, collection, query, where } from 'firebase/firestore';
+import { doc, setDoc, getDoc, getDocs, collection, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
-import { AppRegion } from './types';
+import { AppRegion, AppNotification, IdentityVerdict } from './types';
 
 // ---------- Organizer roles and types ----------
 // agencia: recurring professional agency; asociado: recurring event host;
@@ -309,6 +309,15 @@ export interface IneRecord {
   ineBack: string;  // dataURL
   selfie: string;   // dataURL (empty when the flow does not require it)
   createdAt: number;
+  // Verdict system: the administrator gives the second validation with
+  // Aprobar / Rechazar / Banear. Records created before this field keep
+  // behaving as 'pendiente'.
+  verdict?: IdentityVerdict;
+  verdictAt?: number;
+  verdictNote?: string;
+  // When a user is banned, the credentials are retained for one year for any
+  // later legal matter; after that the admin purges them permanently.
+  retainedUntil?: number | null;
 }
 
 export function newIneRecord(params: {
@@ -336,5 +345,95 @@ export async function fetchAllRemoteIneRecords(): Promise<IneRecord[]> {
   try {
     const snap = await getDocs(collection(db, 'ine_records'));
     return snap.docs.map(d => d.data() as IneRecord);
+  } catch { return []; }
+}
+
+// ---------- Identity verdicts (second validation, admin-only) ----------
+// Retention window for banned accounts: one year, then permanent purge.
+export const INE_BAN_RETENTION_MS = 365 * 24 * 60 * 60 * 1000;
+
+export function ineRecordVerdict(rec: IneRecord): IdentityVerdict {
+  return rec.verdict || 'pendiente';
+}
+
+/**
+ * Publishes the admin verdict on an INE record:
+ * 1. Updates the record (verdict, note, retention window when banned).
+ * 2. Writes identityStatus on the user document (rules allow the admin).
+ * 3. Creates a notification the account owner reads on next login.
+ * Reject => the owner is told we could not validate who they claim to be and
+ * the account with its credentials will be deleted. Ban => credentials are
+ * retained for one year for legal purposes and then purged.
+ */
+export async function issueIdentityVerdict(params: {
+  record: IneRecord;
+  verdict: Exclude<IdentityVerdict, 'pendiente'>;
+  isEs: boolean;
+}): Promise<boolean> {
+  const { record, verdict, isEs } = params;
+  if (!record.userUid) return false;
+  const now = Date.now();
+  const note =
+    verdict === 'aprobada'
+      ? (isEs ? 'Identidad aprobada por el administrador tras revisión del archivo legal.' : 'Identity approved by the administrator after legal archive review.')
+      : verdict === 'rechazada'
+        ? (isEs ? 'No pudimos validar que eres quien dices ser. Tu cuenta y credenciales serán eliminadas.' : 'We could not validate you are who you claim to be. Your account and credentials will be deleted.')
+        : (isEs ? 'Cuenta baneada por decisión del administrador. Las credenciales se retienen un año por cualquier tema legal posterior.' : 'Account banned by administrator decision. Credentials are retained for one year for any later legal matter.');
+  try {
+    await updateDoc(doc(db, 'ine_records', record.id), {
+      verdict,
+      verdictAt: now,
+      verdictNote: note,
+      retainedUntil: verdict === 'baneada' ? now + INE_BAN_RETENTION_MS : null,
+    });
+    await setDoc(doc(db, 'users', record.userUid), { identityStatus: verdict, identityNote: note, identityVerdictAt: now }, { merge: true });
+    await setDoc(doc(db, 'notifications', 'nt_' + now + '_' + record.userUid), {
+      id: 'nt_' + now + '_' + record.userUid,
+      userUid: record.userUid,
+      kind: 'identidad',
+      title: verdict === 'aprobada' ? (isEs ? 'Identidad verificada' : 'Identity verified') : verdict === 'rechazada' ? (isEs ? 'No pudimos validar tu identidad' : 'We could not validate your identity') : (isEs ? 'Cuenta suspendida' : 'Account suspended'),
+      body: note,
+      ts: now,
+      read: false,
+    } as AppNotification);
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Purges credentials of banned users whose one-year retention window has
+ * expired. Called from the admin panel (lazy cleanup on open + button).
+ * Deleted photos are not kept anywhere else: once purged, all data is gone.
+ */
+export async function purgeExpiredRetainedRecords(): Promise<number> {
+  try {
+    const snap = await getDocs(collection(db, 'ine_records'));
+    const now = Date.now();
+    const expired = snap.docs
+      .map(d => d.data() as IneRecord)
+      .filter(r => ineRecordVerdict(r) === 'baneada' && typeof r.retainedUntil === 'number' && r.retainedUntil < now);
+    for (const r of expired) {
+      await deleteDoc(doc(db, 'ine_records', r.id));
+    }
+    return expired.length;
+  } catch { return 0; }
+}
+
+// ---------- Identity status & notifications (user side) ----------
+
+export async function fetchIdentityStatus(uid: string): Promise<IdentityVerdict | null> {
+  try {
+    const snap = await getDoc(doc(db, 'users', uid));
+    if (!snap.exists()) return null;
+    return (snap.data() as { identityStatus?: IdentityVerdict }).identityStatus || null;
+  } catch { return null; }
+}
+
+export async function fetchNotificationsForUser(uid: string): Promise<AppNotification[]> {
+  try {
+    const snap = await getDocs(query(collection(db, 'notifications'), where('userUid', '==', uid)));
+    return snap.docs
+      .map(d => d.data() as AppNotification)
+      .sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }

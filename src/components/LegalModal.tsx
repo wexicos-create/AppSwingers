@@ -60,9 +60,22 @@ export const LegalModal: React.FC<LegalModalProps> = ({
         {
           title: 'Pagos y Suscripciones',
           items: [
-            'Todos los precios están expresados en pesos mexicanos con IVA incluido.',
+            'Todos los precios están expresados en pesos mexicanos con IVA incluido. En Estados Unidos el precio equivalente incluye los impuestos locales aplicables.',
             'Membresía Premium: $400 MXN cada 15 días con renovación voluntaria y cancelación instantánea.',
             'Suscripciones a creadoras: La creadora fija su precio y recibe el 85% neto del valor base.',
+            'Pase de Búsqueda por Estado (viajeros): precio único por 24 horas ($300 MXN + IVA en México). Permite descubrir perfiles y eventos del estado elegido, enviar interés y hacer Match si la persona accede.',
+            'No manejamos reembolsos, salvo una causa realmente justificada y acreditada.',
+            'Cobramos IVA sobre cada membresía y sobre cada comisión que la plataforma percibe, conforme a las leyes fiscales de cada país.',
+            'Cuando la plataforma transfiere ingresos por depósito bancario (organizadores, creadoras), el área fiscal retiene el ISR correspondiente conforme a la normativa aplicable; puedes solicitar factura (RFC) de tus percepciones si así lo deseas.',
+            'La validación de identidad se realiza con el sistema propio de captura y análisis de la plataforma (revisión documental, prueba de vida y veredicto del administrador); no utilizamos empresas externas de validación.',
+          ]
+        },
+        {
+          title: 'Eventos y Terceros Extra',
+          items: [
+            'La publicación y asistencia a eventos se rige por los costos y comisiones vigentes mostrados en la app, impuestos incluidos.',
+            'Si en un evento se presenta una persona extra no contemplada ni registrada, la plataforma no responde ni la considera; cualquier ajuste se arregla directamente con la agencia organizadora.',
+            'Explotar ese margen conlleva la suspensión de la agencia por un mínimo de 6 meses, e incluso de forma permanente según la gravedad.',
           ]
         }
       ]
@@ -77,8 +90,18 @@ export const LegalModal: React.FC<LegalModalProps> = ({
           title: 'Datos Sensibles y Finalidad',
           items: [
             'Tus gustos pasionales y preferencias sexuales se tratan únicamente con tu consentimiento expreso para conectarte con perfiles afines.',
-            'Tu ubicación exacta nunca se revela a otros usuarios; solo se calcula una distancia aproximada.',
+            'Tu ubicación exacta nunca se revela a otros usuarios; solo se calcula una distancia aproximada. Puedes publicar una ubicación aproximada o solo un rango por seguridad.',
             'Tus fotos privadas o exclusivas para Match quedan bloqueadas hasta que ambas partes conectan.',
+            'La información pública de tu perfil no debe contener desnudos ni semi-desnudos; el contenido explícito únicamente puede compartirse por mensaje privado. Las fotos públicas se analizan automáticamente y las que no cumplen la política se bloquean.',
+            'Las fotos subidas y luego borradas no se conservan en ningún respaldo.',
+          ]
+        },
+        {
+          title: 'Retención Legal y Eliminación',
+          items: [
+            'Si el administrador no puede validar tu identidad, se te notificará que no pudimos validar quién dice ser y tu cuenta con sus credenciales será eliminada.',
+            'En caso de ban de un usuario, las credenciales de identificación se retienen durante un año por cualquier tema legal posterior; transcurrido ese plazo se borra todo dato existente.',
+            'Los mensajes cuentan con un respaldo de seguridad de hasta 3 meses para atender reportes y controversias; cada 3 meses se depura el almacenamiento de mensajes vencidos.',
           ]
         },
         {

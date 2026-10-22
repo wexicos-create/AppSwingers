@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ProfileKind } from '../types';
 import { compressImage } from '../organizers';
+import { inspectPublicPhoto, NO_NUDE_PUBLIC_MSG, NO_NUDE_PUBLIC_MSG_EN } from '../content-guard';
+import { showToast } from './Toast';
 import { buildSeekingOptions } from './OnboardingWizard';
 import { Camera, CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
 
@@ -42,6 +44,13 @@ export function ProfileCompletion({ isEs, initial, onComplete }: ProfileCompleti
   const handlePhotoFile = async (file: File) => {
     try {
       const data = await compressImage(file);
+      // Public-profile decency filter: nudes and semi-nudes are blocked here;
+      // explicit content may only be shared through private messages later.
+      const inspection = await inspectPublicPhoto(data);
+      if (!inspection.ok) {
+        showToast(isEs ? NO_NUDE_PUBLIC_MSG : NO_NUDE_PUBLIC_MSG_EN, 'error');
+        return;
+      }
       setPhoto(data);
     } catch { /* ignore unreadable file */ }
   };

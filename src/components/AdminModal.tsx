@@ -52,10 +52,15 @@ import {
   PLATFORM_COMMISSION_PCT,
   ISR_RETENTION_PCT,
   fetchAllRemoteIneRecords,
+  issueIdentityVerdict,
+  ineRecordVerdict,
+  purgeExpiredRetainedRecords,
+  INE_BAN_RETENTION_MS,
   IneRecord,
   IneRecordSource,
 } from '../organizers';
-import { SpeiOrder, SpeiOrderStatus } from '../types';
+import { activateStatePass, stateNameByCode, fetchAllStatePasses, getStatePassPrice } from '../premium';
+import { SpeiOrder, SpeiOrderStatus, StatePass } from '../types';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -105,6 +110,10 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [adminWithdrawals, setAdminWithdrawals] = useState<WithdrawalRequest[]>([]);
   const [adminWallet, setAdminWallet] = useState<WalletTransaction[]>([]);
   const [adminIneRecords, setAdminIneRecords] = useState<IneRecord[]>([]);
+  // Premium state passes + identity verdict actions
+  const [adminStatePasses, setAdminStatePasses] = useState<StatePass[]>([]);
+  const [identityBusyId, setIdentityBusyId] = useState<string | null>(null);
+  const [purgeNote, setPurgeNote] = useState<string | null>(null);
   const [eventFeeMx, setEventFeeMx] = useState(String(getEventPublishFee('MX').base));
   const [eventFeeUs, setEventFeeUs] = useState(String(getEventPublishFee('US').base));
 
@@ -153,6 +162,15 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
       setAdminWithdrawals(wds);
       setAdminWallet([...remoteWallet].sort((a, b) => b.ts - a.ts));
       setAdminIneRecords([...remoteIne].sort((a, b) => b.createdAt - a.createdAt));
+      // Lazy legal purge: credentials of banned users whose one-year retention
+      // expired are permanently deleted, plus the active state-pass overview.
+      const purged = await purgeExpiredRetainedRecords();
+      if (purged > 0) {
+        const remaining = await fetchAllRemoteIneRecords();
+        setAdminIneRecords([...remaining].sort((a, b) => b.createdAt - a.createdAt));
+        setPurgeNote(isEs ? `${purged} expediente(s) de credenciales retenidas vencidas fueron eliminados permanentemente.` : `${purged} expired retained credential file(s) permanently deleted.`);
+      }
+      setAdminStatePasses(await fetchAllStatePasses());
     };
     void loadOrganizerData();
     const timer = window.setInterval(() => { void loadOrganizerData(); }, 20000);
@@ -290,10 +308,61 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
   const handleSpeiApprove = (order: SpeiOrder) => {
     persistSpeiDecision(order, 'aprobado', 'Pago aprobado por el administrador. El beneficio contratado se activa automáticamente en la cuenta del usuario.');
+    // Premium state-search pass: approving the SPEI order activates the
+    // 24-hour pass on state_passes/{uid} (admin-only write per rules).
+    if (order.kind === 'pase_estado' && order.userUid) {
+      const now = Date.now();
+      void activateStatePass({
+        userUid: order.userUid,
+        stateCode: order.itemRef,
+        stateName: stateNameByCode(order.itemRef),
+        region: (order.amount === getStatePassPrice('MX').total) ? 'MX' : 'US',
+        orderId: order.id,
+        createdAt: now,
+        expiresAt: now + 24 * 60 * 60 * 1000,
+      }).then(ok => {
+        showToast(ok
+          ? (isEs ? `Pase de 24 h activado para ${stateNameByCode(order.itemRef)}.` : `24-hour pass activated for ${stateNameByCode(order.itemRef)}.`)
+          : (isEs ? 'No se pudo escribir el pase en Firestore. Verifica las reglas.' : 'Could not write the pass to Firestore. Check the rules.'),
+          ok ? 'success' : 'error');
+      });
+    }
   };
 
   const handleSpeiReject = (order: SpeiOrder) => {
     persistSpeiDecision(order, 'rechazado', 'Pago rechazado por el administrador. El usuario permanece en Plan Gratis sin el beneficio solicitado.');
+  };
+
+  // ---------- Identity verdicts: the admin gives the second validation ----------
+  const handleIdentityVerdict = async (rec: IneRecord, verdict: 'aprobada' | 'rechazada' | 'baneada') => {
+    setIdentityBusyId(rec.id);
+    const ok = await issueIdentityVerdict({ record: rec, verdict, isEs });
+    if (ok) {
+      const refreshed = await fetchAllRemoteIneRecords();
+      setAdminIneRecords([...refreshed].sort((a, b) => b.createdAt - a.createdAt));
+      showToast(
+        verdict === 'aprobada'
+          ? (isEs ? 'Identidad aprobada: el usuario recibió la notificación de verificación.' : 'Identity approved: the user received the verification notice.')
+          : verdict === 'rechazada'
+            ? (isEs ? 'Rechazo emitido: se notificó al dueño que no pudimos validar quién dice ser; su cuenta se eliminará al ingresar.' : 'Rejection issued: the owner was notified we could not validate who they claim to be; the account is deleted on login.')
+            : (isEs ? 'Usuario baneado: credenciales retenidas un año por cualquier tema legal y luego purgadas.' : 'User banned: credentials retained for one year for any legal matter, then purged.'),
+        verdict === 'aprobada' ? 'success' : 'info',
+      );
+    } else {
+      showToast(isEs ? 'No se pudo publicar el veredicto. Verifica la conexión y las reglas de Firestore.' : 'Could not publish the verdict. Check the connection and Firestore rules.', 'error');
+    }
+    setIdentityBusyId(null);
+  };
+
+  const handleManualPurge = async () => {
+    const purged = await purgeExpiredRetainedRecords();
+    if (purged > 0) {
+      const refreshed = await fetchAllRemoteIneRecords();
+      setAdminIneRecords([...refreshed].sort((a, b) => b.createdAt - a.createdAt));
+    }
+    setPurgeNote(purged > 0
+      ? (isEs ? `${purged} expediente(s) retenido(s) vencido(s) eliminado(s) permanentemente.` : `${purged} expired retained file(s) permanently deleted.`)
+      : (isEs ? 'No hay credenciales retenidas con retención vencida.' : 'No retained credentials with expired retention.'));
   };
 
   const handleSaveSpeiConfig = () => {
@@ -912,26 +981,114 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
 
                 {/* Legal INE archive: identity documents stored for potential legal disputes */}
                 <div className="space-y-2">
-                  <span className="text-xs font-bold text-white block">{isEs ? 'Archivo legal INE (identificaciones)' : 'INE legal archive (ID documents)'}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-white block">{isEs ? 'Archivo legal INE (identificaciones)' : 'INE legal archive (ID documents)'}</span>
+                    <button
+                      type="button"
+                      onClick={() => { void handleManualPurge(); }}
+                      className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 text-[9px] font-bold text-white/80 shrink-0 transition"
+                    >
+                      {isEs ? 'Purgar retenciones vencidas' : 'Purge expired retentions'}
+                    </button>
+                  </div>
+                  {purgeNote && (
+                    <p className="text-[10px] text-amber-300/90 px-2">{purgeNote}</p>
+                  )}
                   {adminIneRecords.length === 0 ? (
                     <p className="text-[11px] text-white/50">{isEs ? 'Sin identificaciones resguardadas por ahora.' : 'No identification records stored yet.'}</p>
                   ) : adminIneRecords.map((rec) => {
                     const srcInfo = ineSourceMeta(rec.source);
+                    const verdict = ineRecordVerdict(rec);
+                    const verdictMeta: Record<string, { label: string; cls: string }> = {
+                      pendiente: { label: isEs ? 'En revisión' : 'Pending review', cls: 'bg-amber-500/20 text-amber-300' },
+                      aprobada: { label: isEs ? 'Aprobada' : 'Approved', cls: 'bg-emerald-500/20 text-emerald-300' },
+                      rechazada: { label: isEs ? 'Rechazada' : 'Rejected', cls: 'bg-rose-500/20 text-rose-300' },
+                      baneada: { label: isEs ? 'Baneada' : 'Banned', cls: 'bg-rose-600/30 text-rose-200' },
+                    };
+                    const vm = verdictMeta[verdict];
+                    const retentionLeft = rec.retainedUntil ? Math.max(0, rec.retainedUntil - Date.now()) : null;
+                    const retentionDays = retentionLeft !== null ? Math.ceil(retentionLeft / (24 * 60 * 60 * 1000)) : null;
                     return (
                       <div key={rec.id} className="p-3 rounded-2xl bg-black/50 border border-white/10 space-y-2">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-bold text-white truncate">{rec.legalName}</span>
-                          <span className={'px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-bold shrink-0 ' + srcInfo.className}>{srcInfo.label}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold ' + vm.cls}>{vm.label}</span>
+                            <span className={'px-2 py-0.5 rounded-full bg-white/10 text-[10px] font-bold ' + srcInfo.className}>{srcInfo.label}</span>
+                          </div>
                         </div>
                         <div className="text-[10px] text-white/60">
                           {rec.alias} · {rec.userEmail} · {rec.context}
                         </div>
                         <div className="text-[10px] text-white/40">{new Date(rec.createdAt).toLocaleDateString()}</div>
+                        {retentionDays !== null && (
+                          <div className="text-[10px] text-amber-300/80">
+                            {isEs ? `Retención legal activa: ${retentionDays} día(s) restantes antes de la purga permanente.` : `Legal retention active: ${retentionDays} day(s) left before permanent purge.`}
+                          </div>
+                        )}
+                        {rec.verdictNote && (
+                          <div className="text-[10px] text-white/50 px-2 py-1 rounded-lg bg-white/5 leading-relaxed">{rec.verdictNote}</div>
+                        )}
                         <div className="flex gap-1.5">
                           {rec.ineFront && <img src={rec.ineFront} alt="INE" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
                           {rec.ineBack && <img src={rec.ineBack} alt="INE reverso" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
                           {rec.selfie && <img src={rec.selfie} alt="Selfie" className="w-14 h-14 object-cover rounded-lg border border-white/10" />}
                         </div>
+                        {verdict === 'pendiente' && rec.userUid && (
+                          <div className="flex gap-1.5 pt-0.5">
+                            <button
+                              type="button"
+                              disabled={identityBusyId === rec.id}
+                              onClick={() => { void handleIdentityVerdict(rec, 'aprobada'); }}
+                              className="flex-1 py-1.5 rounded-xl bg-emerald-600/80 hover:bg-emerald-500 text-white text-[10px] font-bold disabled:opacity-50 transition"
+                            >
+                              {isEs ? 'Aprobar' : 'Approve'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={identityBusyId === rec.id}
+                              onClick={() => { void handleIdentityVerdict(rec, 'rechazada'); }}
+                              className="flex-1 py-1.5 rounded-xl bg-rose-600/80 hover:bg-rose-500 text-white text-[10px] font-bold disabled:opacity-50 transition"
+                            >
+                              {isEs ? 'Rechazar y eliminar cuenta' : 'Reject & delete account'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={identityBusyId === rec.id}
+                              onClick={() => { void handleIdentityVerdict(rec, 'baneada'); }}
+                              className="flex-1 py-1.5 rounded-xl bg-amber-600/80 hover:bg-amber-500 text-black text-[10px] font-bold disabled:opacity-50 transition"
+                            >
+                              {isEs ? `Banear (${Math.round(INE_BAN_RETENTION_MS / (24 * 60 * 60 * 1000))} días)` : `Ban (${Math.round(INE_BAN_RETENTION_MS / (24 * 60 * 60 * 1000))} days)`}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Active premium state passes */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white block">{isEs ? 'Pases de búsqueda por estado (24 h)' : 'State-search passes (24 h)'}</span>
+                    <span className="text-[10px] text-white/40">{adminStatePasses.filter(p => p.expiresAt > Date.now()).length} {isEs ? 'activos' : 'active'}</span>
+                  </div>
+                  {adminStatePasses.length === 0 ? (
+                    <p className="text-[11px] text-white/50">{isEs ? 'Sin pases activos por ahora.' : 'No active passes yet.'}</p>
+                  ) : adminStatePasses.map(p => {
+                    const left = Math.max(0, p.expiresAt - Date.now());
+                    const active = left > 0;
+                    return (
+                      <div key={p.userUid} className="p-3 rounded-2xl bg-black/50 border border-white/10 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-white block truncate">{p.stateName}</span>
+                          <span className="text-[10px] text-white/50 truncate block">{p.userUid}</span>
+                        </div>
+                        <span className={'px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ' + (active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/40')}>
+                          {active
+                            ? (isEs ? `${Math.ceil(left / 3600000)} h restantes` : `${Math.ceil(left / 3600000)} h left`)
+                            : (isEs ? 'Vencido' : 'Expired')}
+                        </span>
                       </div>
                     );
                   })}

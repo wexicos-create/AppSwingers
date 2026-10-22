@@ -1,6 +1,38 @@
 export type ProfileKind = 'Pareja' | 'Dama' | 'Caballero' | 'Individual';
 export type VerifyStatus = 'sin iniciar' | 'en revisión' | 'verificado' | 'rechazado';
 export type AccountStatus = 'activo' | 'suspendido' | 'eliminado';
+
+// Identity verdict issued by the administrator after reviewing the INE archive.
+// 'pendiente' is implicit for records that predate the verdict system.
+export type IdentityVerdict = 'pendiente' | 'aprobada' | 'rechazada' | 'baneada';
+
+// Platform notification stored in the `notifications` collection; the admin
+// creates them and each user reads only their own on login.
+export interface AppNotification {
+  id: string;
+  userUid: string;
+  kind: 'identidad' | 'pase' | 'sistema';
+  title: string;
+  body: string;
+  ts: number;
+  read: boolean;
+}
+
+// Premium state-search day pass (travelers/tourists). Stored in `state_passes/{uid}`;
+// only the administrator can create it (after approving the SPEI payment).
+export interface StatePass {
+  userUid: string;
+  stateCode: string;
+  stateName: string;
+  region: AppRegion;
+  orderId: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+// Badge policy: 'verificada' (blue) is reserved for content creators, event
+// agencies and coordinators; 'oro' (gold) is reserved for socios and admins.
+export type BadgeKind = 'verificada' | 'oro';
 export type SwipeAction = 'like' | 'pass' | 'dislike' | 'superlike';
 export type AppRegion = 'MX' | 'US';
 
@@ -20,6 +52,9 @@ export interface Profile {
   distance?: string;
   location?: string;
   country?: AppRegion;
+  state?: string; // state/province used by the premium state-search pass
+  badge?: BadgeKind; // 'verificada' (creators/agencies/coordinators) | 'oro' (socios/admins)
+  adminStamp?: boolean; // gold rectangular ADMIN seal next to the name
   likesYou?: boolean;
   verify: VerifyStatus;
   status: AccountStatus;
@@ -183,7 +218,7 @@ export interface PaymentItem {
 
 export type SubscriptionTier = 'free' | 'plus' | 'ultra' | 'silver' | 'gold';
 
-export type SpeiOrderKind = 'suscripcion' | 'evento' | 'propuesta_colaboracion' | 'premium';
+export type SpeiOrderKind = 'suscripcion' | 'evento' | 'propuesta_colaboracion' | 'premium' | 'pase_estado';
 export type SpeiOrderStatus = 'pendiente' | 'verificado' | 'aprobado' | 'rechazado' | 'expirado';
 
 // SPEI transfer order: reference is the unique payment ID used in the bank concept.

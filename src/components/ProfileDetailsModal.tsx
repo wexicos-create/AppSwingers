@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Profile, SwipeAction } from '../types';
-import { X, MapPin, CheckCircle2, Heart, Star, Sparkles, Briefcase, Calendar, Ruler } from 'lucide-react';
+import { X, MapPin, Heart, Star, Sparkles, Briefcase, Calendar, Ruler } from 'lucide-react';
+import { NameBadges } from './Badges';
 
 interface ProfileDetailsModalProps {
   profile: Profile | null;
@@ -49,14 +50,12 @@ export const ProfileDetailsModal: React.FC<ProfileDetailsModalProps> = ({
               <X className="w-5 h-5" />
             </button>
 
-            {/* Verified badge */}
+            {/* Verified badge: blue for creators/agencies/coordinators, gold for socios/admins (+ ADMIN stamp) */}
             <div className="absolute bottom-4 left-6 flex items-center gap-2">
               <h2 className="text-3xl font-extrabold text-white">
                 {profile.name}{displayAge ? `, ${displayAge}` : ''}
               </h2>
-              {profile.verify === 'verificado' && (
-                <CheckCircle2 className="w-6 h-6 text-blue-400 fill-blue-400/20" />
-              )}
+              <NameBadges badge={profile.badge} admin={profile.adminStamp} />
             </div>
           </div>
 
