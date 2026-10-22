@@ -50,6 +50,7 @@ import { CollaborationModal } from './components/CollaborationModal';
 import { RegistrationModal } from './components/RegistrationModal';
 import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
 import { PushLookupModal } from './components/PushLookupModal';
+import { ToastHost, showToast } from './components/Toast';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -426,7 +427,7 @@ export default function App() {
     };
     setReservations(prev => [newReservation, ...prev]);
     setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    alert(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
+    showToast(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -451,7 +452,7 @@ export default function App() {
         ? `Has alcanzado el límite semanal de ${weeklyLimit} postulaciones de tu ${planName}.\n\nPara continuar postulándote a fiestas y propuestas exclusivas, sube a: ${nextPlanOffer}.`
         : `You reached the weekly limit of ${weeklyLimit} applications of your ${planName}.\n\nUpgrade to ${nextPlanOffer} to post unlimited requests.`;
       
-      alert(alertMsg);
+      showToast(alertMsg, 'info');
       setExtrasModalOpen(true);
       return;
     }
@@ -468,7 +469,7 @@ export default function App() {
     const msg = isEs
       ? `¡Postulación enviada con éxito a "${proposal.title}"!\nTu identidad se mantiene confidencial.\n\nPostulaciones restantes esta semana: ${remaining}.`
       : `Application sent successfully to "${proposal.title}"!\nConfidentiality preserved.\n\nRemaining applications this week: ${remaining}.`;
-    alert(msg);
+    showToast(msg);
   };
 
   const handleToggleSaveProposal = (proposalId: string) => {
@@ -490,7 +491,7 @@ export default function App() {
       mine: true,
     };
     setProposals(prev => [created, ...prev]);
-    alert(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
+    showToast(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
   };
 
   // Collaboration Proposal (Swinger/Gangbang $350 MXN / $80 USD)
@@ -520,19 +521,19 @@ export default function App() {
   // Creator subscriptions
   const handleSubscribeCreator = (creator: Creator) => {
     setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    alert(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
+    showToast(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
   };
 
   const handleBuyLiveAccess = (live: LiveStream) => {
     setLiveAccessIds(prev => [...prev, live.id]);
-    alert(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
+    showToast(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
   };
 
   // Club reward redemption
   const handleRedeemClubReward = () => {
     const folio = `CLB-${Math.floor(1000 + Math.random() * 9000)}`;
     setRedeemedClubFolio(folio);
-    alert(isEs ? `¡Felicidades! Has canjeado tu recompensa del Club de Experiencias. Folio: ${folio}` : `Club reward redeemed! Folio: ${folio}`);
+    showToast(isEs ? `¡Felicidades! Has canjeado tu recompensa del Club de Experiencias. Folio: ${folio}` : `Club reward redeemed! Folio: ${folio}`);
   };
 
   // Data privacy wipe
@@ -543,7 +544,7 @@ export default function App() {
       setMatches([]);
       setAppliedProposalIds([]);
       setSavedProposalIds([]);
-      alert(isEs ? 'Datos restablecidos.' : 'Data reset.');
+      showToast(isEs ? 'Datos restablecidos.' : 'Data reset.');
     }
   };
 
@@ -851,7 +852,7 @@ export default function App() {
               onApply={handleApplyProposal}
               onToggleSave={handleToggleSaveProposal}
               onCreateProposal={handleCreateProposal}
-              onOpenReport={(target) => alert(isEs ? `Reporte recibido para "${target.name}".` : `Report registered.`)}
+              onOpenReport={(target) => showToast(isEs ? `Reporte recibido para "${target.name}".` : `Report registered.`, 'info')}
               subscriptionTier={subscriptionTier}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
@@ -868,7 +869,7 @@ export default function App() {
               onReserve={handleReserveEvent}
               onCancelReservation={handleCancelReservation}
               onAgencyPromoRequest={(data) => {
-                alert(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
+                showToast(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
               }}
             />
           )}
@@ -888,10 +889,10 @@ export default function App() {
               onRegisterCreator={(c) => {
                 setUserCreator(c);
                 setCreators(prev => [c, ...prev]);
-                alert(isEs ? "¡Perfil de creadora registrado! Ya puedes fijar precios y subir sets exclusivos." : "Creator profile registered!");
+                showToast(isEs ? "¡Perfil de creadora registrado! Ya puedes fijar precios y subir sets exclusivos." : "Creator profile registered!");
               }}
               onUploadMedia={(data) => {
-                alert(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
+                showToast(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
               }}
             />
           )}
@@ -931,7 +932,7 @@ export default function App() {
               currentTier={subscriptionTier}
               onSelectTier={(tier) => {
                 setSubscriptionTier(tier);
-                alert(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
+                showToast(isEs ? `¡Plan actualizado con éxito a ${tier.toUpperCase()}!` : `Plan updated to ${tier.toUpperCase()}!`);
               }}
               weeklyApplicationsUsed={getWeeklyApplicationsCount()}
               weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
@@ -1036,7 +1037,7 @@ export default function App() {
                   matches={matches}
                   initialChatUserId={activeChatUserId}
                   onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => alert(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`)}
+                  onOpenReport={(t) => showToast(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`, 'info')}
                   onBlockUser={(id) => {
                     setMatches(prev => prev.filter(m => m.profile.id !== id));
                     if (activeChatUserId === id) {
@@ -1069,7 +1070,7 @@ export default function App() {
               locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
             });
             setMaxDistance(data.maxKm);
-            alert(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+            showToast(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
           }}
           onRequestLocation={() => requestLocationAccess(true)}
           locationGranted={locationGranted}
@@ -1148,6 +1149,9 @@ export default function App() {
             setTimeout(() => setPushToast(null), 5500);
           }}
         />
+
+        {/* GLOBAL IN-APP TOASTS (replaces native alert dialogs) */}
+        <ToastHost />
 
         {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
         {pushToast && (

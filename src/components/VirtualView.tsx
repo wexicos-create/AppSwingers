@@ -19,6 +19,7 @@ import {
   Users,
   UserCheck
 } from 'lucide-react';
+import { showToast } from './Toast';
 
 interface VirtualViewProps {
   creators: Creator[];
@@ -146,7 +147,7 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
     });
     setUploadCaption('');
     setUploadImageFile(null);
-    alert(isEs ? '¡Contenido publicado con éxito! Ya aparece en tu perfil para pago por evento.' : 'Content successfully published!');
+    showToast(isEs ? '¡Contenido publicado con éxito! Ya aparece en tu perfil para pago por evento.' : 'Content successfully published!');
   };
 
   return (
@@ -685,10 +686,10 @@ export const VirtualView: React.FC<VirtualViewProps> = ({
               type="button"
               onClick={() => {
                 if (virtualCardBalance <= 0) {
-                  alert(isEs ? 'Saldo insuficiente para retirar.' : 'Insufficient balance.');
+                  showToast(isEs ? 'Saldo insuficiente para retirar.' : 'Insufficient balance.', 'error');
                   return;
                 }
-                alert(isEs ? `¡Retiro de $${virtualCardBalance} ${currencyCode} solicitado a tu cuenta bancaria asociada!` : `Withdrawal requested!`);
+                showToast(isEs ? `¡Retiro de ${virtualCardBalance} ${currencyCode} solicitado a tu cuenta bancaria asociada!` : `Withdrawal requested!`);
                 setVirtualCardBalance(0);
               }}
               className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold text-xs shadow-lg active:scale-95 transition flex items-center justify-center gap-2"

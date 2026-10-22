@@ -14,6 +14,7 @@ import {
   Sliders
 } from 'lucide-react';
 import { AppRegion } from '../types';
+import { showToast } from './Toast';
 
 interface PushLookupModalProps {
   isOpen: boolean;
@@ -98,7 +99,7 @@ export const PushLookupModal: React.FC<PushLookupModalProps> = ({
         console.warn('Push permission request error:', e);
       }
     } else {
-      alert(isEs ? 'Este navegador no soporta la API de Notificaciones estándar.' : 'This browser does not support Notification API.');
+      showToast(isEs ? 'Este navegador no soporta la API de Notificaciones estándar.' : 'This browser does not support Notification API.', 'error');
     }
   };
 

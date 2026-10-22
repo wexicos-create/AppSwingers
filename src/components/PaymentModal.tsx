@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppRegion, PaymentItem } from '../types';
 import { X, CreditCard, Lock, ShieldCheck, Sparkles, CheckCircle2, DollarSign, Smartphone } from 'lucide-react';
+import { showToast } from './Toast';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -105,7 +106,7 @@ export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPay
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => alert(isEs ? 'Apple Pay simulado con éxito.' : 'Apple Pay simulated successfully.')}
+                onClick={() => showToast(isEs ? 'Apple Pay simulado con éxito.' : 'Apple Pay simulated successfully.')}
                 className="py-2.5 px-4 rounded-xl bg-black border border-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/10 transition"
               >
                 <Smartphone className="w-4 h-4 text-white" />
@@ -113,7 +114,7 @@ export function PaymentModal({ isOpen, onClose, item, region, isEs, onSuccessPay
               </button>
               <button
                 type="button"
-                onClick={() => alert(isEs ? 'Google Pay simulado con éxito.' : 'Google Pay simulated successfully.')}
+                onClick={() => showToast(isEs ? 'Google Pay simulado con éxito.' : 'Google Pay simulated successfully.')}
                 className="py-2.5 px-4 rounded-xl bg-black border border-white/20 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-white/10 transition"
               >
                 <Smartphone className="w-4 h-4 text-pink-400" />

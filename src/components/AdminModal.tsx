@@ -20,6 +20,7 @@ import {
   Zap,
   CheckCircle2
 } from 'lucide-react';
+import { showToast } from './Toast';
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -82,7 +83,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
       setStoredPin(newPin);
     }
     setIsChangingCreds(false);
-    alert(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
+    showToast(isEs ? 'Credenciales de administrador actualizadas con éxito.' : 'Admin credentials successfully updated.');
   };
 
   const handleClearCookiesAndStorage = () => {
@@ -94,8 +95,8 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         document.cookie.split(";").forEach((c) => {
           document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
         });
-        alert(isEs ? 'Cookies y almacenamiento local purgados al 100%. El APK está limpio en 0.' : 'Cookies & local storage purged 100%. APK is pristine at 0.');
-        window.location.reload();
+        showToast(isEs ? 'Cookies y almacenamiento local purgados al 100%. El APK está limpio en 0.' : 'Cookies & local storage purged 100%. APK is pristine at 0.');
+        window.setTimeout(() => window.location.reload(), 1500);
       } catch (err) {
         console.warn('Wipe cookies note:', err);
       }
