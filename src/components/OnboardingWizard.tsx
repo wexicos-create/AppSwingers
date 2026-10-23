@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppRegion, ProfileKind } from '../types';
 import {
   X,
@@ -56,7 +56,7 @@ const authErrorText = (code: string, isEs: boolean): string => {
     'auth/network-request-failed': ['Error de red. Revisa tu conexión e inténtalo de nuevo.', 'Network error. Check your connection and try again.'],
   };
   const pair = map[code];
-  return pair ? (isEs ? pair[0] : pair[1]) : (isEs ? 'No se pudo completar la operación. Inténtalo de nuevo.' : 'Could not complete the operation. Please try again.');
+  return pair ? (isEs ? pair[0] : pair[1]) : (isEs ? `Error de acceso (${code || 'desconocido'}). Usa el registro actualizado.` : `Login error (${code || 'unknown'}). Use the updated registration.`);
 };
 
 // Shared interest-tag builder (Sugar adapts to the account kind).
@@ -84,6 +84,12 @@ export function OnboardingWizard({
   onOpenLegal,
 }: OnboardingWizardProps) {
   const [step, setStep] = useState<OnboardingStep>(mode === 'resume' ? 'perfil' : 'cuenta');
+  // All new registrations/logins use Supabase. Keep the legacy Firebase wizard only for existing resume flows.
+  useEffect(() => {
+    if (mode === 'register' || mode === 'login') {
+      window.location.replace(mode === 'register' ? '/registro' : '/ingresar');
+    }
+  }, [mode]);
 
   // Step 1: account credentials
   const [email, setEmail] = useState('');
