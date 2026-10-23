@@ -87,7 +87,7 @@ export function OnboardingWizard({
   // All new registrations/logins use Supabase. Keep the legacy Firebase wizard only for existing resume flows.
   useEffect(() => {
     if (mode === 'register' || mode === 'login') {
-      window.location.replace(mode === 'register' ? '/registro' : '/ingresar');
+      window.location.replace(mode === 'register' ? '/#/registro' : '/#/ingresar');
     }
   }, [mode]);
 
