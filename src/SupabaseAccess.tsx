@@ -4,7 +4,7 @@ import { ArrowLeft, CheckCircle2, LockKeyhole, LogOut, ShieldCheck, UserRound } 
 const url = String(import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const key = String(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '');
 const cacheKey = 'appswinger_supabase_session_v1';
-type User = { id: string; email?: string };
+type User = { id: string; email?: string; user_metadata?: { birth_date?: string; requested_alias?: string } };
 type Session = { access_token: string; refresh_token?: string; expires_at: number; user?: User };
 type Profile = { id: string; display_name: string | null; status: string; created_at: string };
 type ErrorResponse = { error?: string; message?: string; msg?: string; error_description?: string; code?: string };
@@ -59,13 +59,25 @@ async function authenticatedSession(): Promise<Session | null> {
   }
 }
 
-async function loadOrCreateProfile(token: string, user: User, displayName?: string): Promise<Profile> {
+function validAdultBirthDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const birth = new Date(value + 'T00:00:00');
+  if (!Number.isFinite(birth.getTime()) || birth.getFullYear() !== Number(value.slice(0, 4)) || birth.getMonth() + 1 !== Number(value.slice(5, 7)) || birth.getDate() !== Number(value.slice(8, 10))) return false;
+  const today = new Date();
+  const age = today.getFullYear() - birth.getFullYear() - (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate()) ? 1 : 0);
+  return age >= 18;
+}
+
+async function loadOrCreateProfile(token: string, user: User, displayName?: string, birthDate?: string): Promise<Profile> {
   const rows = await request<Profile[]>('/rest/v1/profiles?id=eq.' + encodeURIComponent(user.id) + '&select=id,display_name,status,created_at&limit=1', { token });
   if (rows[0]) return rows[0];
-  const name = (displayName || user.email?.split('@')[0] || 'Usuario').trim().slice(0, 60);
+  const name = (displayName || user.user_metadata?.requested_alias || user.email?.split('@')[0] || 'Usuario').trim().slice(0, 60);
+  const date = birthDate || user.user_metadata?.birth_date || '';
+  if (!validAdultBirthDate(date)) throw new Error('Para completar tu perfil necesitas una fecha de nacimiento válida y tener al menos 18 años.');
   const created = await request<Profile[]>('/rest/v1/profiles?select=id,display_name,status,created_at', {
     method: 'POST', token, prefer: 'return=representation',
-    body: { id: user.id, display_name: name, status: 'pending' },
+    // Account status is assigned by PostgreSQL; clients may only set profile fields.
+    body: { id: user.id, display_name: name, birth_date: date },
   });
   if (!created[0]) throw new Error('El registro de perfil no devolvió una fila válida.');
   return created[0];
@@ -78,6 +90,7 @@ export default function SupabaseAccess() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [alias, setAlias] = useState('');
+  const [birthDate, setBirthDate] = useState('');
   const [adult, setAdult] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -109,11 +122,12 @@ export default function SupabaseAccess() {
     setPositive(false);
     if (!email.trim() || password.length < 6) { setMessage('Introduce un correo válido y una contraseña de al menos seis caracteres.'); return; }
     if (mode === 'register' && !adult) { setMessage('Para registrarte debes declarar que tienes al menos 18 años.'); return; }
+    if (mode === 'register' && !validAdultBirthDate(birthDate)) { setMessage('Introduce tu fecha de nacimiento. El registro es exclusivo para mayores de 18 años.'); return; }
     setBusy(true);
     try {
       const endpoint = mode === 'register' ? '/auth/v1/signup' : '/auth/v1/token?grant_type=password';
       const raw = await request<{ access_token?: string; refresh_token?: string; expires_in?: number; user?: User }>(endpoint, {
-        method: 'POST', body: mode === 'register' ? { email: email.trim().toLowerCase(), password, data: { requested_alias: alias.trim().slice(0, 60), adult_declaration: adult } } : { email: email.trim().toLowerCase(), password },
+        method: 'POST', body: mode === 'register' ? { email: email.trim().toLowerCase(), password, data: { requested_alias: alias.trim().slice(0, 60), birth_date: birthDate, adult_declaration: adult } } : { email: email.trim().toLowerCase(), password },
       });
       const current = saveSession(raw);
       if (!current) {
@@ -126,7 +140,7 @@ export default function SupabaseAccess() {
       const user = raw.user || await request<User>('/auth/v1/user', { token: current.access_token });
       setSession(current);
       try {
-        const result = await loadOrCreateProfile(current.access_token, user, alias);
+        const result = await loadOrCreateProfile(current.access_token, user, mode === 'register' ? alias : undefined, mode === 'register' ? birthDate : undefined);
         setProfile(result);
         setPositive(true);
         setMessage('Tu sesión y tu perfil están registrados en Supabase.');
@@ -136,6 +150,19 @@ export default function SupabaseAccess() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Error desconocido al autenticar.');
     } finally { setBusy(false); }
+  };
+
+  const completeProfile = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!session) return;
+    if (!validAdultBirthDate(birthDate)) { setMessage('Introduce una fecha de nacimiento válida. Debes tener al menos 18 años.'); setPositive(false); return; }
+    setBusy(true); setMessage(''); setPositive(false);
+    try {
+      const user = await request<User>('/auth/v1/user', { token: session.access_token });
+      setProfile(await loadOrCreateProfile(session.access_token, user, alias, birthDate));
+      setPositive(true); setMessage('Tu perfil quedó guardado en Supabase.');
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
   };
 
   const logout = async () => {
@@ -163,13 +190,14 @@ export default function SupabaseAccess() {
               <CheckCircle2 className="mt-0.5 text-green-300" size={22}/>
               <div><strong>Sesión autenticada</strong><p className="break-all text-sm text-green-100/85">{session.user?.email || email}</p></div>
             </div>
-            {profile ? <div className="rounded-xl border border-purple-400/25 p-4 text-sm"><p className="flex items-center gap-2 font-semibold"><UserRound size={17}/> {profile.display_name || 'Nuevo perfil'}</p><p className="mt-2">Perfil creado en PostgreSQL: <strong>{profile.status}</strong></p><p className="mt-1 text-purple-200/70">ID: {profile.id}</p></div> : <p className="text-sm text-amber-200">La sesión existe, pero el perfil aún no pudo cargarse.</p>}
+            {profile ? <div className="rounded-xl border border-purple-400/25 p-4 text-sm"><p className="flex items-center gap-2 font-semibold"><UserRound size={17}/> {profile.display_name || 'Nuevo perfil'}</p><p className="mt-2">Perfil creado en PostgreSQL: <strong>{profile.status}</strong></p><p className="mt-1 text-purple-200/70">ID: {profile.id}</p></div> : <form onSubmit={(event) => void completeProfile(event)} className="space-y-3"><p className="text-sm text-amber-200">Completa tu fecha de nacimiento para guardar el perfil.</p><label className="block text-sm">Fecha de nacimiento<input className={inputClass + ' mt-1'} type="date" value={birthDate} onChange={event => setBirthDate(event.target.value)} required /></label><button disabled={busy} className="w-full rounded-xl bg-purple-700 px-4 py-3 font-semibold disabled:opacity-50">{busy ? 'Guardando…' : 'Completar perfil'}</button></form>}
             <p className="text-sm text-purple-200/80"><ShieldCheck size={17} className="mr-1 inline"/> Esta pantalla confirma registro y acceso. La verificación de identidad, los chats y los pagos siguen pendientes de migración; no están habilitados aquí.</p>
             <button type="button" onClick={() => void logout()} className="flex w-full items-center justify-center gap-2 rounded-xl bg-purple-700 px-4 py-3 font-semibold"><LogOut size={17}/> Cerrar sesión</button>
           </section>
         ) : (
           <form onSubmit={(e) => void submit(e)} className="mt-6 space-y-4">
             {mode === 'register' && <label className="block text-sm">Nombre o alias<input className={inputClass + ' mt-1'} value={alias} onChange={e => setAlias(e.target.value)} maxLength={60} placeholder="Tu alias" required /></label>}
+            {mode === 'register' && <label className="block text-sm">Fecha de nacimiento<input className={inputClass + ' mt-1'} type="date" value={birthDate} onChange={e => setBirthDate(e.target.value)} required /></label>}
             <label className="block text-sm">Correo electrónico<input className={inputClass + ' mt-1'} type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" required /></label>
             <label className="block text-sm">Contraseña<input className={inputClass + ' mt-1'} type="password" autoComplete={mode === 'register' ? 'new-password' : 'current-password'} minLength={6} value={password} onChange={e => setPassword(e.target.value)} required /></label>
             {mode === 'register' && <label className="flex items-start gap-3 text-sm text-purple-100"><input type="checkbox" checked={adult} onChange={e => setAdult(e.target.checked)} className="mt-1" required/><span>Declaro que tengo 18 años o más y acepto las normas de la plataforma.</span></label>}
