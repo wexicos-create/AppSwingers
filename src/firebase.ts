@@ -1,26 +1,56 @@
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  GoogleAuthProvider, 
-  signInWithPopup, 
-  signOut as fbSignOut, 
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut as fbSignOut,
   onAuthStateChanged,
-  User 
+  User
 } from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  collection, 
-  getDocs, 
-  query, 
-  orderBy, 
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  getDoc,
+  collection,
+  getDocs,
+  query,
+  orderBy,
   getDocFromServer,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import firebaseConfigFile from '../firebase-applet-config.json';
 import { SwipeAction, Profile, MatchItem } from './types';
+
+const env = (import.meta as any).env ?? {};
+
+const firebaseConfig = {
+  ...firebaseConfigFile,
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfigFile.projectId,
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfigFile.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfigFile.authDomain,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfigFile.appId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfigFile.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigFile.messagingSenderId,
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfigFile.measurementId,
+  firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || firebaseConfigFile.firestoreDatabaseId || '(default)',
+};
+
+const missingRequiredConfig = [
+  ['projectId', firebaseConfig.projectId],
+  ['apiKey', firebaseConfig.apiKey],
+  ['authDomain', firebaseConfig.authDomain],
+  ['appId', firebaseConfig.appId],
+  ['storageBucket', firebaseConfig.storageBucket],
+  ['messagingSenderId', firebaseConfig.messagingSenderId],
+].filter(([, value]) => !value || String(value).includes('YOUR_'));
+
+if (missingRequiredConfig.length > 0) {
+  console.warn(
+    '[firebase] Missing or stale Firebase web config. Set VITE_FIREBASE_* in .env or update firebase-applet-config.json. Missing: ' +
+      missingRequiredConfig.map(([key]) => key).join(', ')
+  );
+}
 
 const app = initializeApp(firebaseConfig);
 const __fsDbId = (firebaseConfig as any).firestoreDatabaseId;
@@ -76,7 +106,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Test Connection per Firebase Skill
 export async function testConnection(): Promise<boolean> {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
@@ -89,7 +118,6 @@ export async function testConnection(): Promise<boolean> {
   }
 }
 
-// Sync authenticated user profile to Firestore
 export async function syncUserProfile(user: User, customFields?: Partial<Profile>) {
   if (!user) return;
   const userRef = doc(db, 'users', user.uid);
@@ -110,12 +138,7 @@ export async function syncUserProfile(user: User, customFields?: Partial<Profile
   }
 }
 
-// Record a swipe action in Firestore
-export async function recordSwipe(
-  userId: string, 
-  targetProfile: Profile, 
-  swipeType: SwipeAction
-) {
+export async function recordSwipe(userId: string, targetProfile: Profile, swipeType: SwipeAction) {
   if (!userId) return;
   const swipeDocId = `${targetProfile.id}_${Date.now()}`;
   const path = `users/${userId}/swipes/${swipeDocId}`;
@@ -133,7 +156,6 @@ export async function recordSwipe(
   }
 }
 
-// Record a match in Firestore
 export async function recordMatch(userId: string, targetProfile: Profile) {
   if (!userId) return;
   const matchDocId = `match_${targetProfile.id}`;
@@ -150,10 +172,8 @@ export async function recordMatch(userId: string, targetProfile: Profile) {
   }
 }
 
-// Fetch user matches
 export async function fetchUserMatches(userId: string): Promise<MatchItem[]> {
   if (!userId) return [];
-  const path = `users/${userId}/matches`;
   try {
     const q = query(collection(db, 'users', userId, 'matches'), orderBy('matchedAt', 'desc'));
     const snapshot = await getDocs(q);
