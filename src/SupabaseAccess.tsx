@@ -72,7 +72,7 @@ async function loadOrCreateProfile(token: string, user: User, displayName?: stri
 }
 
 export default function SupabaseAccess() {
-  const [mode, setMode] = useState<'login' | 'register'>(window.location.pathname.startsWith('/registro') ? 'register' : 'login');
+  const [mode, setMode] = useState<'login' | 'register'>((window.location.pathname.startsWith('/registro') || window.location.hash.startsWith('#/registro')) ? 'register' : 'login');
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [email, setEmail] = useState('');
@@ -120,7 +120,7 @@ export default function SupabaseAccess() {
         setPositive(true);
         setMessage('Cuenta solicitada. Revisa tu correo y confirma el enlace de Supabase; después inicia sesión.');
         setMode('login');
-        window.history.replaceState(null, '', '/ingresar');
+        window.history.replaceState(null, '', '/#/ingresar');
         return;
       }
       const user = raw.user || await request<User>('/auth/v1/user', { token: current.access_token });
@@ -146,7 +146,7 @@ export default function SupabaseAccess() {
 
   const changeMode = (value: 'login' | 'register') => {
     setMode(value); setMessage(''); setPositive(false);
-    window.history.replaceState(null, '', value === 'register' ? '/registro' : '/ingresar');
+    window.history.replaceState(null, '', value === 'register' ? '/#/registro' : '/#/ingresar');
   };
 
   const inputClass = 'w-full rounded-xl border border-purple-500/35 bg-black/50 px-4 py-3 text-white outline-none focus:border-pink-400';
