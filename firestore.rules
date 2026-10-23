@@ -49,7 +49,14 @@ service cloud.firestore {
     // commercial phase moves these writes to Cloud Functions with templates).
     match /notifications/{notificationId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userUid == request.auth.uid);
-      allow create: if isAdmin() || (isAuthenticated() && request.resource.data.userUid != null);
+      // Cross-user notifications (organizer to attendee, admin to user) require
+      // senderUid: the rule verifies the authenticated sender, closing the
+      // spoofing vector where any user could insert fake notifications into
+      // another user's inbox. Server writes (alarm endpoint) use the Admin
+      // SDK, which bypasses these rules.
+      allow create: if isAdmin()
+        || (isAuthenticated() && request.resource.data.userUid == request.auth.uid)
+        || (isAuthenticated() && request.resource.data.senderUid == request.auth.uid && request.resource.data.userUid != null);
       allow update, delete: if isAdmin();
     }
 

@@ -16,6 +16,7 @@ export interface AppNotification {
   body: string;
   ts: number;
   read: boolean;
+  senderUid?: string | null; // authenticated sender for cross-user notifications (rule-verified)
 }
 
 // Premium state-search day pass (travelers/tourists). Stored in `state_passes/{uid}`;

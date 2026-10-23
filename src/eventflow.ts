@@ -1,5 +1,5 @@
 import { doc, setDoc, updateDoc, deleteDoc, getDocs, collection, query, where } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { AppRegion, DonationRecord, EventAccessPass, EventPayoutRequest, EventRating, SupportTicket } from './types';
 import { computeEarningSplit } from './organizers';
 
@@ -425,6 +425,7 @@ export async function pushRemoteNotification(params: {
     await setDoc(doc(db, 'notifications', id), {
       id,
       userUid: params.userUid,
+      senderUid: auth.currentUser?.uid || null,
       kind: params.kind,
       title: params.title,
       body: params.body,
