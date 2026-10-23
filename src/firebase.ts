@@ -23,7 +23,8 @@ import firebaseConfig from '../firebase-applet-config.json';
 import { SwipeAction, Profile, MatchItem } from './types';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const __fsDbId = (firebaseConfig as any).firestoreDatabaseId;
+export const db = __fsDbId && __fsDbId !== '(default)' ? getFirestore(app, __fsDbId) : getFirestore(app);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });

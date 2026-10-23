@@ -10,7 +10,7 @@
 
 const TIME_ZONE = 'America/Mexico_City';
 const DATABASE_ID =
-  process.env.FIREBASE_DATABASE_ID || 'ai-studio-bae18161-c5ba-4b69-99f2-4a83f48a6d69';
+  process.env.FIREBASE_DATABASE_ID || '(default)';
 
 function todayIso() {
   return new Intl.DateTimeFormat('en-CA', {
@@ -96,7 +96,7 @@ export default async function handler(req, res) {
   const app = getApps().length
     ? getApp()
     : initializeApp({ credential: cert(serviceAccount), projectId: serviceAccount.projectId });
-  const db = getFirestore(app, DATABASE_ID);
+  const db = DATABASE_ID && DATABASE_ID !== '(default)' ? getFirestore(app, DATABASE_ID) : getFirestore(app);
   const messaging = getMessaging(app);
 
   /** Envia el push a todos los dispositivos del usuario y depura tokens invalidos. */

@@ -38,7 +38,7 @@ Nota del plan Hobby: el cron se invoca una vez al dia, dentro de la hora program
 
 1. Firebase Console → Configuracion del proyecto → Cuentas de servicio → Generar nueva clave privada (descarga un JSON).
 2. En Vercel → Settings → Environment Variables, agregue (Production, Preview y Development):
-   - `FIREBASE_PROJECT_ID` → campo `project_id` del JSON (`groovy-outcome-g8f9p`).
+   - `FIREBASE_PROJECT_ID` → campo `project_id` del JSON (`appswinger-efa68`).
    - `FIREBASE_CLIENT_EMAIL` → campo `client_email` del JSON.
    - `FIREBASE_PRIVATE_KEY` → campo `private_key` completo del JSON (con `-----BEGIN PRIVATE KEY-----` y sus saltos de linea; en el editor de Vercel peguelo en una sola linea tal como viene).
 

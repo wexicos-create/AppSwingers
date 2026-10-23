@@ -31,10 +31,10 @@ const functions = require('firebase-functions');
 // apuntar a esa base; se puede sobreescribir con la variable de entorno
 // FIREBASE_DATABASE_ID al desplegar.
 const DATABASE_ID =
-  process.env.FIREBASE_DATABASE_ID || 'ai-studio-bae18161-c5ba-4b69-99f2-4a83f48a6d69';
+  process.env.FIREBASE_DATABASE_ID || '(default)';
 
 const app = initializeApp();
-const db = getFirestore(app, DATABASE_ID);
+const db = DATABASE_ID && DATABASE_ID !== '(default)' ? getFirestore(app, DATABASE_ID) : getFirestore(app);
 const messaging = getMessaging(app);
 
 const TIME_ZONE = 'America/Mexico_City';

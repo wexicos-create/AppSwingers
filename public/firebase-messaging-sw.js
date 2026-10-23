@@ -8,12 +8,12 @@ importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js
 importScripts('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js');
 
 firebase.initializeApp({
-  projectId: 'groovy-outcome-g8f9p',
-  appId: '1:750229453194:web:f0c2a489c124dc7056b073',
-  apiKey: 'AIzaSyC6R5ozuM9NUaA641_9tDxIMt6tZ26P6ik',
-  authDomain: 'groovy-outcome-g8f9p.firebaseapp.com',
-  messagingSenderId: '750229453194',
-  storageBucket: 'groovy-outcome-g8f9p.firebasestorage.app',
+  projectId: 'appswinger-efa68',
+  appId: '1:509755916067:web:bd84d5a2b78035954d1696',
+  apiKey: 'AIzaSyCe_fgowPvASAJeTD9QkgHo-Hi4LekLt3A',
+  authDomain: 'appswinger-efa68.firebaseapp.com',
+  messagingSenderId: '509755916067',
+  storageBucket: 'appswinger-efa68.firebasestorage.app',
 });
 
 const messaging = firebase.messaging();

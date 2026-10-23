@@ -3,20 +3,9 @@
   "framework": "vite",
   "buildCommand": "vite build",
   "outputDirectory": "dist",
-  "cleanUrls": false,
+  "cleanUrls": true,
   "rewrites": [
-    {
-      "source": "/registro",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/ingresar",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "crons": [
     {
