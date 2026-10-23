@@ -4,7 +4,7 @@ import SupabaseAccess from './SupabaseAccess.tsx';
 import { initPushNotifications } from './push.ts';
 import './index.css';
 
-const isAccountRoute = /^\/(registro|ingresar)\/?$/.test(window.location.pathname);
+const isAccountRoute = /^\/(registro|ingresar)\/?$/.test(window.location.pathname) || /^#\/(registro|ingresar)\/?$/.test(window.location.hash);
 createRoot(document.getElementById('root')!).render(isAccountRoute ? <SupabaseAccess /> : <App />);
 
 // Real server push (FCM): permission handling, token registration per user
