@@ -1309,9 +1309,9 @@ export default function App() {
       <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
         <LandingScreen
           isEs={isEs}
-          onRegister={() => setOnboardingMode('register')}
-          onLogin={() => setOnboardingMode('login')}
-          onGoogleSignIn={handleGoogleSignIn}
+          onRegister={() => { window.location.href = '/registro'; }}
+          onLogin={() => { window.location.href = '/ingresar'; }}
+          onGoogleSignIn={() => { window.location.href = '/ingresar'; }}
           onOpenLegal={(topic) => { setLegalTopic(topic || null); setLegalModalOpen(true); }}
         />
         {legalModalOpen && (
