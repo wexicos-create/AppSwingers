@@ -367,11 +367,26 @@ export interface SupportTicket {
   userUid: string | null;
   userName: string;
   userEmail: string;
-  requester: 'agencia' | 'asociado' | 'organizador' | 'creadora';
+  requester: 'agencia' | 'asociado' | 'organizador' | 'creadora' | 'usuario';
   subject: string;
   message: string;
   status: 'abierto' | 'respondido' | 'cerrado';
   reply: string | null;
   createdAt: number;
   repliedAt: number | null;
+}
+
+// Post-chat anonymous profile rating (Calificar Encuentro). Only users with a
+// registered interaction can publish; one rating per profile every 7 days.
+export interface ProfileRating {
+  id: string;
+  raterUid: string | null;
+  raterName: string;
+  targetProfileId: string;
+  targetName: string;
+  stars: number; // 1..5
+  encounterType: string;
+  tags: string[];
+  comment: string;
+  ts: number;
 }
