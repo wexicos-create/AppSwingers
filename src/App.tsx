@@ -14,6 +14,7 @@ import {
   Camera, ImagePlus, Users, CalendarDays, CreditCard, BadgeCheck, Ban, Plus, Sparkles,
   Banknote, Ticket, Send, Loader2, AlertTriangle, Trash2, Clock, Crown,
   RefreshCw, Eye, MessageCircle, Upload, UserCheck, UserX, FileCheck2, Lock,
+  EyeOff, Pencil, Gift, Coins, Video,
 } from 'lucide-react';
 import {
   auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup,
@@ -46,6 +47,28 @@ const SEEKING = ['Parejas', 'Damas', 'Caballeros', 'Todos'];
 const AGE_PREFS = ['18-25', '26-35', '36-45', '46+'];
 const FREE_DAILY_LIKES = 10;
 const IVA = 0.16;
+// Comisión de la plataforma sobre las ganancias de creadoras (15%).
+const CREATOR_COMMISSION = 0.15;
+// Retención de ISR que la plataforma efectúa por defecto a creadoras (1%).
+const ISR_RATE = 0.01;
+// Umbral para la insignia azul de calificación: 5 o más calificaciones con promedio >= 4.5.
+const RATING_BADGE_MIN = 5;
+const RATING_BADGE_AVG = 4.5;
+// Planes de membresía de creadora (alternativa sin comisión por venta).
+// El equivalente en dólares usa la conversión indicada para la comunidad en EE. UU.
+const CREATOR_PLANS: Array<{ id: string; name: string; price: number; cap: string; usd: number }> = [
+  { id: 'cm_inicial', name: 'Creadora Inicial', price: 2000, cap: 'Hasta $50,000 MXN de entradas al mes', usd: 100 },
+  { id: 'cm_pro', name: 'Creadora Pro', price: 4500, cap: 'Hasta $100,000 MXN de entradas al mes', usd: 225 },
+  { id: 'cm_elite', name: 'Creadora Élite', price: 7000, cap: 'Hasta $150,000 MXN de entradas al mes', usd: 350 },
+  { id: 'cm_master', name: 'Creadora Máster', price: 10000, cap: 'Hasta $200,000 MXN de entradas al mes', usd: 500 },
+  { id: 'cm_ultra', name: 'Creadora Ultra', price: 15000, cap: 'Entradas superiores a $200,000 MXN al mes', usd: 750 },
+];
+// Límites de contenido por creadora.
+const CREATOR_FREE_POSTS = 3;
+const CREATOR_PREMIUM_POSTS = 10;
+const CREATOR_ULTRA_POSTS = 10;
+const CREATOR_VIDEO_MAX_BYTES = 8 * 1024 * 1024;
+const ivaTotal = (base: number) => Math.round(base * (1 + IVA) * 100) / 100;
 
 // ---------------------------- Tipos -----------------------------------------
 
@@ -116,6 +139,10 @@ interface MatchEntry {
   createdAt: number;
   lastMessage?: string;
   lastTs?: number;
+  status?: 'activo' | 'cerrado';
+  closedAt?: number;
+  closedBy?: string;
+  hiddenFor?: string[];
 }
 
 interface SwipeDoc { id: string; from: string; to: string; action: string; ts: number }
@@ -142,6 +169,12 @@ interface CreatorDoc {
   price: number;
   status: 'pendiente' | 'activa' | 'rechazada';
   createdAt: number;
+  membershipPlan?: string | null;
+  membershipUntil?: number | null;
+  isrAssumed?: boolean;
+  isrSignedAt?: number | null;
+  signature?: string | null;
+  earnings?: number;
 }
 
 interface CreatorPostDoc {
@@ -151,7 +184,9 @@ interface CreatorPostDoc {
   creatorHandle: string;
   image: string;
   caption: string;
-  premium: boolean;
+  tier?: 'gratis' | 'premium' | 'ultra';
+  kind?: 'foto' | 'video';
+  premium?: boolean;
   price: number;
   status: 'revision' | 'publicado' | 'rechazado';
   createdAt: number;
@@ -185,6 +220,24 @@ interface TicketDoc {
   subject: string;
   message: string;
   status: string;
+  createdAt: number;
+}
+
+interface RatingDoc {
+  id: string;
+  chatId: string;
+  raterUid: string;
+  raterAlias: string;
+  ratedUid: string;
+  stars: number;
+  comment: string;
+  createdAt: number;
+}
+
+interface UnlockDoc {
+  id: string;
+  userUid: string;
+  postId: string;
   createdAt: number;
 }
 
@@ -344,6 +397,135 @@ function StatusTagOrder({ status }: { status: string }) {
   if (status === 'rechazado') return <span className="tag bad"><X size={12} /> Rechazado</span>;
   if (status === 'expirado') return <span className="tag">Expirado</span>;
   return <span className="tag warn"><Clock size={12} /> Pendiente</span>;
+}
+
+/** Precio + IVA (rosa neón) + total, sin ecuaciones confusas. */
+function PriceIva({ base, total, size = 24, align = 'right' }: { base: number; total?: number; size?: number; align?: 'left' | 'right' | 'center' }) {
+  return (
+    <div style={{ textAlign: align, lineHeight: 1.15 }}>
+      <div className="caps" style={{ fontSize: size - 7, color: 'var(--soft)' }}>${base.toLocaleString('es-MX')}</div>
+      <div
+        className="tiny"
+        style={{ color: 'var(--lila)', textShadow: 'var(--glow)', letterSpacing: '.22em', fontWeight: 800, margin: '2px 0' }}
+      >
+        + IVA
+      </div>
+      <div className="caps" style={{ fontSize: size, textShadow: 'var(--glow)' }}>${(total ?? ivaTotal(base)).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</div>
+    </div>
+  );
+}
+
+/** Calificación promedio en estrellas (1 a 5). */
+function Stars({ avg, count, size = 14 }: { avg: number; count: number; size?: number }) {
+  if (count === 0) return null;
+  return (
+    <span className="row" style={{ gap: 3, alignItems: 'center' }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star
+          key={n}
+          size={size}
+          color={n <= Math.round(avg) ? 'var(--lila)' : 'var(--muted)'}
+          fill={n <= Math.round(avg) ? 'currentColor' : 'none'}
+          style={{ filter: n <= Math.round(avg) ? 'drop-shadow(0 0 5px rgba(199,125,255,.8))' : undefined }}
+        />
+      ))}
+      <span className="tiny" style={{ marginLeft: 2 }}>{avg.toFixed(1)} · {count}</span>
+    </span>
+  );
+}
+
+/** Insignia azul de miembro altamente calificado (5 o más calificaciones sobresalientes). */
+function RatingBadge({ avg, count }: { avg: number; count: number }) {
+  if (count < RATING_BADGE_MIN || avg < RATING_BADGE_AVG) return null;
+  return (
+    <span
+      className="tag"
+      style={{ color: '#7cc4ff', boxShadow: 'inset 0 0 0 1px rgba(124,196,255,.55), 0 0 12px rgba(61,148,255,.35)', display: 'inline-flex', gap: 4, alignItems: 'center' }}
+    >
+      <BadgeCheck size={12} /> Calificado 5 estrellas
+    </span>
+  );
+}
+
+/** Insignia rosa de creadora de contenido verificada. */
+function CreatorBadge() {
+  return (
+    <span
+      className="tag"
+      style={{ color: 'var(--lila)', boxShadow: 'inset 0 0 0 1px rgba(212,156,255,.55), var(--glow)', display: 'inline-flex', gap: 4, alignItems: 'center' }}
+    >
+      <Sparkles size={12} /> Creadora verificada
+    </span>
+  );
+}
+
+/** Lienzo de firma digital con lápiz (dibujo con el dedo o el mouse). */
+function SignaturePad({ onSignature }: { onSignature: (dataUrl: string | null) => void }) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+  const dirty = useRef(false);
+  const last = useRef<{ x: number; y: number } | null>(null);
+
+  const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const c = ref.current!;
+    const r = c.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height };
+  };
+
+  const start = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drawing.current = true;
+    last.current = pos(e);
+  };
+  const move = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!drawing.current) return;
+    const c = ref.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    const p = pos(e);
+    const l = last.current ?? p;
+    ctx.strokeStyle = '#e9d5ff';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(l.x, l.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    last.current = p;
+    dirty.current = true;
+  };
+  const end = () => {
+    drawing.current = false;
+    const c = ref.current;
+    if (c && dirty.current) onSignature(c.toDataURL('image/png'));
+  };
+  const clear = () => {
+    const c = ref.current;
+    if (!c) return;
+    c.getContext('2d')?.clearRect(0, 0, c.width, c.height);
+    dirty.current = false;
+    onSignature(null);
+  };
+
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <canvas
+        ref={ref}
+        width={640}
+        height={200}
+        style={{ width: '100%', height: 130, borderRadius: 12, background: '#0b0612', boxShadow: 'inset 0 0 0 1px var(--line)', touchAction: 'none', cursor: 'crosshair' }}
+        onPointerDown={start}
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerLeave={end}
+      />
+      <div className="row between">
+        <span className="tiny">Firma con el dedo o el mouse dentro del recuadro.</span>
+        <button className="btn btn-ghost btn-sm" onClick={clear}><Trash2 size={14} /> Borrar firma</button>
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------- Pantalla de acceso -----------------------------
@@ -695,19 +877,29 @@ export default function App() {
   const [creatorPosts, setCreatorPosts] = useState<CreatorPostDoc[]>([]);
   const [myCreatorSubs, setMyCreatorSubs] = useState<CreatorSubDoc[]>([]);
   const [forum, setForum] = useState<ForumDoc[]>([]);
+  const [ratings, setRatings] = useState<RatingDoc[]>([]);
+  const [myUnlocks, setMyUnlocks] = useState<UnlockDoc[]>([]);
 
   const [orderSheet, setOrderSheet] = useState<SpeiOrder | null>(null);
   const [eventSheet, setEventSheet] = useState<EventDoc | null>(null);
-  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar' | 'propuesta'>(null);
+  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar' | 'propuesta' | 'donacion' | 'contenido' | 'oficio'>(null);
   const [chatWith, setChatWith] = useState<UserDoc | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [matchPopup, setMatchPopup] = useState<UserDoc | null>(null);
   const [pagoOpen, setPagoOpen] = useState(false);
   const [foroOpen, setForoOpen] = useState(false);
   const [foroDraft, setForoDraft] = useState('');
+  const [donationTarget, setDonationTarget] = useState<CreatorDoc | null>(null);
+  const [contentTarget, setContentTarget] = useState<{ post: CreatorPostDoc; creator: CreatorDoc } | null>(null);
+  const [explicitView, setExplicitView] = useState<{ image: string; caption: string; kind: string } | null>(null);
+  const [explicitConfirm, setExplicitConfirm] = useState(false);
+  const [rateModal, setRateModal] = useState<{ peer: UserDoc; chatId: string } | null>(null);
+  const [dismissedRatings, setDismissedRatings] = useState<string[]>([]);
+  const [oficioBusy, setOficioBusy] = useState(false);
 
   const isAdmin = useMemo(() => !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()), [user]);
   const myDoc = useMemo(() => allUsers.find((u) => u.uid === user?.uid) ?? null, [allUsers, user]);
+  const myCreatorDoc = useMemo(() => creators.find((c) => c.userUid === user?.uid) ?? null, [creators, user]);
   const vip = isVip(myDoc);
 
   const notify = useCallback((s: string) => {
@@ -733,7 +925,7 @@ export default function App() {
   const refreshCore = useCallback(async () => {
     if (!user) return;
     const uid = user.uid;
-    const [users, swipes, ordersList, notifsList, evts, passList, matchesList, props, creas, posts, subs, forumList] = await Promise.all([
+    const [users, swipes, ordersList, notifsList, evts, passList, matchesList, props, creas, posts, subs, forumList, ratingsList, unlocksList] = await Promise.all([
       docAll<UserDoc>('users'),
       docQuery<SwipeDoc>('swipes', 'from', uid),
       fetchRemoteSpeiOrdersForUser(uid),
@@ -746,6 +938,8 @@ export default function App() {
       docAll<CreatorPostDoc>('creator_posts'),
       docQuery<CreatorSubDoc>('creator_subscriptions', 'userUid', uid),
       docAll<ForumDoc>('forum'),
+      docAll<RatingDoc>('ratings'),
+      docQuery<UnlockDoc>('content_unlocks', 'userUid', uid),
     ]);
     setAllUsers(users);
     setMySwipes(swipes);
@@ -759,6 +953,8 @@ export default function App() {
     setCreatorPosts(posts.sort((a, b) => b.createdAt - a.createdAt));
     setMyCreatorSubs(subs);
     setForum(forumList.sort((a, b) => b.createdAt - a.createdAt));
+    setRatings(ratingsList);
+    setMyUnlocks(unlocksList);
     const remoteBank = await fetchRemoteSpeiConfig();
     if (remoteBank) setBankCfg(remoteBank);
   }, [user]);
@@ -897,6 +1093,94 @@ export default function App() {
     await docUpdate('matches', matchIdFor(user.uid, chatWith.uid), { lastMessage: text, lastTs: Date.now() });
     setChatMsgs(msgs);
   };
+
+  // ------------------------- Finalización de chats ----------------------------
+  // Abandonar: cierra el chat para ambas personas. La otra parte recibe una
+  // notificación central y, al abrir la ventana, se le pide calificar y comentar.
+  const abandonChat = async (peer: UserDoc) => {
+    if (!user || !myDoc) return;
+    const chatId = matchIdFor(user.uid, peer.uid);
+    await docUpdate('matches', chatId, {
+      status: 'cerrado', closedAt: Date.now(), closedBy: user.uid,
+    } as Partial<MatchEntry>);
+    const now = Date.now();
+    const nid = notifId(peer.uid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: peer.uid, kind: 'sistema',
+      title: 'Chat finalizado',
+      body: myDoc.alias + ' abandonó el chat. Califica tu experiencia: es indispensable para calificar a las personas.',
+      ts: now, read: false,
+    } as AppNotification);
+    setChatWith(null);
+    await refreshCore();
+    notify('Chat finalizado. Califica tu experiencia con ' + peer.alias + '.');
+  };
+
+  // Borrar: oculta la conversación solo para quien la borra.
+  const deleteChat = async (peer: UserDoc) => {
+    if (!user) return;
+    const chatId = matchIdFor(user.uid, peer.uid);
+    const doc = await docGet<MatchEntry>('matches', chatId);
+    const hidden = [...(doc?.hiddenFor ?? []), user.uid];
+    await docUpdate('matches', chatId, { hiddenFor: hidden } as Partial<MatchEntry>);
+    setChatWith(null);
+    await refreshCore();
+    notify('Conversación eliminada de tu lista.');
+  };
+
+  // Calificación mutua tras finalizar el chat (estrellas 1 a 5 + comentario).
+  const ratePeer = async (chatId: string, peer: UserDoc, stars: number, comment: string) => {
+    if (!user || !myDoc) return false;
+    const id = 'rt_' + chatId + '_' + user.uid;
+    const ok = await docSet('ratings', id, {
+      id, chatId, raterUid: user.uid, raterAlias: myDoc.alias,
+      ratedUid: peer.uid, stars, comment: comment.trim(),
+      createdAt: Date.now(),
+    } as RatingDoc);
+    if (ok) {
+      const nid = notifId(peer.uid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: peer.uid, kind: 'sistema',
+        title: 'Recibiste una calificación',
+        body: myDoc.alias + ' calificó tu encuentro con ' + stars + ' estrella(s).',
+        ts: Date.now(), read: false,
+      } as AppNotification);
+      await refreshCore();
+    }
+    return ok;
+  };
+
+  // Promedio de calaciones por perfil (estrellas y conteo).
+  const ratingAgg = useMemo(() => {
+    const map = new Map<string, { avg: number; count: number }>();
+    for (const r of ratings) {
+      const cur = map.get(r.ratedUid) ?? { sum: 0, count: 0 } as any;
+      cur.sum = (cur.sum ?? 0) + r.stars;
+      cur.count = (cur.count ?? 0) + 1;
+      map.set(r.ratedUid, cur);
+    }
+    const out = new Map<string, { avg: number; count: number }>();
+    for (const [uid, v] of map as any) {
+      out.set(uid, { avg: v.sum / v.count, count: v.count });
+    }
+    return out;
+  }, [ratings]);
+
+  // Notificación central: si un chat cerrado quedó sin calificar, se pide
+  // calificar al abrir la ventana. Es indispensable para calificar a las personas.
+  useEffect(() => {
+    if (!user || !myDoc || view !== 'app') return;
+    const pending = matches.find(
+      (m) => m.status === 'cerrado'
+        && !(m.hiddenFor ?? []).includes(user.uid)
+        && !dismissedRatings.includes(m.id)
+        && !ratings.some((r) => r.chatId === m.id && r.raterUid === user.uid)
+    );
+    if (!pending) return;
+    const peerUid = pending.users.find((u) => u !== user.uid);
+    const peer = allUsers.find((u) => u.uid === peerUid);
+    if (peer) setRateModal({ peer, chatId: pending.id });
+  }, [matches, ratings, allUsers, user, myDoc, view, dismissedRatings]);
 
   // ------------------------- SPEI ------------------------------------------
   const pricing = getPlanPricing('MX');
@@ -1047,12 +1331,14 @@ export default function App() {
     return ok;
   };
 
-  const uploadCreatorPost = async (creator: CreatorDoc, image: string, caption: string, premium: boolean, price: number) => {
+  const uploadCreatorPost = async (creator: CreatorDoc, media: string, kind: 'foto' | 'video', caption: string, tier: 'gratis' | 'premium' | 'ultra', price: number) => {
     if (!user) return false;
     const id = 'cp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const doc: CreatorPostDoc = {
       id, creatorId: creator.id, creatorName: creator.name, creatorHandle: creator.handle,
-      image, caption: caption.trim(), premium, price: premium ? Math.max(0, Math.round(price) || 0) : 0,
+      image: media, caption: caption.trim(), tier, kind,
+      premium: tier !== 'gratis',
+      price: tier === 'gratis' ? 0 : Math.max(0, Math.round(price) || 0),
       status: 'revision', createdAt: Date.now(),
     };
     const ok = await docSet('creator_posts', id, doc);
@@ -1071,13 +1357,14 @@ export default function App() {
       notify('Ya tienes una orden en curso para esta suscripción.');
       return;
     }
-    // Economía de creadoras: precio de la creadora + 10% de servicio, más IVA.
-    const total = Math.round(creator.price * 1.1 * (1 + IVA) * 100) / 100;
+    // Economía de creadoras: la compradora paga el precio de la creadora,
+    // más la comisión de plataforma del 15%, más IVA sobre todo el importe.
+    const total = Math.round(creator.price * (1 + CREATOR_COMMISSION) * (1 + IVA) * 100) / 100;
     const order = newSpeiOrder({
       kind: 'creadora', itemRef: creator.id, label: 'Suscripción: ' + creator.handle, amount: total,
       userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
     });
-    order.meta = JSON.stringify({ creatorId: creator.id, creatorHandle: creator.handle });
+    order.meta = JSON.stringify({ creatorId: creator.id, creatorHandle: creator.handle, base: creator.price });
     const ok = await createRemoteSpeiOrder(order);
     if (ok) {
       setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
@@ -1086,6 +1373,129 @@ export default function App() {
     } else {
       notify('No fue posible crear la orden. Intenta de nuevo.');
     }
+  };
+
+  // Compra de contenido premium o ultra de una creadora (desbloqueo por pieza).
+  const createContentOrder = async (post: CreatorPostDoc, creator: CreatorDoc) => {
+    if (!user || !myDoc) return;
+    if (myDoc.identityStatus !== 'aprobada') {
+      notify('Para comprar contenido necesitas tu INE aprobada.');
+      return;
+    }
+    if (myUnlocks.some((u) => u.postId === post.id)) {
+      notify('Ya tienes acceso a este contenido.');
+      return;
+    }
+    if (orders.some((o) => o.kind === 'contenido' && o.itemRef === post.id && (o.status === 'pendiente' || o.status === 'verificado'))) {
+      notify('Ya tienes una orden en curso para este contenido.');
+      return;
+    }
+    const total = Math.round(post.price * (1 + CREATOR_COMMISSION) * (1 + IVA) * 100) / 100;
+    const order = newSpeiOrder({
+      kind: 'contenido', itemRef: post.id,
+      label: (post.tier === 'ultra' ? 'Ultra: ' : 'Contenido: ') + (post.caption || creator.handle).slice(0, 18),
+      amount: total,
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    order.meta = JSON.stringify({ postId: post.id, creatorId: creator.id, base: post.price });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setOrderSheet(order);
+      notify('Orden SPEI creada. Al aprobarse el pago se desbloquea el contenido.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  // Donación directa a una creadora: sin comisión de plataforma; la donante
+  // paga el monto elegido más IVA. La creadora cubre su ISR.
+  const createDonationOrder = async (creator: CreatorDoc, amount: number) => {
+    if (!user || !myDoc) return;
+    if (myDoc.identityStatus !== 'aprobada') {
+      notify('Para donar necesitas tu INE aprobada.');
+      return;
+    }
+    if (!amount || amount < 20) {
+      notify('La donación mínima es $20 MXN.');
+      return;
+    }
+    if (orders.some((o) => o.kind === 'donacion' && o.itemRef === creator.id && (o.status === 'pendiente' || o.status === 'verificado') && o.amount === ivaTotal(amount))) {
+      notify('Ya tienes una donación en curso para esta creadora.');
+      return;
+    }
+    const order = newSpeiOrder({
+      kind: 'donacion', itemRef: creator.id,
+      label: 'Donación: ' + creator.handle,
+      amount: ivaTotal(amount),
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    order.meta = JSON.stringify({ creatorId: creator.id, creatorHandle: creator.handle, base: amount });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setOrderSheet(order);
+      notify('Orden SPEI creada para tu donación.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  // Membresía de creadora: sustituye la comisión por venta.
+  const createCreatorMembershipOrder = async (creator: CreatorDoc, plan: typeof CREATOR_PLANS[number]) => {
+    if (!user || !myDoc) return;
+    if ((creator.membershipUntil ?? 0) > Date.now()) {
+      notify('Ya tienes una membresía activa. Contratar otra la renovará al vencer.');
+    }
+    if (orders.some((o) => o.kind === 'membresia_creadora' && o.itemRef === plan.id && (o.status === 'pendiente' || o.status === 'verificado'))) {
+      notify('Ya tienes una orden en curso para este plan.');
+      return;
+    }
+    const order = newSpeiOrder({
+      kind: 'membresia_creadora', itemRef: plan.id,
+      label: 'Membresía: ' + plan.name.slice(0, 24),
+      amount: ivaTotal(plan.price),
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    order.meta = JSON.stringify({ creatorId: creator.id, planId: plan.id, base: plan.price });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setOrderSheet(order);
+      notify('Orden SPEI creada para tu membresía de creadora.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  // Fiscal: firma del acuse para asumir el ISR ante el SAT bajo su responsabilidad.
+  const signOficio = async (creator: CreatorDoc, signature: string) => {
+    if (!user || !signature) return false;
+    setOficioBusy(true);
+    const ok = await docUpdate('creators', creator.id, {
+      isrAssumed: true, isrSignedAt: Date.now(), signature,
+    } as Partial<CreatorDoc>);
+    setOficioBusy(false);
+    if (ok) {
+      await refreshCore();
+      notify('Acuse firmado. A partir de ahora cubres tu ISR directamente ante el SAT.');
+    } else {
+      notify('No fue posible registrar tu firma. Intenta de nuevo.');
+    }
+    return ok;
+  };
+
+  // Solicitud de factura por parte de la creadora (llega al panel como ticket).
+  const requestFactura = async (creator: CreatorDoc) => {
+    if (!user || !myDoc) return;
+    const id = 'st_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await docSet('support_tickets', id, {
+      id, userUid: user.uid, userName: myDoc.alias, userEmail: user.email,
+      requester: 'creadora', subject: 'Solicitud de factura: ' + creator.handle,
+      message: 'Solicito factura de mis comisiones y/o membresías como creadora @' + creator.handle + '.',
+      status: 'abierto', createdAt: Date.now(),
+    });
+    notify('Solicitud de factura enviada a administración.');
   };
 
   // ------------------------- Foro público ------------------------------------
@@ -1249,6 +1659,7 @@ export default function App() {
                   allUsers={allUsers}
                   myUid={user.uid}
                   onOpenChat={(peer) => setChatWith(peer)}
+                  ratingAgg={ratingAgg}
                 />
               )}
               {tab === 'propuestas' && (
@@ -1274,10 +1685,21 @@ export default function App() {
                   creators={creators}
                   posts={creatorPosts}
                   mySubs={myCreatorSubs}
+                  myUnlocks={myUnlocks}
+                  ratingAgg={ratingAgg}
                   onToast={notify}
                   onSubscribe={createCreatorOrder}
+                  onBuyContent={(p, c) => { setContentTarget({ post: p, creator: c }); setSheet('contenido'); }}
+                  onDonate={(c) => { setDonationTarget(c); setSheet('donacion'); }}
                   onRegister={registerCreator}
                   onUpload={uploadCreatorPost}
+                  onMembership={createCreatorMembershipOrder}
+                  onOpenOficio={() => setSheet('oficio')}
+                  onRequestFactura={requestFactura}
+                  onOpenExplicit={(p) => {
+                    setExplicitView({ image: p.image, caption: p.caption, kind: p.kind ?? 'foto' });
+                    setExplicitConfirm(true);
+                  }}
                 />
               )}
               {tab === 'perfil' && (
@@ -1311,6 +1733,8 @@ export default function App() {
                     await refreshCore();
                   }}
                   onLogout={async () => { await signOut(auth); setView('auth'); setTab('match'); }}
+                  myRating={ratingAgg.get(user.uid)}
+                  isCreatorVerified={myCreatorDoc?.status === 'activa'}
                 />
               )}
             </div>
@@ -1361,14 +1785,115 @@ export default function App() {
           )}
         </AnimatePresence>
 
+        {/* ---------------------- Calificación central ------------------- */}
+        <AnimatePresence>
+          {rateModal && user && myDoc && (
+            <motion.div
+              className="overlay"
+              style={{ background: 'radial-gradient(circle at 50% 35%, #3f0f73, #050307 72%)', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: 24 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            >
+              <div style={{ width: '100%', maxWidth: 420, maxHeight: '92vh', overflowY: 'auto' }}>
+                <motion.div initial={{ scale: 0.8, y: 20 }} animate={{ scale: 1, y: 0 }} transition={{ type: 'spring', damping: 16 }}>
+                  <div className="card" style={{ textAlign: 'left', boxShadow: 'var(--glow)' }}>
+                    <div className="row" style={{ gap: 12 }}>
+                      <Avatar doc={rateModal.peer} size={54} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="caps" style={{ fontSize: 19 }}>{rateModal.peer.alias}</div>
+                        <div className="tiny">Tu chat llegó a su fin</div>
+                      </div>
+                    </div>
+                    <p className="small muted" style={{ margin: '12px 0 4px' }}>
+                      Tu calificación es indispensable para calificar a las personas: construye perfiles confiables para toda la comunidad.
+                    </p>
+                    <RatePeerForm
+                      onDone={async (stars, comment) => {
+                        const ok = await ratePeer(rateModal.chatId, rateModal.peer, stars, comment);
+                        if (ok) { setRateModal(null); notify('Calificación enviada. Gracias por calificar.'); }
+                        else notify('No fue posible enviar tu calificación. Intenta de nuevo.');
+                      }}
+                      onLater={() => {
+                        setDismissedRatings((d) => [...d, rateModal.chatId]);
+                        setRateModal(null);
+                      }}
+                    />
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Contenido explícito 18+ ---------------- */}
+        <AnimatePresence>
+          {explicitView && explicitConfirm && (
+            <motion.div
+              className="overlay"
+              style={{ background: 'radial-gradient(circle at 50% 35%, #4d1030, #050307 72%)', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            >
+              <div style={{ width: '100%', maxWidth: 420, maxHeight: '92vh', overflowY: 'auto' }} className="card">
+                <div className="row" style={{ gap: 10 }}>
+                  <AlertTriangle size={28} color="var(--warn)" />
+                  <div className="caps" style={{ fontSize: 20 }}>Contenido explícito para adultos</div>
+                </div>
+                <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+                  <p className="small" style={{ margin: 0 }}>
+                    Este contenido es explícito y está dirigido exclusivamente a personas mayores de 18 años.
+                  </p>
+                  <p className="small muted" style={{ margin: 0 }}>
+                    Está prohibido mostrarlo a menores de edad. Guardar, capturar o redistribuir este material puede derivar en problemas legales:
+                    vulnera la intimidad y la protección de datos personales de su autora, y su difusión sin consentimiento puede constituir delito.
+                  </p>
+                  <p className="small muted" style={{ margin: 0 }}>
+                    Al continuar confirmas que eres mayor de edad y que lo visualizarás bajo tu responsabilidad.
+                  </p>
+                  <button
+                    className="btn btn-neon full"
+                    style={{ marginTop: 6 }}
+                    onClick={() => setExplicitConfirm(false)}
+                  >
+                    <Eye size={18} /> Aceptar y ver el contenido
+                  </button>
+                  <button className="btn btn-ghost full" onClick={() => setExplicitView(null)}>
+                    No, volver
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {explicitView && !explicitConfirm && (
+            <motion.div
+              className="ann"
+              style={{ zIndex: 70, flexDirection: 'column', gap: 10, padding: 16 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setExplicitView(null)}
+            >
+              {explicitView.kind === 'video' ? (
+                <video src={explicitView.image} controls autoPlay playsInline style={{ maxWidth: '100%', maxHeight: '74%', borderRadius: 16, boxShadow: 'var(--glow)' }} onClick={(e) => e.stopPropagation()} />
+              ) : (
+                <img src={explicitView.image} alt={explicitView.caption} style={{ maxWidth: '100%', maxHeight: '74%', borderRadius: 16, boxShadow: 'var(--glow)' }} onClick={(e) => e.stopPropagation()} />
+              )}
+              <p className="tiny" style={{ maxWidth: 480, textAlign: 'center' }}>
+                {explicitView.caption || 'Contenido explícito'} · Prohibido mostrar a menores, guardar o redistribuir sin consentimiento.
+              </p>
+              <button className="btn btn-dark btn-sm" onClick={() => setExplicitView(null)}><X size={14} /> Cerrar</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ---------------------- Chat abierto -------------------------- */}
         <AnimatePresence>
           {chatWith && user && (
             <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
               <div className="topbar">
                 <button className="iconbtn" aria-label="Salir" onClick={() => setChatWith(null)}><ChevronLeft size={20} /></button>
-                <span className="caps" style={{ fontSize: 16 }}>{chatWith.alias}</span>
-                <button className="iconbtn" aria-label="Reportar" onClick={() => setSheet('reportar')}><AlertTriangle size={18} /></button>
+                <span className="caps" style={{ fontSize: 16, flex: 1, textAlign: 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chatWith.alias}</span>
+                <button className="iconbtn" aria-label="Borrar chat" title="Borrar chat" onClick={() => void deleteChat(chatWith)}><Trash2 size={18} /></button>
+                <button className="iconbtn" aria-label="Abandonar chat" title="Abandonar chat" onClick={() => void abandonChat(chatWith)}><LogOut size={18} /></button>
+                <button className="iconbtn" aria-label="Reportar" title="Reportar" onClick={() => setSheet('reportar')}><AlertTriangle size={18} /></button>
               </div>
               <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {chatMsgs.length === 0 && (
@@ -1544,6 +2069,47 @@ export default function App() {
               <ProposalSheet onClose={() => setSheet(null)} onSubmit={createProposal} onToast={notify} />
             </motion.div>
           )}
+          {sheet === 'donacion' && donationTarget && user && myDoc && (
+            <motion.div key="sheet-donacion" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <DonationSheet
+                creator={donationTarget}
+                onClose={() => { setDonationTarget(null); setSheet(null); }}
+                onSubmit={async (amount) => {
+                  const ok = ivaTotal(amount) >= 0;
+                  if (ok) { await createDonationOrder(donationTarget, amount); setDonationTarget(null); setSheet(null); }
+                }}
+                onToast={notify}
+              />
+            </motion.div>
+          )}
+          {sheet === 'contenido' && contentTarget && user && myDoc && (
+            <motion.div key="sheet-contenido" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <ContentSheet
+                post={contentTarget.post}
+                creator={contentTarget.creator}
+                onClose={() => { setContentTarget(null); setSheet(null); }}
+                onBuy={async () => {
+                  await createContentOrder(contentTarget.post, contentTarget.creator);
+                  setContentTarget(null);
+                  setSheet(null);
+                }}
+                onToast={notify}
+              />
+            </motion.div>
+          )}
+          {sheet === 'oficio' && myCreatorDoc && user && myDoc && (
+            <motion.div key="sheet-oficio" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <OficioSheet
+                creator={myCreatorDoc}
+                busy={oficioBusy}
+                onClose={() => setSheet(null)}
+                onSign={async (sig) => {
+                  const ok = await signOficio(myCreatorDoc, sig);
+                  if (ok) setSheet(null);
+                }}
+              />
+            </motion.div>
+          )}
           {sheet === 'reportar' && chatWith && user && myDoc && (
             <ReportSheet key="sheet-reportar"
               peer={chatWith}
@@ -1585,11 +2151,12 @@ export default function App() {
 // PESTAÑA MATCH
 // ============================================================================
 
-function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOpenChat }: {
+function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOpenChat, ratingAgg }: {
   deck: UserDoc[]; vip: boolean; likesToday: number;
   onAct: (target: UserDoc, action: 'like' | 'superlike' | 'pass') => Promise<void>;
   matches: MatchEntry[]; allUsers: UserDoc[]; myUid: string;
   onOpenChat: (peer: UserDoc) => void;
+  ratingAgg: Map<string, { avg: number; count: number }>;
 }) {
   const [seg, setSeg] = useState<'descubre' | 'mensajes'>('descubre');
   const [removed, setRemoved] = useState<string[]>([]);
@@ -1609,6 +2176,7 @@ function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOp
       return peer ? { m, peer } : null;
     })
     .filter((x): x is { m: MatchEntry; peer: UserDoc } => !!x)
+    .filter(({ m }) => m.status !== 'cerrado' && !(m.hiddenFor ?? []).includes(myUid))
     .sort((a, b) => (b.m.lastTs ?? b.m.createdAt) - (a.m.lastTs ?? a.m.createdAt));
 
   if (seg === 'mensajes') {
@@ -1672,10 +2240,10 @@ function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOp
           <div className="deck">
             <AnimatePresence>
               {rest.map((p) => (
-                <DeckCard key={p.uid} p={p} onFly={fly} behind />
+                <DeckCard key={p.uid} p={p} onFly={fly} behind rating={ratingAgg.get(p.uid)} />
               ))}
               {top.map((p, i) => (
-                <DeckCard key={p.uid} p={p} onFly={fly} top={i === top.length - 1} />
+                <DeckCard key={p.uid} p={p} onFly={fly} top={i === top.length - 1} rating={ratingAgg.get(p.uid)} />
               ))}
             </AnimatePresence>
           </div>
@@ -1698,9 +2266,10 @@ function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOp
   );
 }
 
-function DeckCard({ p, onFly, top, behind }: {
+function DeckCard({ p, onFly, top, behind, rating }: {
   p: UserDoc; top?: boolean; behind?: boolean;
   onFly: (p: UserDoc, action: 'like' | 'superlike' | 'pass') => Promise<void>;
+  rating?: { avg: number; count: number };
 }) {
   const hue = hueFrom(p.uid + p.alias);
   const photo = p.photos?.[0] || null;
@@ -1734,6 +2303,12 @@ function DeckCard({ p, onFly, top, behind }: {
           <span className="pname">{p.alias}</span>
           <span className="pill">{p.age}</span>
         </div>
+        {rating && rating.count > 0 && (
+          <div className="row" style={{ gap: 8, marginTop: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Stars avg={rating.avg} count={rating.count} />
+            <RatingBadge avg={rating.avg} count={rating.count} />
+          </div>
+        )}
         {(p.interests ?? []).length > 0 && (
           <div className="chips" style={{ marginTop: 10 }}>
             {p.interests.slice(0, 3).map((t) => <span key={t} className="tag">{t}</span>)}
@@ -1870,22 +2445,219 @@ function ProposalSheet({ onClose, onSubmit, onToast }: {
   );
 }
 
+/** Formulario de calificación mutua tras finalizar un chat (estrellas + comentario). */
+function RatePeerForm({ onDone, onLater }: {
+  onDone: (stars: number, comment: string) => Promise<void>;
+  onLater: () => void;
+}) {
+  const [stars, setStars] = useState(0);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    if (stars === 0) return;
+    setBusy(true);
+    await onDone(stars, comment);
+    setBusy(false);
+  };
+  return (
+    <div className="stack" style={{ gap: 10, marginTop: 10 }}>
+      <div className="row" style={{ gap: 10, justifyContent: 'center' }}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            aria-label={n + ' estrellas'}
+            onClick={() => setStars(n)}
+            style={{ background: 'transparent', border: 'none', padding: 4, cursor: 'pointer' }}
+          >
+            <Star
+              size={34}
+              color={n <= stars ? 'var(--lila)' : 'var(--muted)'}
+              fill={n <= stars ? 'currentColor' : 'none'}
+              style={{ filter: n <= stars ? 'drop-shadow(0 0 8px rgba(199,125,255,.9))' : undefined }}
+            />
+          </button>
+        ))}
+      </div>
+      <textarea
+        className="field"
+        placeholder="Comentario sobre tu experiencia (opcional, 300 caracteres)"
+        value={comment}
+        maxLength={300}
+        onChange={(e) => setComment(e.target.value)}
+      />
+      <button className="btn btn-neon full" disabled={busy || stars === 0} onClick={() => void send()}>
+        {busy ? <Loader2 size={18} className="spin" /> : <Star size={18} fill="currentColor" />} Calificar ahora
+      </button>
+      <button className="btn btn-ghost full" disabled={busy} onClick={onLater}>Más tarde</button>
+    </div>
+  );
+}
+
+/** Donación directa a una creadora: sin comisión; monto elegido + IVA. */
+function DonationSheet({ creator, onClose, onSubmit, onToast }: {
+  creator: CreatorDoc;
+  onClose: () => void;
+  onSubmit: (amount: number) => Promise<void>;
+  onToast: (s: string) => void;
+}) {
+  const [amount, setAmount] = useState(100);
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    if (!amount || amount < 20) { onToast('La donación mínima es $20 MXN.'); return; }
+    setBusy(true);
+    await onSubmit(amount);
+    setBusy(false);
+  };
+  return (
+    <>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Donar a @{creator.handle}</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>
+        Las donaciones llegan completas a la creadora: la plataforma no cobra comisión. Tú pagas el IVA; la creadora cubre su ISR.
+      </p>
+      <div className="chips" style={{ marginBottom: 10 }}>
+        {[50, 100, 200, 500, 1000].map((n) => (
+          <button key={n} className={'chip' + (amount === n ? ' sel' : '')} onClick={() => setAmount(n)}>${n}</button>
+        ))}
+      </div>
+      <input
+        className="field"
+        inputMode="numeric"
+        placeholder="Otro monto (MXN, mínimo 20)"
+        value={amount || ''}
+        onChange={(e) => setAmount(Number(e.target.value.replace(/\D/g, '').slice(0, 7)))}
+      />
+      <div className="card" style={{ marginTop: 12, padding: 14, textAlign: 'center' }}>
+        <div className="tiny" style={{ marginBottom: 4 }}>Pagas</div>
+        <PriceIva base={amount} align="center" size={26} />
+      </div>
+      <button className="btn btn-neon full" style={{ marginTop: 12 }} disabled={busy} onClick={() => void send()}>
+        {busy ? <Loader2 size={18} className="spin" /> : <Gift size={18} />} Donar por SPEI
+      </button>
+      <button className="btn btn-ghost full" style={{ marginTop: 8 }} onClick={onClose}>Cancelar</button>
+    </>
+  );
+}
+
+/** Compra de una pieza premium o ultra de una creadora (desbloqueo por pieza). */
+function ContentSheet({ post, creator, onClose, onBuy, onToast }: {
+  post: CreatorPostDoc;
+  creator: CreatorDoc;
+  onClose: () => void;
+  onBuy: () => Promise<void>;
+  onToast: (s: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const ultra = post.tier === 'ultra';
+  return (
+    <>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>{ultra ? 'Contenido ultra exclusivo' : 'Contenido premium'}</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>@{creator.handle} · {post.kind === 'video' ? 'Video' : 'Foto'}</p>
+      <div style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+        {post.kind === 'video' ? (
+          <video src={post.image} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(22px) brightness(.5)' }} />
+        ) : (
+          <img src={post.image} alt={post.caption} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: 'blur(22px) brightness(.5)' }} />
+        )}
+        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+          <span className="row" style={{ gap: 8, color: 'var(--soft)' }}><Lock size={22} /> {ultra ? 'Ultra exclusivo' : 'Premium'}</span>
+        </div>
+      </div>
+      {post.caption && <p className="small muted" style={{ margin: '10px 0 0' }}>{post.caption}</p>}
+      <div className="card" style={{ marginTop: 12, padding: 14, textAlign: 'center' }}>
+        <div className="tiny" style={{ marginBottom: 4 }}>Pagas por ver</div>
+        <PriceIva base={post.price} align="center" size={26} />
+        <div className="tiny" style={{ marginTop: 6 }}>Tu pago incluye la comisión de plataforma y el IVA correspondientes.</div>
+      </div>
+      <button
+        className="btn btn-neon full" style={{ marginTop: 12 }} disabled={busy}
+        onClick={() => { setBusy(true); onBuy().finally(() => setBusy(false)); }}
+      >
+        {busy ? <Loader2 size={18} className="spin" /> : <Lock size={18} />} Comprar acceso por SPEI
+      </button>
+      <button className="btn btn-ghost full" style={{ marginTop: 8 }} onClick={onClose}>Cancelar</button>
+    </>
+  );
+}
+
+/** Acuse de conocimiento fiscal firmable con lápiz digital (asumir el ISR ante el SAT). */
+function OficioSheet({ creator, busy, onClose, onSign }: {
+  creator: CreatorDoc;
+  busy: boolean;
+  onClose: () => void;
+  onSign: (signature: string) => Promise<boolean>;
+}) {
+  const [sig, setSig] = useState<string | null>(null);
+  return (
+    <>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Acuse de responsabilidad fiscal</div>
+      <p className="muted small" style={{ margin: '4px 0 10px' }}>
+        Por defecto la plataforma retiene tu ISR para cubrir tu parte fiscal. Si prefieres asumirlo tú, lee y firma este acuse.
+      </p>
+      <div
+        className="card"
+        style={{ maxHeight: '42vh', overflowY: 'auto', padding: 16, fontSize: 13, lineHeight: 1.5 }}
+      >
+        <div className="tiny" style={{ letterSpacing: '.2em', marginBottom: 8, color: 'var(--lila)' }}>APP<b>SWINGUER</b> · DOCUMENTO INFORMATIVO</div>
+        <p><b>Acuse de conocimiento y responsabilidad fiscal.</b></p>
+        <p>Yo, <b>{creator.name}</b>, creadora de contenido registrada en AppSwinguer con el usuario <b>@{creator.handle}</b>, declaro que:</p>
+        <p><b>1.</b> Soy mayor de edad y el contenido que publico es de mi autoría, lícito y publicado con mi consentimiento.</p>
+        <p><b>2.</b> La plataforma no es mi representante legal ni fiscal, y no forma parte de mi relación con las autoridades fiscales.</p>
+        <p><b>3.</b> Soy la única responsable de declarar y pagar mis impuestos, en particular el ISR, ante el Servicio de Administración Tributaria (SAT), por la totalidad de los ingresos que obtenga a través de la plataforma.</p>
+        <p><b>4.</b> Al firmar este acuse, la plataforma dejará de retener el ISR correspondiente a mis ingresos, y el cumplimiento de dichas obligaciones dentro de los plazos legales será mi responsabilidad directa.</p>
+        <p><b>5.</b> Puedo solicitar a la plataforma facturas por las comisiones y membresías que pague.</p>
+        <p><b>6.</b> Este documento es informativo y de conocimiento; no constituye asesoría legal, contable ni fiscal, y no sustituye la normativa aplicable.</p>
+        <p className="tiny muted">Fecha de firma: {new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+      </div>
+      <div style={{ marginTop: 12 }}>
+        <SignaturePad onSignature={setSig} />
+      </div>
+      <button
+        className="btn btn-neon full" style={{ marginTop: 10 }} disabled={busy || !sig}
+        onClick={() => { if (sig) void onSign(sig); }}
+      >
+        {busy ? <Loader2 size={18} className="spin" /> : <Pencil size={18} />} Firmar y asumir mi ISR
+      </button>
+      <button className="btn btn-ghost full" style={{ marginTop: 8 }} onClick={onClose}>Conservar retención de ISR</button>
+    </>
+  );
+}
+
 // ============================================================================
 // PESTAÑA VIRTUAL (CREADORAS)
 // ============================================================================
 
-function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRegister, onUpload }: {
+const readFileData = (f: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error('reader'));
+    r.readAsDataURL(f);
+  });
+
+function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onToast, onSubscribe, onBuyContent, onDonate, onRegister, onUpload, onMembership, onOpenOficio, onRequestFactura, onOpenExplicit }: {
   myDoc: UserDoc;
   creators: CreatorDoc[];
   posts: CreatorPostDoc[];
   mySubs: CreatorSubDoc[];
+  myUnlocks: UnlockDoc[];
+  ratingAgg: Map<string, { avg: number; count: number }>;
   onToast: (s: string) => void;
   onSubscribe: (c: CreatorDoc) => Promise<void>;
+  onBuyContent: (post: CreatorPostDoc, creator: CreatorDoc) => void;
+  onDonate: (c: CreatorDoc) => void;
   onRegister: (f: { name: string; handle: string; bio: string; price: number }) => Promise<boolean>;
-  onUpload: (creator: CreatorDoc, image: string, caption: string, premium: boolean, price: number) => Promise<boolean>;
+  onUpload: (creator: CreatorDoc, media: string, kind: 'foto' | 'video', caption: string, tier: 'gratis' | 'premium' | 'ultra', price: number) => Promise<boolean>;
+  onMembership: (creator: CreatorDoc, plan: typeof CREATOR_PLANS[number]) => Promise<void>;
+  onOpenOficio: () => void;
+  onRequestFactura: (c: CreatorDoc) => void;
+  onOpenExplicit: (post: CreatorPostDoc) => void;
 }) {
   const [seg, setSeg] = useState<'creadoras' | 'subir'>('creadoras');
   const [busy, setBusy] = useState(false);
+  const [showRegisterForm, setShowRegisterForm] = useState(false);
   const activas = creators.filter((c) => c.status === 'activa');
   const myCreator = creators.find((c) => c.userUid === myDoc.uid);
   const myPosts = myCreator ? posts.filter((p) => p.creatorId === myCreator.id).sort((a, b) => b.createdAt - a.createdAt) : [];
@@ -1896,13 +2668,28 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
   const [fBio, setFBio] = useState('');
   const [fPrice, setFPrice] = useState(0);
   // Estado de la publicación de contenido.
-  const [image, setImage] = useState<string | null>(null);
+  const [tier, setTier] = useState<'gratis' | 'premium' | 'ultra'>('gratis');
+  const [mediaKind, setMediaKind] = useState<'foto' | 'video'>('foto');
+  const [media, setMedia] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
-  const [premium, setPremium] = useState(false);
-  const [postPrice, setPostPrice] = useState(0);
+  const [price, setPrice] = useState(0);
 
-  const onImage = async (f: File) => {
-    try { setImage(await compressImage(f)); } catch { onToast('No fue posible procesar la imagen.'); }
+  const tierOf = (p: CreatorPostDoc) => p.tier ?? (p.premium ? 'premium' : 'gratis');
+  const counts = {
+    gratis: myPosts.filter((p) => tierOf(p) === 'gratis').length,
+    premium: myPosts.filter((p) => tierOf(p) === 'premium').length,
+    ultra: myPosts.filter((p) => tierOf(p) === 'ultra').length,
+  };
+
+  const onMedia = async (f: File) => {
+    try {
+      if (mediaKind === 'video') {
+        if (f.size > CREATOR_VIDEO_MAX_BYTES) { onToast('El video debe pesar menos de 8 MB.'); return; }
+        setMedia(await readFileData(f));
+      } else {
+        setMedia(await compressImage(f));
+      }
+    } catch { onToast('No fue posible procesar el archivo.'); }
   };
 
   const sendRegister = async () => {
@@ -1915,14 +2702,20 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
 
   const sendPost = async () => {
     if (!myCreator) return;
-    if (!image) { onToast('Elige una imagen para publicar.'); return; }
+    if (!media) { onToast('Elige una foto o un video.'); return; }
     if (!caption.trim()) { onToast('Agrega una descripción.'); return; }
+    if (tier === 'ultra' && mediaKind !== 'video') { onToast('El contenido ultra exclusivo es forzosamente video.'); return; }
+    if (tier !== 'gratis' && !price) { onToast('Asigna el costo por ver este contenido.'); return; }
+    if (tier === 'gratis' && counts.gratis >= CREATOR_FREE_POSTS) { onToast('Ya subiste tus 3 fotos gratis.'); return; }
+    if (tier === 'premium' && counts.premium >= CREATOR_PREMIUM_POSTS) { onToast('Alcanzaste el límite de 10 publicaciones premium.'); return; }
+    if (tier === 'ultra' && counts.ultra >= CREATOR_ULTRA_POSTS) { onToast('Alcanzaste el límite de publicaciones ultra.'); return; }
     setBusy(true);
-    const ok = await onUpload(myCreator, image, caption.trim(), premium, postPrice);
+    const ok = await onUpload(myCreator, media, mediaKind, caption, tier, price);
     setBusy(false);
-    if (ok) { setImage(null); setCaption(''); setPremium(false); setPostPrice(0); }
+    if (ok) { setMedia(null); setCaption(''); setPrice(0); setTier('gratis'); setMediaKind('foto'); }
   };
 
+  // ---------------------------------------------------------------- Subir ----
   if (seg === 'subir') {
     return (
       <>
@@ -1930,26 +2723,62 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
           <button onClick={() => setSeg('creadoras')}>Creadoras</button>
           <button className="on">Subir</button>
         </div>
-        {!myCreator || myCreator.status === 'rechazada' ? (
+        {(!myCreator || myCreator.status === 'rechazada') ? (
           <>
             {myCreator?.status === 'rechazada' && (
               <p className="small" style={{ color: 'var(--bad)' }}>Tu registro anterior fue rechazado. Puedes enviar uno nuevo.</p>
             )}
-            <div className="card">
-              <div className="label" style={{ marginBottom: 8 }}>Registro de creadora</div>
-              <p className="muted small" style={{ margin: '0 0 12px' }}>
-                Requiere INE aprobada. El precio es tu suscripción mensual; la plataforma suma 10% de servicio más IVA al cobro final.
-              </p>
-              <div className="stack" style={{ gap: 8 }}>
-                <input className="field" placeholder="Nombre público" value={fName} maxLength={40} onChange={(e) => setFName(e.target.value)} />
-                <input className="field" placeholder="Usuario (ej. luna)" value={fHandle} maxLength={24} onChange={(e) => setFHandle(e.target.value)} />
-                <textarea className="field" placeholder="Descripción de tu contenido (300 caracteres)" value={fBio} maxLength={300} onChange={(e) => setFBio(e.target.value)} />
-                <input className="field" inputMode="numeric" placeholder="Suscripción mensual (MXN)" value={fPrice || ''} onChange={(e) => setFPrice(Number(e.target.value.replace(/\D/g, '').slice(0, 6)))} />
-                <button className="btn btn-neon full" disabled={busy} onClick={() => void sendRegister()}>
-                  {busy ? <Loader2 size={18} className="spin" /> : <Star size={18} />} Enviar registro
-                </button>
+            {!showRegisterForm && (
+              <div className="card">
+                <div className="label" style={{ marginBottom: 8 }}>Ser creadora: cómo funciona</div>
+                <p className="small muted" style={{ margin: '0 0 10px' }}>
+                  Antes de crear tu perfil, conoce las reglas de esta parte:
+                </p>
+                <div className="stack" style={{ gap: 10 }}>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><Sparkles size={16} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small">Publicar es gratuito. Tus {CREATOR_FREE_POSTS} primeras fotos son gratis para que más personas conozcan tu contenido.</span>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><Upload size={16} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small">Tienes derecho a subir hasta {CREATOR_PREMIUM_POSTS} fotos o videos premium con costo por ver, asignado por ti, y contenido ultra exclusivo (forzosamente video íntimo) con tu propio precio.</span>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><Coins size={16} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small">El acceso para crear es gratis: cubres una comisión del 15% sobre lo que ganes. El IVA de la comisión lo cubre quien compra, no tú.</span>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><FileCheck2 size={16} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small">ISR: por defecto la plataforma lo retiene para cubrir tu parte fiscal y puedes solicitar facturas. Si prefieres, puedes asumir tu ISR ante el SAT firmando un acuse digital con lápiz.</span>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><Crown size={16} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small">Alternativa sin comisión: una membresía mensual (de $2,000 a $15,000 MXN según tus entradas) te deja conservar todas tus ganancias; quien compra tu contenido solo paga IVA.</span>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><Gift size={16} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small">Donaciones: tu perfil muestra un botón de donación. Las donaciones no pagan comisión; solo IVA (quien dona) y tu ISR.</span>
+                  </div>
+                  <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}><AlertTriangle size={16} color="var(--warn)" style={{ flexShrink: 0, marginTop: 2 }} />
+                    <span className="small muted">Todo tu contenido pasa moderación antes de publicarse y se muestra tras un aviso de contenido explícito 18+.</span>
+                  </div>
+                  <button className="btn btn-neon full" onClick={() => setShowRegisterForm(true)}>
+                    <Star size={18} /> Continuar al registro
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
+            {showRegisterForm && (
+              <div className="card">
+                <div className="label" style={{ marginBottom: 8 }}>Registro de creadora</div>
+                <p className="muted small" style={{ margin: '0 0 12px' }}>
+                  Requiere INE aprobada. Tu suscripción mensual es tu precio base; quien te contrate paga ese precio con la comisión y el IVA ya incluidos en el total.
+                </p>
+                <div className="stack" style={{ gap: 8 }}>
+                  <input className="field" placeholder="Nombre público" value={fName} maxLength={40} onChange={(e) => setFName(e.target.value)} />
+                  <input className="field" placeholder="Usuario (ej. luna)" value={fHandle} maxLength={24} onChange={(e) => setFHandle(e.target.value)} />
+                  <textarea className="field" placeholder="Descripción de tu contenido (300 caracteres)" value={fBio} maxLength={300} onChange={(e) => setFBio(e.target.value)} />
+                  <input className="field" inputMode="numeric" placeholder="Suscripción mensual (MXN)" value={fPrice || ''} onChange={(e) => setFPrice(Number(e.target.value.replace(/\D/g, '').slice(0, 6)))} />
+                  <button className="btn btn-neon full" disabled={busy} onClick={() => void sendRegister()}>
+                    {busy ? <Loader2 size={18} className="spin" /> : <Star size={18} />} Enviar registro
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           <>
@@ -1962,54 +2791,149 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
               </div>
               <p className="tiny" style={{ margin: '4px 0 0' }}>@{myCreator.handle} · Suscripción ${myCreator.price}/mes</p>
             </div>
+
             {myCreator.status === 'activa' && (
-              <div className="card" style={{ marginTop: 12 }}>
-                <div className="label" style={{ marginBottom: 8 }}>Publicar contenido</div>
-                {image ? (
-                  <div style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
-                    <img src={image} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <button className="iconbtn" aria-label="Quitar imagen" style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32 }} onClick={() => setImage(null)}>
-                      <Trash2 size={14} />
+              <>
+                {/* Ganancias y fiscal */}
+                <div className="card" style={{ marginTop: 12 }}>
+                  <div className="row between">
+                    <span className="label">Tus ganancias</span>
+                    <span className="caps" style={{ fontSize: 18, textShadow: 'var(--glow)' }}>${(myCreator.earnings ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <p className="tiny muted" style={{ margin: '6px 0 0' }}>
+                    Comisión: 15% por venta (o membresía sin comisión). IVA de la comisión: lo cubre quien compra. Facturas: puedes solicitarlas.
+                  </p>
+                  <div className="row between" style={{ marginTop: 8 }}>
+                    <span className="tiny">ISR</span>
+                    <span className={'tag ' + (myCreator.isrAssumed ? 'warn' : 'ok')}>
+                      {myCreator.isrAssumed ? 'Asumido por ti ante el SAT' : 'Retenido por la plataforma'}
+                    </span>
+                  </div>
+                  <div className="grid2" style={{ gap: 8, marginTop: 10 }}>
+                    {!myCreator.isrAssumed && (
+                      <button className="btn btn-dark btn-sm" onClick={onOpenOficio}><Pencil size={15} /> Asumir mi ISR</button>
+                    )}
+                    <button className="btn btn-dark btn-sm" onClick={() => onRequestFactura(myCreator!)}><FileCheck2 size={15} /> Solicitar factura</button>
+                  </div>
+                </div>
+
+                {/* Membresía sin comisiones */}
+                <div className="card" style={{ marginTop: 12 }}>
+                  <div className="row between">
+                    <span className="label">Membresía sin comisiones</span>
+                    {(myCreator.membershipUntil ?? 0) > Date.now() ? <span className="tag ok">Vigente</span> : <span className="tag">Sin membresía</span>}
+                  </div>
+                  {(myCreator.membershipUntil ?? 0) > Date.now() ? (
+                    <p className="tiny" style={{ margin: '8px 0 0' }}>
+                      Plan {CREATOR_PLANS.find((p) => p.id === myCreator!.membershipPlan)?.name ?? 'de creadora'} vigente hasta{' '}
+                      {new Date(myCreator.membershipUntil!).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}. Sin comisión por venta: tus ganancias quedan completas contigo.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="tiny muted" style={{ margin: '8px 0 0' }}>
+                        Con membresía evitas la comisión por cada venta y el IVA de la comisión. Quien compra tu contenido solo paga IVA. Elige tu plan según tus entradas mensuales.
+                      </p>
+                      <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+                        {CREATOR_PLANS.map((plan) => (
+                          <div key={plan.id} className="row between card" style={{ padding: '10px 12px', background: 'var(--s1)' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <span className="caps small">{plan.name}</span>
+                              <span className="tiny" style={{ display: 'block' }}>{plan.cap}</span>
+                              <span className="tiny" style={{ display: 'block', color: 'var(--lila)' }}>≈ ${plan.usd} USD comunidad EE. UU.</span>
+                            </div>
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <PriceIva base={plan.price} size={18} />
+                              <button className="btn btn-neon btn-sm" style={{ marginTop: 6 }} disabled={busy} onClick={() => void onMembership(myCreator!, plan)}>Contratar</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Publicar contenido */}
+                <div className="card" style={{ marginTop: 12 }}>
+                  <div className="label" style={{ marginBottom: 8 }}>Publicar contenido</div>
+                  <div className="row between" style={{ marginBottom: 8 }}>
+                    <span className="tiny">Gratis {counts.gratis}/{CREATOR_FREE_POSTS} · Premium {counts.premium}/{CREATOR_PREMIUM_POSTS} · Ultra {counts.ultra}/{CREATOR_ULTRA_POSTS}</span>
+                  </div>
+                  <div className="chips" style={{ marginBottom: 8 }}>
+                    {(['gratis', 'premium', 'ultra'] as const).map((t) => (
+                      <button key={t} className={'chip' + (tier === t ? ' sel' : '')} onClick={() => { setTier(t); if (t === 'ultra') setMediaKind('video'); }}>
+                        {t === 'gratis' ? 'Gratis (3)' : t === 'premium' ? 'Premium (10)' : 'Ultra (video)'}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="chips" style={{ marginBottom: 8 }}>
+                    {(['foto', 'video'] as const).map((k) => (
+                      <button
+                        key={k}
+                        className={'chip' + (mediaKind === k ? ' sel' : '')}
+                        onClick={() => setMediaKind(k)}
+                        disabled={tier === 'ultra' && k === 'foto'}
+                      >
+                        {k === 'foto' ? 'Foto' : 'Video (máx. 8 MB)'}
+                      </button>
+                    ))}
+                  </div>
+                  {media ? (
+                    <div style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+                      {mediaKind === 'video' ? (
+                        <video src={media} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <img src={media} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      )}
+                      <button className="iconbtn" aria-label="Quitar archivo" style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32 }} onClick={() => setMedia(null)}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <FileButton className="btn btn-dark btn-sm full" style={{ aspectRatio: '3/4', borderRadius: 12 }} accept={mediaKind === 'video' ? 'video/*' : 'image/*'} onFiles={(f) => void onMedia(f)}>
+                      <div style={{ display: 'grid', placeItems: 'center', gap: 4 }}>
+                        {mediaKind === 'video' ? <Video size={22} color="var(--lila)" /> : <ImagePlus size={22} color="var(--lila)" />}
+                        <span className="tiny">Elegir {mediaKind === 'video' ? 'video' : 'imagen'}</span>
+                      </div>
+                    </FileButton>
+                  )}
+                  <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+                    <input className="field" placeholder="Descripción (200 caracteres)" value={caption} maxLength={200} onChange={(e) => setCaption(e.target.value)} />
+                    {tier !== 'gratis' && (
+                      <input className="field" inputMode="numeric" placeholder="Costo por ver (MXN)" value={price || ''} onChange={(e) => setPrice(Number(e.target.value.replace(/\D/g, '').slice(0, 6)))} />
+                    )}
+                    {tier === 'gratis' && (
+                      <p className="tiny muted" style={{ margin: 0 }}>Las fotos gratis se muestran a toda la comunidad tras el aviso de contenido explícito 18+.</p>
+                    )}
+                    <button className="btn btn-neon full" disabled={busy} onClick={() => void sendPost()}>
+                      {busy ? <Loader2 size={18} className="spin" /> : <Upload size={18} />} Enviar a moderación
                     </button>
                   </div>
-                ) : (
-                  <FileButton className="btn btn-dark btn-sm full" style={{ aspectRatio: '3/4', borderRadius: 12 }} onFiles={(f) => void onImage(f)}>
-                    <div style={{ display: 'grid', placeItems: 'center', gap: 4 }}>
-                      <ImagePlus size={22} color="var(--lila)" />
-                      <span className="tiny">Elegir imagen</span>
+                </div>
+
+                {/* Mis publicaciones */}
+                {myPosts.length > 0 && (
+                  <>
+                    <div className="row between" style={{ margin: '16px 0 8px' }}>
+                      <span className="label">Mis publicaciones</span>
+                      <span className="tiny">{myPosts.length}</span>
                     </div>
-                  </FileButton>
+                    <div className="stack" style={{ gap: 8 }}>
+                      {myPosts.map((p) => (
+                        <div key={p.id} className="card" style={{ padding: 12 }}>
+                          <div className="row between">
+                            <span className="tiny" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <span className="tag" style={{ marginRight: 6 }}>{tierOf(p) === 'gratis' ? 'Gratis' : tierOf(p) === 'premium' ? 'Premium' : 'Ultra'}</span>
+                              {p.caption}
+                            </span>
+                            <span className={'tag ' + (p.status === 'publicado' ? 'ok' : p.status === 'revision' ? 'warn' : 'bad')}>
+                              {p.status === 'publicado' ? 'Publicado' : p.status === 'revision' ? 'En revisión' : 'Rechazado'}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
                 )}
-                <div className="stack" style={{ gap: 8, marginTop: 10 }}>
-                  <input className="field" placeholder="Descripción (200 caracteres)" value={caption} maxLength={200} onChange={(e) => setCaption(e.target.value)} />
-                  <Toggle on={premium} onClick={() => setPremium(!premium)} label="Contenido premium" hint="Solo visible para tus suscriptores." />
-                  {premium && (
-                    <input className="field" inputMode="numeric" placeholder="Precio adicional (MXN, opcional)" value={postPrice || ''} onChange={(e) => setPostPrice(Number(e.target.value.replace(/\D/g, '').slice(0, 6)))} />
-                  )}
-                  <button className="btn btn-neon full" disabled={busy} onClick={() => void sendPost()}>
-                    {busy ? <Loader2 size={18} className="spin" /> : <Upload size={18} />} Enviar a moderación
-                  </button>
-                </div>
-              </div>
-            )}
-            {myPosts.length > 0 && (
-              <>
-                <div className="row between" style={{ margin: '16px 0 8px' }}>
-                  <span className="label">Mis publicaciones</span>
-                  <span className="tiny">{myPosts.length}</span>
-                </div>
-                <div className="stack" style={{ gap: 8 }}>
-                  {myPosts.map((p) => (
-                    <div key={p.id} className="card" style={{ padding: 12 }}>
-                      <div className="row between">
-                        <span className="tiny" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</span>
-                        <span className={'tag ' + (p.status === 'publicado' ? 'ok' : p.status === 'revision' ? 'warn' : 'bad')}>
-                          {p.status === 'publicado' ? 'Publicado' : p.status === 'revision' ? 'En revisión' : 'Rechazado'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </>
             )}
           </>
@@ -2018,6 +2942,7 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
     );
   }
 
+  // ------------------------------------------------------------- Creadoras ---
   return (
     <>
       <div className="seg" style={{ marginBottom: 16 }}>
@@ -2035,6 +2960,7 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
       {activas.map((c) => {
         const cPosts = posts.filter((p) => p.creatorId === c.id && p.status === 'publicado').sort((a, b) => b.createdAt - a.createdAt);
         const sub = mySubs.find((s) => s.creatorId === c.id && s.until > Date.now());
+        const cRating = ratingAgg.get(c.userUid);
         return (
           <div key={c.id} className="card" style={{ padding: 14, marginTop: 12 }}>
             <div className="row" style={{ gap: 12 }}>
@@ -2045,35 +2971,69 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
                 <span style={{ fontSize: 22, color: 'var(--lila)' }}>{(c.name || '?').slice(0, 1).toUpperCase()}</span>
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="row" style={{ gap: 6 }}>
+                <div className="row wrap" style={{ gap: 6 }}>
                   <span className="caps" style={{ fontSize: 17 }}>{c.name}</span>
+                  <CreatorBadge />
                   {sub && <span className="tag ok"><BadgeCheck size={12} /> Suscrito</span>}
                 </div>
-                <div className="tiny">@{c.handle} · Suscripción ${c.price}/mes</div>
+                <div className="tiny">@{c.handle}</div>
+                {cRating && <div style={{ marginTop: 2 }}><Stars avg={cRating.avg} count={cRating.count} /></div>}
                 {c.bio && <p className="small muted" style={{ margin: '6px 0 0' }}>{c.bio}</p>}
               </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div className="tiny" style={{ marginBottom: 2 }}>Suscripción</div>
+                <PriceIva
+                  base={c.price}
+                  total={Math.round(c.price * (1 + CREATOR_COMMISSION) * (1 + IVA) * 100) / 100}
+                  size={17}
+                />
+              </div>
             </div>
-            <button className="btn btn-neon btn-sm full" style={{ marginTop: 12 }} disabled={busy} onClick={() => void onSubscribe(c)}>
-              {sub ? 'Suscripción activa' : 'Suscribirse por SPEI'}
-            </button>
+            <div className="grid2" style={{ gap: 8, marginTop: 12 }}>
+              <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void onSubscribe(c)}>
+                {sub ? 'Suscripción activa' : 'Suscribirme'}
+              </button>
+              <button className="btn btn-dark btn-sm" onClick={() => onDonate(c)}><Gift size={15} /> Donar</button>
+            </div>
             {cPosts.length > 0 && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginTop: 12 }}>
                 {cPosts.map((p) => {
-                  const locked = p.premium && !sub;
+                  const pTier = tierOf(p);
+                  const unlocked =
+                    pTier === 'gratis' ||
+                    myUnlocks.some((u) => u.postId === p.id) ||
+                    (pTier === 'premium' && !!sub);
+                  const locked = pTier !== 'gratis' && !unlocked;
                   return (
-                    <div key={p.id} style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
-                      <img
-                        src={p.image} alt={p.caption}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', filter: locked ? 'blur(16px) brightness(.55)' : undefined }}
-                      />
-                      {locked && (
-                        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-                          <span className="tiny" style={{ display: 'flex', gap: 4, alignItems: 'center', color: 'var(--soft)' }}>
-                            <Lock size={13} /> Premium
-                          </span>
-                        </div>
+                    <button
+                      key={p.id}
+                      style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000', padding: 0, border: 'none' }}
+                      onClick={() => {
+                        if (locked) onBuyContent(p, c);
+                        else onOpenExplicit(p);
+                      }}
+                    >
+                      {p.kind === 'video' ? (
+                        <video src={p.image} muted style={{ width: '100%', height: '100%', objectFit: 'cover', filter: locked ? 'blur(16px) brightness(.55)' : 'blur(14px) brightness(.7)' }} />
+                      ) : (
+                        <img src={p.image} alt={p.caption} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: locked ? 'blur(16px) brightness(.55)' : 'blur(14px) brightness(.7)' }} />
                       )}
-                    </div>
+                      <span style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+                        {locked ? (
+                          <span className="tiny" style={{ display: 'flex', gap: 4, alignItems: 'center', color: 'var(--soft)' }}>
+                            <Lock size={13} /> ${p.price}
+                            {pTier === 'ultra' ? ' · Ultra' : ''}
+                          </span>
+                        ) : (
+                          <span className="tiny" style={{ display: 'flex', gap: 4, alignItems: 'center', color: 'var(--soft)' }}>
+                            <EyeOff size={13} /> 18+
+                          </span>
+                        )}
+                      </span>
+                      {p.kind === 'video' && (
+                        <span style={{ position: 'absolute', top: 4, left: 4 }} className="tiny"><Video size={12} /></span>
+                      )}
+                    </button>
                   );
                 })}
               </div>
@@ -2084,6 +3044,7 @@ function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRe
     </>
   );
 }
+
 
 // ============================================================================
 // PESTAÑA EVENTOS
@@ -2190,13 +3151,8 @@ function EventSheet({ ev, hasPass, onClose, onReserve }: {
         <span className="small">La dirección exacta se comparte solo con asistentes confirmados.</span>
       </div>
       {ev.price > 0 && (
-        <div className="card stack" style={{ marginTop: 12, gap: 6 }}>
-          <div className="row between small"><span>Entrada</span><b className="ui">{money(ev.price)}</b></div>
-          <div className="row between small"><span>IVA (16%)</span><b className="ui">{money(total - ev.price)}</b></div>
-          <div className="row between" style={{ borderTop: '1px solid var(--line)', paddingTop: 6 }}>
-            <span className="caps">Total</span>
-            <span className="caps" style={{ fontSize: 22 }}>{money(total)} MXN</span>
-          </div>
+        <div className="card" style={{ marginTop: 12 }}>
+          <PriceIva base={ev.price} total={total} align="center" size={26} />
         </div>
       )}
       {hasPass ? (
@@ -2260,10 +3216,7 @@ function PayTab({ myDoc, orders, pricing, bank, onBuy, onOpenOrder, onToast }: {
                   <div className="caps" style={{ fontSize: 19 }}>{plan === 'plus' ? 'VIP Plus' : 'Ultra VIP'}</div>
                   <div className="tiny">{plan === 'plus' ? '15 días · likes ilimitados' : '1 mes · likes ilimitados + insignia'}</div>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div className="caps" style={{ fontSize: 24 }}>{money(price.total)}</div>
-                  <div className="tiny">IVA incluido</div>
-                </div>
+                <PriceIva base={price.base} total={price.total} size={24} />
               </div>
               <button className="btn btn-neon full" style={{ marginTop: 12 }} onClick={() => void onBuy(plan)}>
                 <Banknote size={18} /> Pagar por SPEI
@@ -2401,12 +3354,25 @@ function ProfileTab(props: {
   onPhoto: (file: File, kind: 'avatar' | 'gallery') => Promise<void>;
   onRemovePhoto: (idx: number) => Promise<void>;
   onLogout: () => Promise<void>;
+  myRating?: { avg: number; count: number };
+  isCreatorVerified?: boolean;
 }) {
   const { myDoc } = props;
   return (
     <>
       <div className="h1">{myDoc.alias}</div>
       <p className="sub">{myDoc.kind} · {myDoc.age} años</p>
+
+      {(props.myRating?.count ?? 0) > 0 && (
+        <div className="row" style={{ gap: 10, marginBottom: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Stars avg={props.myRating!.avg} count={props.myRating!.count} />
+          <RatingBadge avg={props.myRating!.avg} count={props.myRating!.count} />
+          {props.isCreatorVerified && <CreatorBadge />}
+        </div>
+      )}
+      {props.isCreatorVerified && (props.myRating?.count ?? 0) === 0 && (
+        <div style={{ marginBottom: 14 }}><CreatorBadge /></div>
+      )}
 
       <div className="card">
         <div className="row" style={{ gap: 14 }}>
@@ -2708,6 +3674,71 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
         title: 'Suscripción activa', body: 'Tu pago de "' + o.label + '" fue confirmado. Ya tienes acceso al contenido premium de la creadora.',
         ts: now, read: false,
       } as AppNotification);
+    }
+    // Contenido premium de creadora: idempotente — un desbloqueo por pago.
+    if (o.kind === 'contenido' && o.userUid) {
+      const unlockId = o.userUid + '_' + o.itemRef;
+      const existing = await docGet<UnlockDoc>('content_unlocks', unlockId);
+      if (existing) {
+        setBusy(false);
+        onToast('Este contenido ya estaba desbloqueado. Sin cambios.');
+        return;
+      }
+      await docSet('content_unlocks', unlockId, {
+        id: unlockId, userUid: o.userUid, postId: o.itemRef, createdAt: now,
+      } as UnlockDoc);
+      const nid4 = notifId(o.userUid);
+      await docSet('notifications', nid4, {
+        id: nid4, userUid: o.userUid, kind: 'sistema',
+        title: 'Contenido desbloqueado', body: 'Tu pago fue confirmado. El contenido premium que compraste ya está disponible en la pestaña Virtual.',
+        ts: now, read: false,
+      } as AppNotification);
+    }
+    // Donación: la creadora recibe el monto sin comisión (el donante ya pagó el IVA).
+    if (o.kind === 'donacion') {
+      let meta: any = {};
+      try { meta = o.meta ? JSON.parse(o.meta) : {}; } catch { meta = {}; }
+      const creatorId = meta.creatorId ?? o.itemRef;
+      const creator = await docGet<CreatorDoc>('creators', creatorId);
+      if (creator) {
+        const netAmount = Math.round((o.amount / (1 + IVA)) * 100) / 100;
+        await docUpdate('creators', creator.id, { earnings: Math.round(((creator.earnings ?? 0) + netAmount) * 100) / 100 });
+        if (creator.userUid) {
+          const nid5 = notifId(creator.userUid);
+          await docSet('notifications', nid5, {
+            id: nid5, userUid: creator.userUid, kind: 'donacion',
+            title: 'Recibiste una donación',
+            body: o.userName + ' te donó ' + money(netAmount) + ' MXN. Sin comisión de plataforma: es tuya.',
+            ts: now, read: false,
+          } as AppNotification);
+        }
+      }
+      if (o.userUid) {
+        const nid6 = notifId(o.userUid);
+        await docSet('notifications', nid6, {
+          id: nid6, userUid: o.userUid, kind: 'sistema',
+          title: 'Donación confirmada', body: 'Tu donación fue entregada a la creadora. Gracias por apoyar su contenido.',
+          ts: now, read: false,
+        } as AppNotification);
+      }
+    }
+    // Membresía de creadora (sin comisión por venta): 30 días de vigencia.
+    if (o.kind === 'membresia_creadora' && o.userUid) {
+      const creator = (await docAll<CreatorDoc>('creators')).find((c) => c.userUid === o.userUid);
+      if (creator) {
+        const currentUntil = creator.membershipUntil && creator.membershipUntil > now ? creator.membershipUntil : now;
+        await docUpdate('creators', creator.id, {
+          membershipPlan: o.itemRef,
+          membershipUntil: currentUntil + 30 * 24 * 60 * 60 * 1000,
+        });
+        const nid7 = notifId(o.userUid);
+        await docSet('notifications', nid7, {
+          id: nid7, userUid: o.userUid, kind: 'sistema',
+          title: 'Membresía de creadora activa',
+          body: 'Tu pago fue confirmado. Tu membresía sin comisión está vigente por 30 días más.',
+          ts: now, read: false,
+        } as AppNotification);
+      }
     }
     setBusy(false);
     await loadAdminData();
@@ -3251,7 +4282,12 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
                 <div key={p.id} className="card" style={{ padding: 14 }}>
                   <div className="row between">
                     <span className="caps" style={{ fontSize: 16 }}>{p.creatorName}</span>
-                    {p.premium ? <span className="tag warn">Premium</span> : <span className="tag ok">Público</span>}
+                    <span className="row" style={{ gap: 6 }}>
+                      {(p.tier ?? (p.premium ? 'premium' : 'gratis')) === 'ultra' && <span className="tag bad">Ultra exclusivo</span>}
+                      {(p.tier ?? (p.premium ? 'premium' : 'gratis')) === 'premium' && <span className="tag warn">Premium</span>}
+                      {(p.tier ?? (p.premium ? 'premium' : 'gratis')) === 'gratis' && <span className="tag ok">Gratis</span>}
+                      {p.kind === 'video' && <span className="tag">Video</span>}
+                    </span>
                   </div>
                   <div className="tiny" style={{ marginTop: 2 }}>{p.caption}</div>
                   <button
@@ -3336,6 +4372,7 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
     </motion.div>
   );
 }
+
 
 
 

@@ -174,3 +174,4 @@ export async function markNotificationsRead(uid: string, ids: string[]): Promise
     await docUpdate('notifications', id, { read: true } as Partial<AppNotification>);
   }
 }
+
