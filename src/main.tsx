@@ -5,6 +5,6 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(<App />);
 
-// Real server push (FCM): permission handling, token registration per user
-// and foreground message display. Safe no-op when the browser lacks support.
+// Local mode (sin base de datos): permisos de notificación y recordatorios
+// locales. No-op seguro cuando el navegador no tiene soporte.
 initPushNotifications();

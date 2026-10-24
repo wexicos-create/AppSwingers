@@ -1,11 +1,9 @@
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { lsGet, lsUpdate } from './localstore';
 import { ProfileKind } from './types';
 
-// ---------- Onboarding profile (cross-device funnel state) ----------
-// The onboarding wizard result is stored inside users/{uid} so a user who logs
-// in on another device does not repeat the funnel. syncUserProfile uses merge,
-// so this field survives subsequent auth syncs.
+// ---------- Onboarding profile (local funnel state) ----------
+// The onboarding wizard result is stored inside the local user record so the
+// user does not repeat the funnel while using this device.
 export interface StoredOnboardingProfile {
   alias: string;
   kind: ProfileKind;
@@ -20,18 +18,20 @@ export interface StoredOnboardingProfile {
 }
 
 export async function saveOnboardingProfile(uid: string, profile: StoredOnboardingProfile): Promise<boolean> {
+  if (!uid) return false;
   try {
-    await setDoc(doc(db, 'users', uid), { onboardingProfile: profile }, { merge: true });
-    return true;
-  } catch { return false; }
+    return lsUpdate('users', uid, { onboardingProfile: profile });
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchOnboardingProfile(uid: string): Promise<StoredOnboardingProfile | null> {
   if (!uid) return null;
   try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    if (!snap.exists()) return null;
-    const data = snap.data() as Partial<{ onboardingProfile: StoredOnboardingProfile }>;
-    return data.onboardingProfile || null;
-  } catch { return null; }
+    const user = lsGet<{ onboardingProfile?: StoredOnboardingProfile }>('users', uid);
+    return user?.onboardingProfile || null;
+  } catch {
+    return null;
+  }
 }

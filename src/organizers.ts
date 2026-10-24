@@ -1,5 +1,4 @@
-import { doc, setDoc, getDoc, getDocs, collection, query, where, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from './firebase';
+import { lsSet, lsUpdate, lsGet, lsAll, lsWhere, lsDelete } from './localstore';
 import { AppRegion, AppNotification, IdentityVerdict } from './types';
 
 // ---------- Organizer roles and types ----------
@@ -192,20 +191,17 @@ export function mergeById<T extends { id: string }>(a: T[], b: T[]): T[] {
   return merged;
 }
 
-// ---------- Firestore remote sync (cross-device approval and accounting) ----------
+// ---------- Local registry sync (database-free persistence) ----------
 export async function saveRemoteOrganizerApplication(app: OrganizerApplication): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'organizer_applications', app.id), app);
-    return true;
+    return lsSet('organizer_applications', app.id, app);
   } catch { return false; }
 }
 
 export async function fetchRemoteOrganizerApplication(uid: string): Promise<OrganizerApplication | null> {
   if (!uid) return null;
   try {
-    const q = query(collection(db, 'organizer_applications'), where('userUid', '==', uid));
-    const snap = await getDocs(q);
-    const items = snap.docs.map(d => d.data() as OrganizerApplication);
+    const items = lsWhere<OrganizerApplication>('organizer_applications', 'userUid', uid);
     if (items.length === 0) return null;
     return items.sort((a, b) => b.createdAt - a.createdAt)[0];
   } catch { return null; }
@@ -213,72 +209,60 @@ export async function fetchRemoteOrganizerApplication(uid: string): Promise<Orga
 
 export async function fetchAllRemoteOrganizerApplications(): Promise<OrganizerApplication[]> {
   try {
-    const snap = await getDocs(collection(db, 'organizer_applications'));
-    return snap.docs.map(d => d.data() as OrganizerApplication);
+    return lsAll<OrganizerApplication>('organizer_applications');
   } catch { return []; }
 }
 
 export async function saveRemoteWalletTransaction(tx: WalletTransaction): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'wallet_transactions', tx.id), tx);
-    return true;
+    return lsSet('wallet_transactions', tx.id, tx);
   } catch { return false; }
 }
 
 export async function fetchRemoteWalletForUser(uid: string): Promise<WalletTransaction[]> {
   if (!uid) return [];
   try {
-    const q = query(collection(db, 'wallet_transactions'), where('userUid', '==', uid));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as WalletTransaction);
+    return lsWhere<WalletTransaction>('wallet_transactions', 'userUid', uid);
   } catch { return []; }
 }
 
 // Creator earnings (donations, subscriptions, PPV) are keyed by handle so a
-// creator sees their own virtual earnings card balance on any device.
+// creator sees their own virtual earnings card balance on this device.
 export async function fetchRemoteWalletForCreator(handle: string): Promise<WalletTransaction[]> {
   if (!handle) return [];
   try {
-    const q = query(collection(db, 'wallet_transactions'), where('creatorHandle', '==', handle));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as WalletTransaction).sort((a, b) => b.ts - a.ts);
+    return lsWhere<WalletTransaction>('wallet_transactions', 'creatorHandle', handle).sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }
 
 export async function fetchAllRemoteWalletTransactions(): Promise<WalletTransaction[]> {
   try {
-    const snap = await getDocs(collection(db, 'wallet_transactions'));
-    return snap.docs.map(d => d.data() as WalletTransaction);
+    return lsAll<WalletTransaction>('wallet_transactions');
   } catch { return []; }
 }
 
 export async function createRemoteWithdrawal(wd: WithdrawalRequest): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'withdrawal_requests', wd.id), wd);
-    return true;
+    return lsSet('withdrawal_requests', wd.id, wd);
   } catch { return false; }
 }
 
 export async function fetchRemoteWithdrawalsForUser(uid: string): Promise<WithdrawalRequest[]> {
   if (!uid) return [];
   try {
-    const q = query(collection(db, 'withdrawal_requests'), where('userUid', '==', uid));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as WithdrawalRequest);
+    return lsWhere<WithdrawalRequest>('withdrawal_requests', 'userUid', uid);
   } catch { return []; }
 }
 
 export async function fetchAllRemoteWithdrawals(): Promise<WithdrawalRequest[]> {
   try {
-    const snap = await getDocs(collection(db, 'withdrawal_requests'));
-    return snap.docs.map(d => d.data() as WithdrawalRequest);
+    return lsAll<WithdrawalRequest>('withdrawal_requests');
   } catch { return []; }
 }
 
 export async function updateRemoteWithdrawal(wd: WithdrawalRequest): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'withdrawal_requests', wd.id), wd, { merge: true });
-    return true;
+    return lsUpdate('withdrawal_requests', wd.id, wd);
   } catch { return false; }
 }
 
@@ -348,15 +332,13 @@ export function newIneRecord(params: {
 
 export async function saveRemoteIneRecord(record: IneRecord): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'ine_records', record.id), record);
-    return true;
+    return lsSet('ine_records', record.id, record);
   } catch { return false; }
 }
 
 export async function fetchAllRemoteIneRecords(): Promise<IneRecord[]> {
   try {
-    const snap = await getDocs(collection(db, 'ine_records'));
-    return snap.docs.map(d => d.data() as IneRecord);
+    return lsAll<IneRecord>('ine_records');
   } catch { return []; }
 }
 
@@ -392,14 +374,14 @@ export async function issueIdentityVerdict(params: {
         ? (isEs ? 'No pudimos validar que eres quien dices ser. Tu cuenta y credenciales serán eliminadas.' : 'We could not validate you are who you claim to be. Your account and credentials will be deleted.')
         : (isEs ? 'Cuenta baneada por decisión del administrador. Las credenciales se retienen un año por cualquier tema legal posterior.' : 'Account banned by administrator decision. Credentials are retained for one year for any later legal matter.');
   try {
-    await updateDoc(doc(db, 'ine_records', record.id), {
+    lsUpdate<IneRecord>('ine_records', record.id, {
       verdict,
       verdictAt: now,
       verdictNote: note,
       retainedUntil: verdict === 'baneada' ? now + INE_BAN_RETENTION_MS : null,
-    });
-    await setDoc(doc(db, 'users', record.userUid), { identityStatus: verdict, identityNote: note, identityVerdictAt: now }, { merge: true });
-    await setDoc(doc(db, 'notifications', 'nt_' + now + '_' + record.userUid), {
+    } as Partial<IneRecord>);
+    lsUpdate('users', record.userUid, { identityStatus: verdict, identityNote: note, identityVerdictAt: now });
+    lsSet('notifications', 'nt_' + now + '_' + record.userUid, {
       id: 'nt_' + now + '_' + record.userUid,
       userUid: record.userUid,
       kind: 'identidad',
@@ -419,13 +401,12 @@ export async function issueIdentityVerdict(params: {
  */
 export async function purgeExpiredRetainedRecords(): Promise<number> {
   try {
-    const snap = await getDocs(collection(db, 'ine_records'));
+    const records = lsAll<IneRecord>('ine_records');
     const now = Date.now();
-    const expired = snap.docs
-      .map(d => d.data() as IneRecord)
+    const expired = records
       .filter(r => ineRecordVerdict(r) === 'baneada' && typeof r.retainedUntil === 'number' && r.retainedUntil < now);
     for (const r of expired) {
-      await deleteDoc(doc(db, 'ine_records', r.id));
+      lsDelete('ine_records', r.id);
     }
     return expired.length;
   } catch { return 0; }
@@ -435,17 +416,15 @@ export async function purgeExpiredRetainedRecords(): Promise<number> {
 
 export async function fetchIdentityStatus(uid: string): Promise<IdentityVerdict | null> {
   try {
-    const snap = await getDoc(doc(db, 'users', uid));
-    if (!snap.exists()) return null;
-    return (snap.data() as { identityStatus?: IdentityVerdict }).identityStatus || null;
+    const user = lsGet<{ identityStatus?: IdentityVerdict }>('users', uid);
+    return user?.identityStatus || null;
   } catch { return null; }
 }
 
 export async function fetchNotificationsForUser(uid: string): Promise<AppNotification[]> {
   try {
-    const snap = await getDocs(query(collection(db, 'notifications'), where('userUid', '==', uid)));
-    return snap.docs
-      .map(d => d.data() as AppNotification)
+    return lsWhere<AppNotification>('notifications', 'userUid', uid)
       .sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }
+

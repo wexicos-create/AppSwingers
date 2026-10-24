@@ -7,17 +7,6 @@
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
-  "crons": [
-    {
-      "path": "/api/event-day-alarm",
-      "schedule": "0 15 * * *"
-    }
-  ],
-  "functions": {
-    "api/*.js": {
-      "maxDuration": 60
-    }
-  },
   "headers": [
     {
       "source": "/(.*)",
@@ -29,19 +18,6 @@
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"
-        }
-      ]
-    },
-    {
-      "source": "/firebase-messaging-sw.js",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        },
-        {
-          "key": "Service-Worker-Allowed",
-          "value": "/"
         }
       ]
     }

@@ -1,5 +1,4 @@
-import { doc, getDoc, getDocs, setDoc, collection } from 'firebase/firestore';
-import { db } from './firebase';
+import { lsSet, lsGet, lsAll } from './localstore';
 import { AppRegion, ClubEvent, Profile, StatePass } from './types';
 
 // ---------- Premium state search (travelers & tourists day pass) ----------
@@ -104,32 +103,28 @@ export function getStatePassPrice(region: AppRegion): StatePassPrice {
   return { base, tax, taxRate: US_SALES_TAX_PCT, taxLabel: 'impuestos locales aprox.', total: Math.round((base + tax) * 100) / 100, currency: 'USD' };
 }
 
-// ---------- Pass storage (state_passes/{uid}) ----------
+// ---------- Pass storage (local registry, database-free) ----------
 // Only the admin writes passes (after approving the SPEI order); the owner
 // reads their own. Users can never self-issue a pass.
 
 export async function fetchStatePass(uid: string | null): Promise<StatePass | null> {
   if (!uid) return null;
   try {
-    const snap = await getDoc(doc(db, 'state_passes', uid));
-    if (!snap.exists()) return null;
-    const pass = snap.data() as StatePass;
+    const pass = lsGet<StatePass>('state_passes', uid);
     // An expired pass is equivalent to no pass; the UI shows the paywall again.
-    return pass.expiresAt > Date.now() ? pass : null;
+    return pass && pass.expiresAt > Date.now() ? pass : null;
   } catch { return null; }
 }
 
 export async function activateStatePass(pass: StatePass): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'state_passes', pass.userUid), pass);
-    return true;
+    return lsSet('state_passes', pass.userUid, pass);
   } catch { return false; }
 }
 
 export async function fetchAllStatePasses(): Promise<StatePass[]> {
   try {
-    const snap = await getDocs(collection(db, 'state_passes'));
-    return snap.docs.map(d => d.data() as StatePass).sort((a, b) => b.createdAt - a.createdAt);
+    return lsAll<StatePass>('state_passes').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
@@ -182,3 +177,4 @@ export function profilesInState(profiles: Profile[], stateCode: string): Profile
 export function eventsInState(events: ClubEvent[], stateCode: string): ClubEvent[] {
   return events.filter(e => eventState(e) === stateCode);
 }
+

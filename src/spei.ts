@@ -1,5 +1,4 @@
-import { doc, setDoc, updateDoc, getDocs, collection, query, where, arrayUnion } from 'firebase/firestore';
-import { db } from './firebase';
+import { lsSet, lsGet, lsUpdate, lsAll, lsWhere } from './localstore';
 import { AppRegion, SpeiOrder, SpeiOrderKind, SpeiOrderStatus } from './types';
 
 export interface SpeiBankConfig {
@@ -121,38 +120,38 @@ export function upsertLocalSpeiOrder(order: SpeiOrder): SpeiOrder[] {
   return orders;
 }
 
-// ---------- Firestore remote sync (cross-device approval) ----------
+// ---------- Local order registry (database-free persistence) ----------
 export async function createRemoteSpeiOrder(order: SpeiOrder): Promise<boolean> {
-  try {
-    await setDoc(doc(db, 'spei_orders', order.id), order);
-    return true;
-  } catch { return false; }
+  return lsSet('spei_orders', order.id, order);
 }
 
 export async function fetchRemoteSpeiOrdersForUser(uid: string | null): Promise<SpeiOrder[]> {
   if (!uid) return [];
   try {
-    const q = query(collection(db, 'spei_orders'), where('userUid', '==', uid));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => d.data() as SpeiOrder);
-  } catch { return []; }
+    return lsWhere<SpeiOrder>('spei_orders', 'userUid', uid);
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchAllRemoteSpeiOrders(): Promise<SpeiOrder[]> {
   try {
-    const snap = await getDocs(collection(db, 'spei_orders'));
-    return snap.docs.map(d => d.data() as SpeiOrder);
-  } catch { return []; }
+    return lsAll<SpeiOrder>('spei_orders');
+  } catch {
+    return [];
+  }
 }
 
 export async function appendRemoteTimelineAndStatus(id: string, status: SpeiOrderStatus, note: string): Promise<boolean> {
   try {
-    await updateDoc(doc(db, 'spei_orders', id), {
-      status,
-      timeline: arrayUnion({ ts: Date.now(), text: note }),
-    });
-    return true;
-  } catch { return false; }
+    const order = lsGet<SpeiOrder & { timeline: Array<{ ts: number; text: string }> }>('spei_orders', id);
+    if (!order) return false;
+    const timeline = Array.isArray(order.timeline) ? [...order.timeline] : [];
+    timeline.push({ ts: Date.now(), text: note });
+    return lsUpdate('spei_orders', id, { status, timeline });
+  } catch {
+    return false;
+  }
 }
 
 // ---------- Automatic validation bot ----------
@@ -178,3 +177,4 @@ export function runBotValidation(order: SpeiOrder): SpeiBotResult {
   ];
   return { checks, passed: refOk && conceptOk && amountOk && !expired, expired };
 }
+

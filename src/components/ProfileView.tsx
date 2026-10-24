@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { User } from 'firebase/auth';
+import { User, fetchUserMatches } from '../localdb';
 import { Profile, SubscriptionTier, AppRegion, BadgeKind, MatchItem } from '../types';
-import { fetchUserMatches } from '../firebase';
 import { compressImage } from '../organizers';
 import { inspectPublicPhoto, NO_NUDE_PUBLIC_MSG, NO_NUDE_PUBLIC_MSG_EN } from '../content-guard';
 import { showToast } from './Toast';
@@ -242,7 +241,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 {isEs ? 'Actividad Reciente de Matches' : 'Recently Active Matches'}
               </h3>
               <p className="text-[10px] text-purple-200/70">
-                {isEs ? 'Última interacción registrada en Firestore' : 'Last interaction timestamp from Firestore'}
+                {isEs ? 'Última interacción guardada en este dispositivo' : 'Last interaction timestamp saved on this device'}
               </p>
             </div>
           </div>
@@ -841,3 +840,4 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     </div>
   );
 };
+

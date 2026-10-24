@@ -1,5 +1,5 @@
-import { doc, setDoc, updateDoc, deleteDoc, getDocs, collection, query, where } from 'firebase/firestore';
-import { db, auth } from './firebase';
+import { lsSet, lsUpdate, lsAll, lsWhere, lsDelete } from './localstore';
+import { auth } from './localdb';
 import { AppRegion, DonationRecord, EventAccessPass, EventPayoutRequest, EventRating, SupportTicket } from './types';
 import { computeEarningSplit } from './organizers';
 
@@ -123,40 +123,35 @@ export function isEventPast(dateStr: string): boolean {
   return iso !== null && iso < todayIso();
 }
 
-// ---------- Event access passes (Firestore) ----------
+// ---------- Event access passes (local registry) ----------
 export async function saveRemoteEventPass(pass: EventAccessPass): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'event_passes', pass.id), pass);
-    return true;
+    return lsSet('event_passes', pass.id, pass);
   } catch { return false; }
 }
 
 export async function fetchEventPassesForUser(userUid: string): Promise<EventAccessPass[]> {
   if (!userUid) return [];
   try {
-    const snap = await getDocs(query(collection(db, 'event_passes'), where('userUid', '==', userUid)));
-    return snap.docs.map(d => d.data() as EventAccessPass).sort((a, b) => b.createdAt - a.createdAt);
+    return lsWhere<EventAccessPass>('event_passes', 'userUid', userUid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchEventPassesForEvent(eventId: string): Promise<EventAccessPass[]> {
   try {
-    const snap = await getDocs(query(collection(db, 'event_passes'), where('eventId', '==', eventId)));
-    return snap.docs.map(d => d.data() as EventAccessPass).sort((a, b) => b.createdAt - a.createdAt);
+    return lsWhere<EventAccessPass>('event_passes', 'eventId', eventId).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllEventPasses(): Promise<EventAccessPass[]> {
   try {
-    const snap = await getDocs(collection(db, 'event_passes'));
-    return snap.docs.map(d => d.data() as EventAccessPass);
+    return lsAll<EventAccessPass>('event_passes');
   } catch { return []; }
 }
 
 export async function updateRemoteEventPass(passId: string, partial: Partial<EventAccessPass>): Promise<boolean> {
   try {
-    await updateDoc(doc(db, 'event_passes', passId), partial);
-    return true;
+    return lsUpdate('event_passes', passId, partial);
   } catch { return false; }
 }
 
@@ -164,13 +159,12 @@ export async function updateRemoteEventPass(passId: string, partial: Partial<Eve
 // completely, so the code registry never accumulates forever.
 export async function purgeExpiredEventPasses(): Promise<number> {
   try {
-    const snap = await getDocs(collection(db, 'event_passes'));
+    const passes = lsAll<EventAccessPass>('event_passes');
     const cutoff = Date.now() - EVENT_PASS_RETENTION_MS;
     let purged = 0;
-    for (const d of snap.docs) {
-      const p = d.data() as EventAccessPass;
+    for (const p of passes) {
       if (p.createdAt < cutoff) {
-        await deleteDoc(doc(db, 'event_passes', p.id));
+        lsDelete('event_passes', p.id);
         purged++;
       }
     }
@@ -257,83 +251,72 @@ export function newEventPayoutRequest(params: {
 
 export async function createRemotePayout(payout: EventPayoutRequest): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'event_payouts', payout.id), payout);
-    return true;
+    return lsSet('event_payouts', payout.id, payout);
   } catch { return false; }
 }
 
 export async function fetchPayoutsForOrganizer(uid: string | null): Promise<EventPayoutRequest[]> {
   if (!uid) return [];
   try {
-    const snap = await getDocs(query(collection(db, 'event_payouts'), where('organizerUid', '==', uid)));
-    return snap.docs.map(d => d.data() as EventPayoutRequest).sort((a, b) => b.createdAt - a.createdAt);
+    return lsWhere<EventPayoutRequest>('event_payouts', 'organizerUid', uid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllPayouts(): Promise<EventPayoutRequest[]> {
   try {
-    const snap = await getDocs(collection(db, 'event_payouts'));
-    return snap.docs.map(d => d.data() as EventPayoutRequest).sort((a, b) => b.createdAt - a.createdAt);
+    return lsAll<EventPayoutRequest>('event_payouts').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function updateRemotePayout(payoutId: string, partial: Partial<EventPayoutRequest>): Promise<boolean> {
   try {
-    await updateDoc(doc(db, 'event_payouts', payoutId), partial);
-    return true;
+    return lsUpdate('event_payouts', payoutId, partial);
   } catch { return false; }
 }
 
 // ---------- Donations ----------
 export async function createRemoteDonation(donation: DonationRecord): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'donations', donation.id), donation);
-    return true;
+    return lsSet('donations', donation.id, donation);
   } catch { return false; }
 }
 
 export async function updateRemoteDonation(donationId: string, partial: Partial<DonationRecord>): Promise<boolean> {
   try {
-    await updateDoc(doc(db, 'donations', donationId), partial);
-    return true;
+    return lsUpdate('donations', donationId, partial);
   } catch { return false; }
 }
 
 export async function fetchDonationsForDonor(uid: string | null): Promise<DonationRecord[]> {
   if (!uid) return [];
   try {
-    const snap = await getDocs(query(collection(db, 'donations'), where('donorUid', '==', uid)));
-    return snap.docs.map(d => d.data() as DonationRecord).sort((a, b) => b.createdAt - a.createdAt);
+    return lsWhere<DonationRecord>('donations', 'donorUid', uid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllDonations(): Promise<DonationRecord[]> {
   try {
-    const snap = await getDocs(collection(db, 'donations'));
-    return snap.docs.map(d => d.data() as DonationRecord).sort((a, b) => b.createdAt - a.createdAt);
+    return lsAll<DonationRecord>('donations').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 // ---------- Ratings and reputation ----------
 export async function saveRemoteRating(rating: EventRating): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'event_ratings', rating.id), rating);
-    return true;
+    return lsSet('event_ratings', rating.id, rating);
   } catch { return false; }
 }
 
 export async function fetchAllEventRatings(): Promise<EventRating[]> {
   try {
-    const snap = await getDocs(collection(db, 'event_ratings'));
-    return snap.docs.map(d => d.data() as EventRating);
+    return lsAll<EventRating>('event_ratings');
   } catch { return []; }
 }
 
 export async function fetchRatingsByUser(uid: string): Promise<EventRating[]> {
   if (!uid) return [];
   try {
-    const snap = await getDocs(query(collection(db, 'event_ratings'), where('userUid', '==', uid)));
-    return snap.docs.map(d => d.data() as EventRating);
+    return lsWhere<EventRating>('event_ratings', 'userUid', uid);
   } catch { return []; }
 }
 
@@ -360,30 +343,26 @@ export function reputationByOrganizer(ratings: EventRating[]): Record<string, Or
 // ---------- Support tickets (agencies, promoters, associates, creators) ----------
 export async function createRemoteTicket(ticket: SupportTicket): Promise<boolean> {
   try {
-    await setDoc(doc(db, 'support_tickets', ticket.id), ticket);
-    return true;
+    return lsSet('support_tickets', ticket.id, ticket);
   } catch { return false; }
 }
 
 export async function fetchTicketsForUser(uid: string | null): Promise<SupportTicket[]> {
   if (!uid) return [];
   try {
-    const snap = await getDocs(query(collection(db, 'support_tickets'), where('userUid', '==', uid)));
-    return snap.docs.map(d => d.data() as SupportTicket).sort((a, b) => b.createdAt - a.createdAt);
+    return lsWhere<SupportTicket>('support_tickets', 'userUid', uid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllTickets(): Promise<SupportTicket[]> {
   try {
-    const snap = await getDocs(collection(db, 'support_tickets'));
-    return snap.docs.map(d => d.data() as SupportTicket).sort((a, b) => b.createdAt - a.createdAt);
+    return lsAll<SupportTicket>('support_tickets').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function updateRemoteTicket(ticketId: string, partial: Partial<SupportTicket>): Promise<boolean> {
   try {
-    await updateDoc(doc(db, 'support_tickets', ticketId), partial);
-    return true;
+    return lsUpdate('support_tickets', ticketId, partial);
   } catch { return false; }
 }
 
@@ -410,7 +389,7 @@ export function newSupportTicket(params: {
   };
 }
 
-// Cross-device in-app notification (same collection the identity verdicts use).
+// In-app notification (same local registry the identity verdicts use).
 // Used by the admin panel (pass issued, donation credited, payout decided) and
 // by organizers (same-day location release, refunds after settlement).
 export async function pushRemoteNotification(params: {
@@ -422,7 +401,7 @@ export async function pushRemoteNotification(params: {
   try {
     const now = Date.now();
     const id = 'nt_' + now + '_' + Math.random().toString(36).slice(2, 8);
-    await setDoc(doc(db, 'notifications', id), {
+    return lsSet('notifications', id, {
       id,
       userUid: params.userUid,
       senderUid: auth.currentUser?.uid || null,
@@ -432,7 +411,6 @@ export async function pushRemoteNotification(params: {
       ts: now,
       read: false,
     });
-    return true;
   } catch { return false; }
 }
 
@@ -516,3 +494,4 @@ export function downloadEventTicket(pass: EventAccessPass, isEs: boolean): void 
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   } catch { /* download unsupported */ }
 }
+
