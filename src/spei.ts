@@ -1,3 +1,8 @@
+// ---------- Pagos SPEI ----------
+// Módulo de la reconstrucción desde cero. Genera órdenes de transferencia con
+// referencia única que viaja PRIMERO en el concepto bancario (SPEI trunca a 40
+// caracteres). El administrador tiene la decisión final de aprobación.
+
 import { docSet, docGet, docUpdate, docAll, docQuery } from './store';
 import { AppRegion, SpeiOrder, SpeiOrderKind, SpeiOrderStatus } from './types';
 
@@ -7,8 +12,8 @@ export interface SpeiBankConfig {
   beneficiary: string;
 }
 
-export const SPEI_CONCEPT_MAX_LENGTH = 40; // SPEI truncates bank concepts to 40 characters
-export const SPEI_ORDER_TTL_MS = 30 * 60 * 1000; // 30 minutes to complete the transfer
+export const SPEI_CONCEPT_MAX_LENGTH = 40;
+export const SPEI_ORDER_TTL_MS = 30 * 60 * 1000;
 
 const CONFIG_KEY = 'appswinguer_spei_config';
 const ORDERS_KEY = 'appswinguer_spei_orders';
@@ -35,6 +40,21 @@ export function saveSpeiConfig(partial: Partial<SpeiBankConfig>): SpeiBankConfig
   return next;
 }
 
+/** Configuración bancaria global definida por el administrador (colección settings). */
+export async function fetchRemoteSpeiConfig(): Promise<SpeiBankConfig | null> {
+  try {
+    const saved = await docGet<SpeiBankConfig>('settings', 'spei_bank');
+    if (!saved || !saved.clabe) return null;
+    return { bank: saved.bank || DEFAULT_CONFIG.bank, clabe: String(saved.clabe).replace(/[^0-9]/g, ''), beneficiary: saved.beneficiary || DEFAULT_CONFIG.beneficiary };
+  } catch { return null; }
+}
+
+export async function saveRemoteSpeiConfig(cfg: SpeiBankConfig): Promise<boolean> {
+  try {
+    return await docSet('settings', 'spei_bank', { ...cfg, clabe: cfg.clabe.replace(/[^0-9]/g, '') });
+  } catch { return false; }
+}
+
 export function formatClabe(clabe: string): string {
   const digits = clabe.replace(/[^0-9]/g, '').padStart(18, '0');
   return [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9), digits.slice(9, 12), digits.slice(12, 15), digits.slice(15, 18)].join(' ');
@@ -48,7 +68,6 @@ export interface SpeiPlanPrice {
   labelEn: string;
 }
 
-// Plan pricing kept in sync with MonetizationExtrasModal
 export function getPlanPricing(region: AppRegion): Record<string, SpeiPlanPrice> {
   const isMx = region === 'MX';
   const build = (base: number, labelEs: string, labelEn: string): SpeiPlanPrice => ({
@@ -80,7 +99,8 @@ export function newSpeiOrder(params: {
   const now = Date.now();
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
   const reference = 'ASW-' + rand;
-  // Reference goes FIRST so the unique payment ID always survives bank concept truncation.
+  // La referencia va PRIMERO para que el identificador único de pago siempre
+  // sobreviva a la truncación del concepto bancario.
   const concept = (reference + ' ' + params.label + ' - ' + params.userName).slice(0, SPEI_CONCEPT_MAX_LENGTH);
   return {
     id: 'spei_' + now + '_' + rand,
@@ -100,7 +120,8 @@ export function newSpeiOrder(params: {
   };
 }
 
-// ---------- Local storage ----------
+// ---------- Almacenamiento local ----------
+
 export function loadLocalSpeiOrders(): SpeiOrder[] {
   try {
     const saved = localStorage.getItem(ORDERS_KEY);
@@ -120,7 +141,8 @@ export function upsertLocalSpeiOrder(order: SpeiOrder): SpeiOrder[] {
   return orders;
 }
 
-// ---------- Local order registry (database-free persistence) ----------
+// ---------- Registro remoto de órdenes ----------
+
 export async function createRemoteSpeiOrder(order: SpeiOrder): Promise<boolean> {
   return docSet('spei_orders', order.id, order);
 }
@@ -128,23 +150,21 @@ export async function createRemoteSpeiOrder(order: SpeiOrder): Promise<boolean> 
 export async function fetchRemoteSpeiOrdersForUser(uid: string | null): Promise<SpeiOrder[]> {
   if (!uid) return [];
   try {
-    return docQuery<SpeiOrder>('spei_orders', 'userUid', uid);
-  } catch {
-    return [];
-  }
+    const items = await docQuery<SpeiOrder>('spei_orders', 'userUid', uid);
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  } catch { return []; }
 }
 
 export async function fetchAllRemoteSpeiOrders(): Promise<SpeiOrder[]> {
   try {
-    return docAll<SpeiOrder>('spei_orders');
-  } catch {
-    return [];
-  }
+    const items = await docAll<SpeiOrder>('spei_orders');
+    return items.sort((a, b) => b.createdAt - a.createdAt);
+  } catch { return []; }
 }
 
 export async function appendRemoteTimelineAndStatus(id: string, status: SpeiOrderStatus, note: string): Promise<boolean> {
   try {
-    const order = docGet<SpeiOrder & { timeline: Array<{ ts: number; text: string }> }>('spei_orders', id);
+    const order = await docGet<SpeiOrder & { timeline: Array<{ ts: number; text: string }> }>('spei_orders', id);
     if (!order) return false;
     const timeline = Array.isArray(order.timeline) ? [...order.timeline] : [];
     timeline.push({ ts: Date.now(), text: note });
@@ -154,15 +174,16 @@ export async function appendRemoteTimelineAndStatus(id: string, status: SpeiOrde
   }
 }
 
-// ---------- Automatic validation bot ----------
+// ---------- Bot de validación automática ----------
+
 export interface SpeiBotCheck { label: string; ok: boolean }
 export interface SpeiBotResult { checks: SpeiBotCheck[]; passed: boolean; expired: boolean }
 
 /**
- * Automatic validation bot. Verifies reference, concept and amount integrity of the
- * order and whether it is still within the payment window. Bank-side transfer
- * detection (connection bancaria) plugs in here once the provider is integrated;
- * until then the final decision stays with the administrator.
+ * Bot de validación automática. Verifica integridad de referencia, concepto y
+ * monto de la orden, y si sigue vigente dentro de la ventana de pago. La
+ * detección bancaria del lado del banco se conecta aquí al integrar el
+ * proveedor; mientras tanto, la decisión final queda en el administrador.
  */
 export function runBotValidation(order: SpeiOrder): SpeiBotResult {
   const refOk = /^ASW-[A-Z0-9]{6}$/.test(order.reference);
@@ -177,5 +198,3 @@ export function runBotValidation(order: SpeiOrder): SpeiBotResult {
   ];
   return { checks, passed: refOk && conceptOk && amountOk && !expired, expired };
 }
-
-

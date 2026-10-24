@@ -1,2281 +1,2154 @@
-import React, { useState, useEffect } from 'react';
+// ============================================================================
+// AppSwinguer Ultra Plus — reconstrucción desde cero.
+// Diseño de referencia: paleta y sistema visual originales (sin alterar color).
+// Cero datos de relleno: todos los perfiles, eventos, pases y pagos provienen
+// exclusivamente de usuarios reales registrados en la base de datos.
+// Flujos comerciales: registro + onboarding, validación INE, pagos SPEI,
+// matches y chat, eventos con pases VIP, y Panel Admin de alto nivel.
+// ============================================================================
+
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import {
-  auth,
-  db,
-  googleProvider,
-  onAuthStateChanged,
-  signInWithPopup,
-  signOut as fbSignOut,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  deleteUser,
-  User,
-  deleteDoc,
-  doc,
-  syncUserProfile,
-  recordSwipe,
-  recordMatch,
-  fetchUserMatches,
-  testConnection
+  Heart, X, Star, Bell, ShieldCheck, ChevronLeft, Copy, Check, LogOut,
+  Camera, ImagePlus, Users, CalendarDays, CreditCard, BadgeCheck, Ban, Plus, Sparkles,
+  Banknote, Ticket, Send, Loader2, AlertTriangle, Trash2, Clock, Crown,
+  RefreshCw, Eye, MessageCircle, Upload, UserCheck, UserX, FileCheck2, Lock,
+} from 'lucide-react';
+import {
+  auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup,
+  googleProvider, signOut, onAuthStateChanged, User,
 } from './supabase';
-import { 
-  Profile, 
-  SwipeAction, 
-  MatchItem, 
-  ClubEvent, 
-  Proposal, 
-  Creator, 
-  LiveStream, 
-  ReportItem, 
-  Reservation, 
-  PaymentItem,
-  SpeiOrder,
-  SystemAnnouncement,
-  AppRegion,
-  CollaborationProposal,
-  ProfileKind,
-  SubscriptionTier
-} from './types';
-import { 
-  INITIAL_PROFILES, 
-  INITIAL_EVENTS, 
-  EVENT_TIERS, 
-  INITIAL_PROPOSALS, 
-  INITIAL_CREATORS, 
-  INITIAL_LIVES, 
-  INITIAL_REPORTS 
-} from './data/mockProfiles';
-import { SwipeCard } from './components/SwipeCard';
-import { ActionButtons } from './components/ActionButtons';
-import { MatchModal } from './components/MatchModal';
-import { ProfileDetailsModal } from './components/ProfileDetailsModal';
-import { ProposalsView } from './components/ProposalsView';
-import { EventsView } from './components/EventsView';
-import { VirtualView } from './components/VirtualView';
-import { CommunityView } from './components/CommunityView';
-import { ChatView } from './components/ChatView';
-import { ProfileView } from './components/ProfileView';
-import { AdminModal } from './components/AdminModal';
-import { LegalModal } from './components/LegalModal';
-import { CollaborationModal } from './components/CollaborationModal';
-import { RegistrationModal } from './components/RegistrationModal';
-import { LandingScreen } from './components/LandingScreen';
-import { OnboardingWizard } from './components/OnboardingWizard';
-import { saveOnboardingProfile, fetchOnboardingProfile } from './onboarding';
-import { MonetizationExtrasModal } from './components/MonetizationExtrasModal';
-import { PushLookupModal } from './components/PushLookupModal';
-import { ToastHost, showToast } from './components/Toast';
-import { SpeiModal } from './components/SpeiModal';
-import { OrganizerModal } from './components/OrganizerModal';
+import { docAll, docGet, docSet, docUpdate, docQuery, docDelete } from './store';
+import { AppNotification, SpeiOrder } from './types';
 import {
-  newSpeiOrder,
-  upsertLocalSpeiOrder,
-  loadLocalSpeiOrders,
-  saveLocalSpeiOrders,
-  fetchRemoteSpeiOrdersForUser,
-  appendRemoteTimelineAndStatus,
-  createRemoteSpeiOrder,
-  getPlanPricing,
+  SpeiBankConfig, getSpeiConfig, saveSpeiConfig, fetchRemoteSpeiConfig, saveRemoteSpeiConfig,
+  formatClabe, getPlanPricing, newSpeiOrder, createRemoteSpeiOrder, fetchRemoteSpeiOrdersForUser,
+  fetchAllRemoteSpeiOrders, appendRemoteTimelineAndStatus, runBotValidation,
 } from './spei';
 import {
-  OrganizerApplication,
-  OrganizerApplicationDraft,
-  WalletTransaction,
-  WithdrawalRequest,
-  computeEarningSplit,
-  walletBalance,
-  namesMatch,
-  organizerBenefitState,
-  getEventPublishFee,
-  newOrganizerApplication,
-  newWithdrawalRequest,
-  loadOrganizerApplication,
-  saveOrganizerApplication,
-  loadWallet,
-  saveWallet,
-  loadWithdrawals,
-  saveWithdrawals,
-  fetchRemoteOrganizerApplication,
-  fetchRemoteWalletForUser,
-  fetchRemoteWithdrawalsForUser,
-  saveRemoteOrganizerApplication,
-  newIneRecord,
-  saveRemoteIneRecord,
-  saveRemoteWalletTransaction,
-  createRemoteWithdrawal,
-  mergeById,
-  fetchIdentityStatus,
-  fetchNotificationsForUser,
-  fetchRemoteWalletForCreator,
-} from './organizers';
-import { fetchStatePass } from './premium';
-import { recommendRadiusKm } from './geolocation';
-import {
-  fetchEventPassesForUser,
-  fetchRatingsByUser,
-  fetchAllEventRatings,
-  newSupportTicket,
-  createRemoteTicket,
-  reputationByOrganizer,
-  isEventDay,
-  isEventPast,
-  OrganizerReputation,
-} from './eventflow';
-import { IdentityGate } from './components/IdentityGate';
-import { PremiumStateSearch } from './components/PremiumStateSearch';
-import { EventAttendModal } from './components/EventAttendModal';
-import { DonateModal } from './components/DonateModal';
-import { EventRatingModal } from './components/EventRatingModal';
-import { ProfileRatingModal } from './components/ProfileRatingModal';
-import { OrganizerProfileModal } from './components/OrganizerProfileModal';
-import { UberSafeModal } from './components/UberSafeModal';
-import { SafetyTipsModal } from './components/SafetyTipsModal';
-import { saveProfileRating } from './ratings';
-import { IdentityVerdict, StatePass, AppNotification, EventAccessPass, EventRating, EventTier, ProfileRating } from './types';
-import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
-import { 
-  Flame, 
-  Megaphone, 
-  CalendarDays, 
-  Radio, 
-  User as UserIcon, 
-  MessageCircle, 
-  RotateCcw, 
-  Sparkles, 
-  Globe,
-  X,
-  Navigation,
-  SlidersHorizontal,
-  Zap,
-  Users,
-  BookOpen,
-  Bell,
-  Loader2,
-  MapPin as MapPinIcon,
-  Crown as CrownIcon
-} from 'lucide-react';
+  compressImage, IneRecord, newIneRecord, saveRemoteIneRecord, fetchAllRemoteIneRecords,
+  issueIdentityVerdict, ineRecordVerdict, fetchNotificationsForUser, markNotificationsRead,
+  purgeExpiredRetainedRecords,
+} from './ine';
 
-// ---------- Cuentas administradoras autorizadas (exclusivamente estas dos) ----------
-// Inician sesión y entran directo a la app: sin embudo de nombres y sin
-// verificación INE, y acceden al Panel Admin sin credenciales locales.
+// ---------------------------- Constantes ------------------------------------
+
 const ADMIN_EMAILS = ['jocervantesa@gmail.com', 'betylanz0613@gmail.com'];
-const isAdminEmail = (email?: string | null): boolean =>
-  Boolean(email && ADMIN_EMAILS.includes(email.trim().toLowerCase()));
+const KINDS = ['Pareja', 'Dama', 'Caballero'];
+const INTERESTS = [
+  'Parejas liberales', 'Full swap', 'Soft swap', 'Tríos', 'GangBang', 'BDSM',
+  'Voyeurismo', 'Exhibicionismo', 'Fiestas privadas', 'Viajes eróticos',
+  'Discreción total', 'Amigos con derechos',
+];
+const SEEKING = ['Parejas', 'Damas', 'Caballeros', 'Todos'];
+const AGE_PREFS = ['18-25', '26-35', '36-45', '46+'];
+const FREE_DAILY_LIKES = 10;
+const IVA = 0.16;
 
-export default function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
+// ---------------------------- Tipos -----------------------------------------
 
-  // Region and Language Detection (Default San Luis Potosí, México with USA option)
-  const [region, setRegion] = useState<AppRegion>('MX');
-  const [lang, setLang] = useState<Language>('es');
-  const [locationGranted, setLocationGranted] = useState(false);
-  const [locationBannerDismissed, setLocationBannerDismissed] = useState(false);
-  const [isLocating, setIsLocating] = useState(false);
-  const isEs = lang === 'es';
-  const dict = DICTIONARY[lang] || DICTIONARY.es;
+type Tab = 'match' | 'chats' | 'eventos' | 'pago' | 'perfil';
 
-  // Registered User Profile (Pareja o Individual, con gustos pasionales y fantasías)
-  const [userProfile, setUserProfile] = useState<{
-    alias: string;
-    kind: ProfileKind;
-    bio: string;
-    interests: string[];
-    seeking: string[];
-    ages: string[];
-    maxKm: number;
-    locationCity: string;
-  }>({
-    alias: 'Pareja Fuego',
-    kind: 'Pareja',
-    bio: 'Pareja liberal de San Luis Potosí. Reglas claras, respeto y química mutua.',
-    interests: ['Swinger', 'Fiestas privadas', 'Intercambio suave', 'Antifaz'],
-    seeking: ['Parejas', 'Mujeres'],
-    ages: ['26–39'],
-    maxKm: 30,
-    locationCity: 'San Luis Potosí, SLP',
-  });
+interface UserDoc {
+  uid: string;
+  email: string;
+  alias: string;
+  kind: string;
+  age: number;
+  bio: string;
+  avatar: string | null;
+  photos: string[];
+  interests: string[];
+  seeking: string[];
+  agesPref: string[];
+  km: number;
+  region: string;
+  identityStatus: string;
+  identityNote?: string;
+  premium: 'free' | 'plus' | 'ultra';
+  premiumUntil: number | null;
+  status: 'activo' | 'suspendido';
+  onboardingDone: boolean;
+  badge?: 'oro' | 'verificada';
+  createdAt: number;
+  lastSeen: number;
+}
 
-  // Active navigation tab & subscription tier
-  const [activeTab, setActiveTab] = useState<'match' | 'propuestas' | 'eventos' | 'virtual' | 'comunidad' | 'perfil'>('match');
-  const [subscriptionTier, setSubscriptionTier] = useState<SubscriptionTier>('free');
+interface EventDoc {
+  id: string;
+  title: string;
+  theme: string;
+  date: string;
+  time: string;
+  zone: string;
+  organizer: string;
+  price: number;
+  cap: number;
+  sold: number;
+  published: boolean;
+  hue: number;
+  reqs: string[];
+}
 
-  // Core application collections
-  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_PROFILES);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [swipedHistory, setSwipedHistory] = useState<{ profile: Profile; action: SwipeAction }[]>([]);
+interface PassDoc {
+  id: string;
+  code: string;
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  eventTime: string;
+  eventZone: string;
+  userUid: string;
+  userName: string;
+  amount: number;
+  orderRef: string;
+  status: string;
+  createdAt: number;
+}
 
-  // Events & Ticketing (Pristine clean launch en 0)
-  const [events, setEvents] = useState<ClubEvent[]>(() => {
+interface ChatMsg { id: string; uid: string; t: string; ts: number }
+
+interface MatchEntry {
+  id: string;
+  users: string[];
+  createdAt: number;
+  lastMessage?: string;
+  lastTs?: number;
+}
+
+interface SwipeDoc { id: string; from: string; to: string; action: string; ts: number }
+
+// ---------------------------- Utilerías -------------------------------------
+
+const money = (n: number) => '$' + n.toFixed(2) + ' MXN';
+const hueFrom = (s: string) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+};
+const chatIdFor = (a: string, b: string) => 'c_' + [a, b].sort().join('_');
+const matchIdFor = (a: string, b: string) => 'm_' + [a, b].sort().join('_');
+const ago = (ts: number) => {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return 'ahora';
+  if (s < 3600) return Math.floor(s / 60) + ' min';
+  if (s < 86400) return Math.floor(s / 3600) + ' h';
+  return Math.floor(s / 86400) + ' d';
+};
+const vipCode = () => 'VIP ' + Array.from({ length: 3 }, () => String(Math.floor(1000 + Math.random() * 9000))).join(' ');
+const isVip = (u: UserDoc | null) => !!u?.premiumUntil && u.premiumUntil > Date.now();
+const vipLabel = (u: UserDoc | null) => (isVip(u) ? (u?.premium === 'ultra' ? 'Ultra VIP' : 'VIP Plus') : 'Free');
+const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
     try {
-      const saved = JSON.parse(localStorage.getItem('appswinguer_user_events') || '[]') as ClubEvent[];
-      return [...INITIAL_EVENTS, ...saved];
-    } catch { return INITIAL_EVENTS; }
-  });
-  // Events published by organizers persist locally so they survive reloads; paid publishing is gated by SPEI approval.
-  useEffect(() => {
-    try {
-      localStorage.setItem('appswinguer_user_events', JSON.stringify(events.filter(e => e.id.startsWith('uev_'))));
-    } catch { /* ignore */ }
-  }, [events]);
-  const [reservations, setReservations] = useState<Reservation[]>([]);
-
-  // Proposals & Weekly Postulation Quotas
-  const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
-  const [appliedProposalIds, setAppliedProposalIds] = useState<string[]>([]);
-  const [savedProposalIds, setSavedProposalIds] = useState<string[]>([]);
-  const [proposalApplications, setProposalApplications] = useState<{ id: string; proposalId: string; ts: number }[]>(() => {
-    try {
-      const saved = localStorage.getItem('appswinguer_proposal_applications');
-      return saved ? JSON.parse(saved) : [];
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return true;
     } catch {
-      return [];
+      return false;
     }
-  });
+  }
+}
 
-  useEffect(() => {
+// ---------------------------- Componentes de UI ------------------------------
+
+function Portrait({ hue, blur }: { hue: number; blur?: boolean }) {
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: `linear-gradient(160deg, hsl(${hue} 40% 20%), hsl(${(hue + 30) % 360} 50% 6%))` }}>
+      <div style={{ position: 'absolute', width: 220, height: 260, left: 40, top: 70, borderRadius: '50%', background: `hsl(${hue} 80% 60%)`, opacity: 0.45, filter: `blur(${blur ? 44 : 30}px)` }} />
+      <div style={{ position: 'absolute', width: 160, height: 180, right: 10, top: 150, borderRadius: '50%', background: `hsl(${(hue + 25) % 360} 70% 45%)`, opacity: 0.5, filter: `blur(${blur ? 44 : 32}px)` }} />
+      <div style={{ position: 'absolute', width: 110, height: 110, left: 110, top: 40, borderRadius: '50%', background: '#f1dcff', opacity: 0.25, filter: 'blur(26px)' }} />
+    </div>
+  );
+}
+
+function Avatar({ doc, size }: { doc: { avatar?: string | null; alias?: string }; size: number }) {
+  return doc.avatar ? (
+    <img src={doc.avatar} alt="Perfil" style={{ width: size, height: size, borderRadius: 999, objectFit: 'cover' }} />
+  ) : (
+    <div style={{ width: size, height: size, borderRadius: 999, background: 'var(--s3)', display: 'grid', placeItems: 'center', boxShadow: 'inset 0 0 0 1px var(--line)' }}>
+      <span className="caps" style={{ fontSize: size * 0.42, color: 'var(--lila)' }}>{(doc.alias || '?').slice(0, 1).toUpperCase()}</span>
+    </div>
+  );
+}
+
+function FileButton(props: {
+  accept?: string;
+  capture?: boolean;
+  onFiles: (f: File) => void;
+  className?: string;
+  style?: React.CSSProperties;
+  children?: React.ReactNode;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <button type="button" className={props.className ?? 'btn btn-dark btn-sm'} style={props.style} onClick={() => ref.current?.click()}>
+      {props.children ?? <Upload size={16} />}
+      <input
+        ref={ref}
+        type="file"
+        hidden
+        accept={props.accept ?? 'image/*'}
+        capture={props.capture ? 'environment' : undefined}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) props.onFiles(f);
+          e.currentTarget.value = '';
+        }}
+      />
+    </button>
+  );
+}
+
+function CopyRow({ label, value, onToast }: { label: string; value: string; onToast: (s: string) => void }) {
+  const [ok, setOk] = useState(false);
+  return (
+    <div className="row between" style={{ padding: '10px 14px', background: 'var(--s3)', borderRadius: 14, boxShadow: 'inset 0 0 0 1px var(--line)' }}>
+      <span style={{ minWidth: 0, flex: 1 }}>
+        <span className="tiny" style={{ display: 'block' }}>{label}</span>
+        <span className="ui" style={{ fontWeight: 700, fontSize: 15, wordBreak: 'break-all' }}>{value}</span>
+      </span>
+      <button
+        className="iconbtn"
+        style={{ width: 38, height: 38 }}
+        aria-label={'Copiar ' + label}
+        onClick={async () => {
+          const done = await copyText(value);
+          if (done) { setOk(true); onToast('Copiado al portapapeles.'); setTimeout(() => setOk(false), 1500); }
+        }}
+      >
+        {ok ? <Check size={16} color="var(--ok)" /> : <Copy size={16} color="var(--lila)" />}
+      </button>
+    </div>
+  );
+}
+
+function Steps({ n, total }: { n: number; total: number }) {
+  return (
+    <div className="row" style={{ gap: 6, marginTop: 4 }}>
+      {Array.from({ length: total }, (_, i) => (
+        <span key={i} style={{ height: 4, borderRadius: 2, flex: 1, background: i <= n ? 'var(--lila)' : 'var(--s3)', boxShadow: i === n ? 'var(--glow)' : 'none', transition: 'width .3s' }} />
+      ))}
+    </div>
+  );
+}
+
+function Toggle({ on, onClick, label, hint }: { on: boolean; onClick: () => void; label: string; hint?: string }) {
+  return (
+    <button className="row between full" style={{ padding: '8px 0', textAlign: 'left' }} onClick={onClick}>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ display: 'block' }}>{label}</span>
+        {hint && <span className="tiny">{hint}</span>}
+      </span>
+      <span style={{
+        flex: 'none', width: 46, height: 26, borderRadius: 13, background: on ? 'var(--lila)' : 'var(--s3)',
+        boxShadow: on ? 'var(--glow)' : 'inset 0 0 0 1px var(--line)', position: 'relative', transition: 'background .2s',
+      }}>
+        <span style={{ position: 'absolute', top: 3, left: on ? 21 : 3, width: 22, height: 22, borderRadius: 11, background: on ? '#12051f' : 'var(--muted)', transition: 'left .2s' }} />
+      </span>
+    </button>
+  );
+}
+
+function IdentityTag({ status }: { status: string }) {
+  if (status === 'aprobada' || status === 'verificado') return <span className="tag ok"><BadgeCheck size={12} /> Verificada</span>;
+  if (status === 'en revisión') return <span className="tag warn"><Clock size={12} /> En revisión</span>;
+  if (status === 'rechazada') return <span className="tag bad"><AlertTriangle size={12} /> Rechazada</span>;
+  if (status === 'baneada') return <span className="tag bad"><Ban size={12} /> Suspendida</span>;
+  return <span className="tag"><ShieldCheck size={12} /> Sin validar</span>;
+}
+
+function StatusTagOrder({ status }: { status: string }) {
+  if (status === 'aprobado') return <span className="tag ok"><BadgeCheck size={12} /> Aprobado</span>;
+  if (status === 'verificado') return <span className="tag warn"><Clock size={12} /> Por confirmar</span>;
+  if (status === 'rechazado') return <span className="tag bad"><X size={12} /> Rechazado</span>;
+  if (status === 'expirado') return <span className="tag">Expirado</span>;
+  return <span className="tag warn"><Clock size={12} /> Pendiente</span>;
+}
+
+// ---------------------------- Pantalla de acceso -----------------------------
+
+function AuthScreen({ onToast }: { onToast: (s: string) => void }) {
+  const [mode, setMode] = useState<'login' | 'registro'>('login');
+  const [email, setEmail] = useState('');
+  const [pass, setPass] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const friendly = (code: string, raw: string) => {
+    if (code === 'auth/email-already-in-use') return 'Ese correo ya está registrado. Inicia sesión.';
+    if (code === 'auth/weak-password') return 'La contraseña debe tener al menos 6 caracteres.';
+    if (code === 'auth/wrong-password') return 'Correo o contraseña incorrectos.';
+    if (code === 'auth/invalid-email') return 'Correo inválido.';
+    if (code === 'auth/user-not-found') return 'Cuenta no encontrada.';
+    if (code === 'auth/email-not-confirmed') return 'Confirma tu correo antes de continuar.';
+    return raw || 'No fue posible completar la operación.';
+  };
+
+  const submit = async () => {
+    setErr(null);
+    if (!email.trim() || !pass) { setErr('Completa todos los campos.'); return; }
+    if (mode === 'registro' && pass !== confirm) { setErr('Las contraseñas no coinciden.'); return; }
+    setBusy(true);
     try {
-      localStorage.setItem('appswinguer_proposal_applications', JSON.stringify(proposalApplications));
-    } catch (e) {
-      console.warn('Error saving proposal applications:', e);
-    }
-  }, [proposalApplications]);
-
-  // Weekly postulation limits helper: Free (4/sem), Siguiente plan (15/sem), Ultra plan (Ilimitadas)
-  const getWeeklyLimit = (tier: SubscriptionTier): number => {
-    if (tier === 'ultra' || tier === 'gold') return Infinity;
-    if (tier === 'plus' || tier === 'silver') return 15;
-    return 4; // Plan gratis máximo 4 postulaciones a la semana
-  };
-
-  const getWeeklyApplicationsCount = (): number => {
-    const oneWeekAgo = Date.now() - 7 * 24 * 3600 * 1000;
-    return proposalApplications.filter(a => a.ts >= oneWeekAgo).length;
-  };
-
-  // Virtual & Creators (Pristine clean launch en 0)
-  const [creators, setCreators] = useState<Creator[]>(INITIAL_CREATORS);
-  const [userCreator, setUserCreator] = useState<Creator | null>(null);
-  const [subscribedCreatorHandles, setSubscribedCreatorHandles] = useState<string[]>([]);
-  const [liveAccessIds, setLiveAccessIds] = useState<string[]>([]);
-  const [lives, setLives] = useState<LiveStream[]>(INITIAL_LIVES);
-
-  // Moderation & Reports
-  const [reports, setReports] = useState<ReportItem[]>(INITIAL_REPORTS);
-  const [payments, setPayments] = useState<PaymentItem[]>([]);
-
-  // SPEI payment orders (approval flow with automatic benefit activation)
-  const [speiOrders, setSpeiOrders] = useState<SpeiOrder[]>(() => loadLocalSpeiOrders());
-  const [speiModalOpen, setSpeiModalOpen] = useState(false);
-  const [activeSpeiOrder, setActiveSpeiOrder] = useState<SpeiOrder | null>(null);
-  const [appliedSpeiOrderIds, setAppliedSpeiOrderIds] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('appswinguer_spei_applied') || '[]'); } catch { return []; }
-  });
-
-  // Organizers: registration file, virtual wallet and withdrawal requests
-  const [organizerApplication, setOrganizerApplication] = useState<OrganizerApplication | null>(() => loadOrganizerApplication());
-  const [walletTransactions, setWalletTransactions] = useState<WalletTransaction[]>(() => loadWallet());
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>(() => loadWithdrawals());
-  const [organizerModalOpen, setOrganizerModalOpen] = useState(false);
-  const [announcements, setAnnouncements] = useState<SystemAnnouncement[]>([
-    {
-      id: 'ann_1',
-      title: isEs ? '¡Bienvenidos a AppSwinguer Ultra Plus!' : 'Welcome to AppSwinguer Ultra Plus!',
-      body: isEs 
-        ? 'Lanzamiento oficial en San Luis Potosí y cobertura en México & USA. Acceso exclusivo para adultos con verificación obligatoria.' 
-        : 'Official launch in San Luis Potosí & full coverage in Mexico & USA. Adults only with mandatory verification.',
-      ts: Date.now(),
-    }
-  ]);
-  const [activeAnnouncement, setActiveAnnouncement] = useState<SystemAnnouncement | null>(announcements[0]);
-
-  // Club de Experiencias (10 stamps punch card)
-  const [attendStamps, setAttendStamps] = useState(0);
-  const [redeemedClubFolio, setRedeemedClubFolio] = useState<string | null>(null);
-
-  // Matches & Chat (Pristine clean launch en 0)
-  const [matches, setMatches] = useState<MatchItem[]>([]);
-
-  // Modals & Drawers state
-  const [matchModalProfile, setMatchModalProfile] = useState<Profile | null>(null);
-  const [detailsProfile, setDetailsProfile] = useState<Profile | null>(null);
-  const [adminModalOpen, setAdminModalOpen] = useState(false);
-  const [legalModalOpen, setLegalModalOpen] = useState(false);
-  const [collaborationModalOpen, setCollaborationModalOpen] = useState(false);
-  const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
-  // Public funnel: landing gate + onboarding wizard (register/login/resume)
-  const [onboardingMode, setOnboardingMode] = useState<'register' | 'login' | 'resume' | null>(null);
-  const [legalTopic, setLegalTopic] = useState<string | null>(null);
-  const [extrasModalOpen, setExtrasModalOpen] = useState(false);
-  const [pushLookupOpen, setPushLookupOpen] = useState(false);
-  const [pushToast, setPushToast] = useState<{ title: string; body: string } | null>(null);
-  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
-  const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
-
-  // Discovery Filter (KM Radius)
-  const [maxDistance, setMaxDistance] = useState(userProfile.maxKm || 30);
-
-  // Identity verdict & account gates (admin second validation)
-  const [identityStatus, setIdentityStatus] = useState<IdentityVerdict | null>(null);
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [deletingAccount, setDeletingAccount] = useState(false);
-
-  // Premium state-search day pass (travelers & tourists)
-  const [premiumSearchOpen, setPremiumSearchOpen] = useState(false);
-  const [statePass, setStatePass] = useState<StatePass | null>(null);
-
-  // Event attendance flow: VIP passes, deposit modal, day-of reminders, ratings
-  const [eventPasses, setEventPasses] = useState<EventAccessPass[]>([]);
-  const [attendModal, setAttendModal] = useState<{ event: ClubEvent; tier: EventTier | null } | null>(null);
-  const [ratingPass, setRatingPass] = useState<EventAccessPass | null>(null);
-  const [organizerReputation, setOrganizerReputation] = useState<Record<string, OrganizerReputation>>({});
-
-  // Calificación de perfil tras chat, perfil de agencia, SOS y Uber seguro.
-  const [profileRatingTarget, setProfileRatingTarget] = useState<Profile | null>(null);
-  const [organizerProfileOpen, setOrganizerProfileOpen] = useState<{ name: string; uid: string | null } | null>(null);
-  const [uberSafeOpen, setUberSafeOpen] = useState(false);
-  const [safetyTipsOpen, setSafetyTipsOpen] = useState(false);
-
-  // Creator earnings: donations credit a wallet keyed by creator handle
-  const [donateCreator, setDonateCreator] = useState<Creator | null>(null);
-  const [creatorWallet, setCreatorWallet] = useState<WalletTransaction[]>([]);
-
-  // Auto-detect IP and Region on startup
-  useEffect(() => {
-    detectUserRegionAndLang().then(({ region: r, lang: l }) => {
-      setRegion(r);
-      setLang(l);
-    });
-
-    // Request GPS location automatically
-    requestLocationAccess();
-  }, []);
-
-  // Location request to determine exact KM distances and country
-  const requestLocationAccess = (isManualClick: boolean = false) => {
-    setIsLocating(true);
-    if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setIsLocating(false);
-          setLocationGranted(true);
-          setLocationBannerDismissed(true);
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          // Mexico geographical bounds: lat 14 to 33, lng -119 to -85
-          if (lat >= 14 && lat <= 33 && lng >= -119 && lng <= -85) {
-            setRegion('MX');
-            setUserProfile(prev => ({ ...prev, locationCity: 'San Luis Potosí, SLP' }));
-          } else {
-            setRegion('US');
-            setUserProfile(prev => ({ ...prev, locationCity: 'United States' }));
-          }
-          if (isManualClick) {
-            setPushToast({
-              title: isEs ? '¡GPS Conectado!' : 'GPS Connected!',
-              body: isEs 
-                ? 'Coordenadas GPS obtenidas. Cálculo de distancias en KM activo.' 
-                : 'GPS coordinates acquired. Real-time KM distance active.'
-            });
-          }
-        },
-        (err) => {
-          setIsLocating(false);
-          console.warn('Geolocation note:', err);
-          if (isManualClick) {
-            setLocationGranted(true);
-            setLocationBannerDismissed(true);
-            const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-            setUserProfile(prev => ({ ...prev, locationCity: cityName }));
-            setPushToast({
-              title: isEs ? '¡GPS & Distancias Activadas!' : 'GPS & Distances Active!',
-              body: isEs 
-                ? `Ubicación configurada en ${cityName}. Cálculo en KM activado.` 
-                : `Location configured in ${cityName}. Distance calculations active.`
-            });
-          } else {
-            setLocationGranted(false);
-          }
-        },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 }
-      );
-    } else {
-      setIsLocating(false);
-      if (isManualClick) {
-        setLocationGranted(true);
-        setLocationBannerDismissed(true);
-        const cityName = region === 'MX' ? 'San Luis Potosí, SLP' : 'United States';
-        setUserProfile(prev => ({ ...prev, locationCity: cityName }));
-        setPushToast({
-          title: isEs ? 'Ubicación Activada' : 'Location Activated',
-          body: isEs ? `Ubicación configurada en ${cityName}.` : `Location set in ${cityName}.`
-        });
-      }
-    }
-  };
-
-  // Global helper for opening collaboration modal
-  useEffect(() => {
-    (window as any).__openCollaborationModal = () => setCollaborationModalOpen(true);
-    return () => {
-      delete (window as any).__openCollaborationModal;
-    };
-  }, []);
-
-  // Firebase auth & test connection
-  useEffect(() => {
-    testConnection().then(ok => setIsFirestoreConnected(ok));
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        // Cuentas administradoras: entrada directa sin nombres ni INE.
-        if (isAdminEmail(currentUser.email)) {
-          setOnboardingMode(null);
-          setUserProfile(prev => prev.alias === 'Pareja Fuego'
-            ? { ...prev, alias: 'Administrador', kind: 'Individual', bio: 'Cuenta administradora de la plataforma AppSwinguer.' }
-            : prev);
-        }
-        try {
-          await syncUserProfile(currentUser);
-          const remoteMatches = await fetchUserMatches(currentUser.uid);
-          if (remoteMatches.length > 0) {
-            setMatches(prev => {
-              const combined = [...remoteMatches, ...prev];
-              const seen = new Set();
-              return combined.filter(m => {
-                if (seen.has(m.profile.id)) return false;
-                seen.add(m.profile.id);
-                return true;
-              });
-            });
-          }
-        } catch (e) {
-          console.warn('Firebase user sync note:', e);
-        }
-        // Cross-device funnel state: a user without a completed onboarding profile must finish the wizard.
-        // (Las cuentas administradoras ya entraron directo y nunca reabren el embudo.)
-        if (!isAdminEmail(currentUser.email)) {
-          const storedOnboarding = await fetchOnboardingProfile(currentUser.uid);
-          if (storedOnboarding) {
-            setOnboardingMode(null);
-          } else {
-            setOnboardingMode(prev => (prev === 'register' || prev === 'login') ? prev : 'resume');
-          }
-        }
-        // Identity verdict, platform notifications and premium state pass.
-        const [status, notes, pass] = await Promise.all([
-          fetchIdentityStatus(currentUser.uid),
-          fetchNotificationsForUser(currentUser.uid),
-          fetchStatePass(currentUser.uid),
-        ]);
-        setIdentityStatus(status);
-        setNotifications(notes);
-        setStatePass(pass);
-        // Event flow: VIP passes, organizer reputation, day-of alarms and
-        // the post-event rating push (the day after the event).
-        const [passes, myRatings, allRatings] = await Promise.all([
-          fetchEventPassesForUser(currentUser.uid),
-          fetchRatingsByUser(currentUser.uid),
-          fetchAllEventRatings(),
-        ]);
-        setEventPasses(passes);
-        setOrganizerReputation(reputationByOrganizer(allRatings));
-        const todayPasses = passes.filter(p => p.status === 'activo' && isEventDay(p.eventDate));
-        if (todayPasses.length > 0) {
-          const p = todayPasses[0];
-          setPushToast({
-            title: isEs ? '¡Hoy es tu evento!' : 'Your event is today!',
-            body: isEs
-              ? `"${p.eventTitle}" · ${p.eventTime} · Zona: ${p.eventZone}. Presenta tu código VIP en la puerta.`
-              : `"${p.eventTitle}" · ${p.eventTime} · Zone: ${p.eventZone}. Show your VIP code at the door.`,
-          });
-          setTimeout(() => setPushToast(null), 9000);
-        }
-        const ratedEventIds = new Set(myRatings.map(r => r.eventId));
-        const toRate = passes.find(p => p.status === 'usado' && isEventPast(p.eventDate) && !ratedEventIds.has(p.eventId));
-        if (toRate) setRatingPass(toRate);
+      if (mode === 'registro') {
+        await createUserWithEmailAndPassword(auth, email.trim(), pass);
+        onToast('Cuenta creada. Completa tu perfil para entrar.');
       } else {
-        setIdentityStatus(null);
-        setNotifications([]);
-        setStatePass(null);
-        setEventPasses([]);
-        setRatingPass(null);
-        setOrganizerReputation({});
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Google sign in
-  const handleGoogleSignIn = async () => {
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (result.user) {
-        await syncUserProfile(result.user);
-        if (result.user.displayName) {
-          setUserProfile(prev => ({ ...prev, alias: result.user.displayName || prev.alias }));
-        }
+        await signInWithEmailAndPassword(auth, email.trim(), pass);
+        onToast('Sesión iniciada.');
       }
     } catch (e: any) {
-      console.warn('Sign In error:', e);
+      setErr(friendly(e?.code ?? '', e?.message ?? ''));
+    } finally {
+      setBusy(false);
     }
   };
-
-  const handleSignOut = async () => {
-    try {
-      await fbSignOut(auth);
-      setUser(null);
-      setOnboardingMode(null);
-    } catch (e) {
-      console.warn('Sign Out error:', e);
-    }
-  };
-
-  // ---------- Public funnel: email/password accounts + onboarding wizard ----------
-  const handleCreateAccount = async (email: string, password: string): Promise<string | null> => {
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password);
-      await syncUserProfile(cred.user);
-      return null;
-    } catch (e: any) {
-      return e?.code || 'error';
-    }
-  };
-
-  const handleLoginAccount = async (email: string, password: string): Promise<string | null> => {
-    try {
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-      await syncUserProfile(cred.user);
-      return null;
-    } catch (e: any) {
-      return e?.code || 'error';
-    }
-  };
-
-  const handleAbortOnboarding = async () => {
-    setOnboardingMode(null);
-    try {
-      await fbSignOut(auth);
-      setUser(null);
-    } catch (e) {
-      console.warn('Abort onboarding sign out note:', e);
-    }
-  };
-
-  const handleOnboardingComplete = (data: { alias: string; kind: ProfileKind; seeking: string[]; ineFront: string; ineBack: string; selfie: string; docType: 'ine' | 'pasaporte'; age: number; bio: string; ageMin: number; ageMax: number; photo: string; manualReview?: boolean }) => {
-    const uid = user?.uid || null;
-    // Sensible "busco" defaults per account kind; editable later in Fantasías & Filtros.
-    const defaultSeeking: string[] = data.kind === 'Caballero'
-      ? ['Mujeres', 'Parejas']
-      : data.kind === 'Dama'
-        ? ['Hombres', 'Parejas']
-        : ['Parejas'];
-    setUserProfile(prev => ({
-      ...prev,
-      alias: data.alias,
-      kind: data.kind,
-      bio: data.bio,
-      interests: data.seeking,
-      seeking: defaultSeeking,
-      ages: [`${data.ageMin}–${data.ageMax}`],
-    }));
-    setOnboardingMode(null);
-    if (uid) {
-      void saveOnboardingProfile(uid, {
-        alias: data.alias,
-        kind: data.kind,
-        seeking: data.seeking,
-        age: data.age,
-        bio: data.bio,
-        ageMin: data.ageMin,
-        ageMax: data.ageMax,
-        photo: data.photo,
-        docType: data.docType,
-        onboardedAt: Date.now(),
-      });
-      // Legal archive: the registration INE and liveness selfie are preserved for
-      // age verification and potential legal disputes.
-      void saveRemoteIneRecord(newIneRecord({
-        userUid: uid,
-        userEmail: user?.email || 'sin-correo@local',
-        alias: data.alias,
-        legalName: data.alias,
-        source: 'registro',
-        context: data.docType === 'ine'
-          ? 'Verificación de identidad al registro (INE)'
-          : 'Verificación de identidad al registro (Pasaporte/ID)',
-        ineFront: data.ineFront,
-        ineBack: data.ineBack,
-        selfie: data.selfie,
-      })).then(ok => {
-        if (ok) showToast(isEs ? 'Identificación resguardada en el archivo legal de la plataforma.' : 'Identification stored in the platform legal archive.');
-      });
-    }
-    if (data.manualReview) {
-      void createRemoteTicket(newSupportTicket({
-        userUid: uid,
-        userName: data.alias,
-        userEmail: user?.email || 'sin-correo@local',
-        requester: 'usuario',
-        subject: 'Solicitud de validación manual de identidad',
-        message: 'El usuario no superó la verificación automática de identidad y prueba de vida, y solicita revisión manual por parte de un Administrador.',
-      }));
-      showToast(isEs ? 'Tu verificación se envió a validación manual por un Administrador. Te avisaremos por notificación.' : 'Your verification was sent for manual review by an Administrator.', 'info');
-    }
-    setActiveTab('perfil');
-    showToast(isEs ? `¡Bienvenido a AppSwinguer, ${data.alias}!` : `Welcome to AppSwinguer, ${data.alias}!`);
-  };
-
-  // ---------- Identity verdict consequences: rejected accounts self-delete ----------
-  // Firebase client rules: an account can only delete its own Auth user. When
-  // the admin rejects an identity, the owner deletes account + credentials
-  // from this gate on next login.
-  const handleDeleteRejectedAccount = async () => {
-    if (!user) return;
-    setDeletingAccount(true);
-    try {
-      await deleteDoc(doc(db, 'users', user.uid));
-      await deleteUser(user);
-      setUser(null);
-      setIdentityStatus(null);
-      setNotifications([]);
-      setOnboardingMode(null);
-      showToast(isEs ? 'Tu cuenta y tus credenciales fueron eliminadas por completo.' : 'Your account and credentials were fully deleted.');
-    } catch (e: any) {
-      if (e?.code === 'auth/requires-recent-login') {
-        showToast(isEs
-          ? 'Por seguridad debes iniciar sesión de nuevo: cierra sesión y vuelve a entrar; después podrás eliminar tu cuenta desde este aviso.'
-          : 'For security you must sign in again: sign out and sign back in; then you can delete your account from this notice.', 'error');
-      } else {
-        showToast(isEs ? 'No se pudo eliminar la cuenta en este momento. Inténtalo de nuevo.' : 'Could not delete the account right now. Try again.', 'error');
-      }
-    }
-    setDeletingAccount(false);
-  };
-
-  // ---------- Premium state search: interest from another state ----------
-  const handleStatePassConnect = async (profile: Profile) => {
-    if (matches.some(m => m.profile.id === profile.id)) {
-      showToast(isEs ? `Ya enviaste interés a ${profile.name}. Harán Match si la persona accede.` : `You already sent interest to ${profile.name}. You will match if the person accepts.`, 'info');
-      return;
-    }
-    const newMatch: MatchItem = {
-      id: `match_${profile.id}_${Date.now()}`,
-      profile,
-      matchedAt: new Date().toISOString(),
-      lastMessage: isEs ? 'Interés desde Búsqueda por Estado. Si accede al Match, pueden acordar una cita.' : 'Interest from State Search. If they accept the match, you can arrange a date.',
-      unreadCount: 1,
-    };
-    setMatches(prev => [newMatch, ...prev]);
-    if (user) {
-      try {
-        await recordMatch(user.uid, profile);
-      } catch (err) {
-        console.warn('Error saving state-pass match:', err);
-      }
-    }
-    showToast(isEs ? `Interés enviado a ${profile.name}. Harán Match si la persona accede.` : `Interest sent to ${profile.name}. You will match if the person accepts.`);
-  };
-
-  // Regional & Distance filtered profiles (México vs USA)
-  const visibleProfiles = profiles.filter(p => {
-    const profileCountry = p.country || 'MX';
-    return profileCountry === region && p.km <= maxDistance;
-  });
-  const currentProfile = currentIndex < visibleProfiles.length ? visibleProfiles[currentIndex] : null;
-
-  const handleSwipe = async (action: SwipeAction) => {
-    if (!currentProfile) return;
-
-    const target = currentProfile;
-    setSwipedHistory(prev => [...prev, { profile: target, action }]);
-    setCurrentIndex(prev => prev + 1);
-
-    if (user) {
-      try {
-        await recordSwipe(user.uid, target, action);
-      } catch (err) {
-        console.warn('Error recording swipe:', err);
-      }
-    }
-
-    // Match criteria
-    const isMatch = action === 'superlike' || (action === 'like' && (target.likesYou || (target.matchPercentage || 80) >= 90));
-
-    if (isMatch) {
-      const newMatch: MatchItem = {
-        id: `match_${target.id}_${Date.now()}`,
-        profile: target,
-        matchedAt: new Date().toISOString(),
-        lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'Mutual match! Say hi first ✨',
-        unreadCount: 1,
-      };
-
-      setMatches(prev => [newMatch, ...prev]);
-
-      if (user) {
-        try {
-          await recordMatch(user.uid, target);
-        } catch (err) {
-          console.warn('Error saving match:', err);
-        }
-      }
-
-      setMatchModalProfile(target);
-    }
-  };
-
-  const handleRewind = () => {
-    if (swipedHistory.length === 0 || currentIndex === 0) return;
-    setSwipedHistory(prev => prev.slice(0, -1));
-    setCurrentIndex(prev => Math.max(0, prev - 1));
-  };
-
-  const handleResetDeck = () => {
-    setCurrentIndex(0);
-    setSwipedHistory([]);
-  };
-
-  // CRITICAL REQUIREMENT: DIRECT MATCH-TO-CHAT NAVIGATION
-  const handleStartChatFromMatch = (profile: Profile) => {
-    setMatches(prev => {
-      const exists = prev.some(m => m.profile.id === profile.id);
-      if (exists) return prev;
-      return [
-        {
-          id: `match_${profile.id}_${Date.now()}`,
-          profile: profile,
-          matchedAt: new Date().toISOString(),
-          lastMessage: isEs ? '¡Nuevo Match mutuo! Saludarse primero ✨' : 'New match! Say hello first ✨',
-          unreadCount: 1,
-        },
-        ...prev,
-      ];
-    });
-    setActiveChatUserId(profile.id);
-    setMatchModalProfile(null);
-    setChatDrawerOpen(true);
-  };
-
-  // ---------- SPEI: plan payment flow with admin approval ----------
-  const persistSpeiOrder = (order: SpeiOrder) => {
-    setSpeiOrders(upsertLocalSpeiOrder(order));
-  };
-
-  // Selecting a paid plan now generates a SPEI order instead of activating instantly.
-  // The tier activates automatically once the admin approves the transfer.
-  const handleRequestPlanPayment = (tier: SubscriptionTier) => {
-    if (tier === 'free') {
-      setSubscriptionTier('free');
-      return;
-    }
-    const pricing = getPlanPricing(region)[tier];
-    if (!pricing) return;
-    const order = newSpeiOrder({
-      kind: 'suscripcion',
-      itemRef: tier,
-      label: isEs ? pricing.labelEs : pricing.labelEn,
-      amount: pricing.total,
-      userName: userProfile.alias,
-      userEmail: user?.email || 'sin-correo@local',
-      userUid: user?.uid || null,
-    });
-    persistSpeiOrder(order);
-    void createRemoteSpeiOrder(order);
-    setActiveSpeiOrder(order);
-    setSpeiModalOpen(true);
-  };
-
-  const handleSpeiTransferSent = (orderId: string) => {
-    const current = speiOrders.find(o => o.id === orderId) || activeSpeiOrder;
-    if (!current) return;
-    const updated: SpeiOrder = {
-      ...current,
-      timeline: [...current.timeline, { ts: Date.now(), text: 'Transferencia SPEI reportada por el usuario. Esperando validación.' }],
-    };
-    persistSpeiOrder(updated);
-    void appendRemoteTimelineAndStatus(current.id, 'pendiente', 'Transferencia SPEI reportada por el usuario. Esperando validación.');
-    setSpeiModalOpen(false);
-    setActiveSpeiOrder(null);
-    showToast(
-      isEs
-        ? 'Transferencia reportada. El administrador validará tu pago y, al aprobarlo, tu plan se activará automáticamente.'
-        : 'Transfer reported. The admin will validate your payment; your plan will activate automatically on approval.',
-      'info'
-    );
-  };
-
-  // ---------- Organizers: registration file, SPEI-gated event publishing and virtual wallet ----------
-  const handleSubmitOrganizerApplication = (draft: OrganizerApplicationDraft) => {
-    const app = newOrganizerApplication({ ...draft, userUid: user?.uid || null, userEmail: user?.email || 'sin-correo@local' });
-    saveOrganizerApplication(app);
-    setOrganizerApplication(app);
-    void saveRemoteOrganizerApplication(app);
-    // Legal archive: keep the organizer's INE on file for potential legal disputes.
-    void saveRemoteIneRecord(newIneRecord({
-      userUid: user?.uid || null,
-      userEmail: user?.email || 'sin-correo@local',
-      alias: userProfile.alias,
-      legalName: app.legalName,
-      source: 'organizador',
-      context: 'Expediente de organizador: ' + app.role,
-      ineFront: app.ineFront,
-      ineBack: app.ineBack,
-      selfie: '',
-    }));
-    showToast(
-      isEs
-        ? 'Expediente enviado. El administrador revisará tus documentos y te notificará la decisión.'
-        : 'File submitted. The administrator will review your documents and notify you of the decision.',
-      'info'
-    );
-  };
-
-  const handlePublishOrganizerEvent = (data: { title: string; theme: string; date: string; time: string; zone: string; cap: number }) => {
-    if (!organizerApplication || !organizerBenefitState(organizerApplication).active) return;
-    const eventId = 'uev_' + Date.now();
-    const newEvent: ClubEvent = {
-      id: eventId,
-      title: data.title,
-      theme: data.theme,
-      date: data.date,
-      time: data.time,
-      zone: data.zone,
-      organizer: organizerApplication.legalName,
-      organizerUid: user?.uid || null,
-      own: false,
-      cap: data.cap,
-      sold: 0,
-      reqs: [isEs ? 'Perfil verificado' : 'Verified profile', isEs ? 'Mayor de 18 años' : '18+ only'],
-      paid: true,
-      published: false,
-      promoted: false,
-      hue: 280 + Math.floor(Math.random() * 60),
-    };
-    setEvents(prev => [newEvent, ...prev]);
-    const fee = getEventPublishFee(region);
-    const order = newSpeiOrder({
-      kind: 'evento',
-      itemRef: eventId,
-      label: (isEs ? 'Publicación de evento: ' : 'Event publishing: ') + data.title,
-      amount: fee.total,
-      userName: userProfile.alias,
-      userEmail: user?.email || 'sin-correo@local',
-      userUid: user?.uid || null,
-    });
-    persistSpeiOrder(order);
-    void createRemoteSpeiOrder(order);
-    setActiveSpeiOrder(order);
-    setSpeiModalOpen(true);
-  };
-
-  const handleRequestWithdrawal = (amount: number) => {
-    if (!organizerApplication || organizerApplication.status !== 'aprobada') {
-      showToast(
-        isEs ? 'Necesitas un expediente aprobado para retirar fondos.' : 'You need an approved file to withdraw funds.',
-        'error'
-      );
-      return;
-    }
-    const balance = walletBalance(walletTransactions);
-    if (amount <= 0 || amount > balance) {
-      showToast(
-        isEs ? 'Monto inválido: no puede exceder tu saldo disponible.' : 'Invalid amount: it cannot exceed your available balance.',
-        'error'
-      );
-      return;
-    }
-    if (!namesMatch(organizerApplication.legalName, organizerApplication.payoutHolder)) {
-      showToast(
-        isEs ? 'La cuenta de retiro debe estar a nombre del titular del expediente.' : 'The withdrawal account must be in the file holder\u2019s name.',
-        'error'
-      );
-      return;
-    }
-    const wd = newWithdrawalRequest({
-      userUid: user?.uid || null,
-      userName: organizerApplication.legalName,
-      userEmail: user?.email || 'sin-correo@local',
-      amount,
-      bank: organizerApplication.payoutBank,
-      clabe: organizerApplication.payoutClabe,
-      holder: organizerApplication.payoutHolder,
-    });
-    const nextWithdrawals = [wd, ...loadWithdrawals()];
-    saveWithdrawals(nextWithdrawals);
-    setWithdrawals(nextWithdrawals);
-    void createRemoteWithdrawal(wd);
-    const withdrawalTx: WalletTransaction = {
-      id: 'wtx_' + Date.now(),
-      userUid: user?.uid || null,
-      kind: 'retiro',
-      gross: amount,
-      commission: 0,
-      isrRetained: 0,
-      net: -amount,
-      note: (isEs ? 'Solicitud de retiro a cuenta ' : 'Withdrawal request to ') + organizerApplication.payoutBank,
-      ts: Date.now(),
-    };
-    const nextWallet = [...loadWallet(), withdrawalTx];
-    saveWallet(nextWallet);
-    setWalletTransactions(nextWallet);
-    void saveRemoteWalletTransaction(withdrawalTx);
-    showToast(
-      isEs
-        ? 'Retiro solicitado. La transferencia llegará en máximo 24 horas a tu cuenta registrada.'
-        : 'Withdrawal requested. The transfer will arrive within 24 hours to your registered account.',
-      'info'
-    );
-  };
-
-  // SPEI: sync orders (local + remote) and apply admin decisions automatically.
-  // Approval activates the purchased benefit; rejection keeps the account on the free plan.
-  useEffect(() => {
-    let cancelled = false;
-    const readApplied = (): string[] => {
-      try { return JSON.parse(localStorage.getItem('appswinguer_spei_applied') || '[]'); } catch { return []; }
-    };
-    const applyDecisions = (orders: SpeiOrder[]) => {
-      const applied = readApplied();
-      let nextApplied = [...applied];
-      for (const order of orders) {
-        if (nextApplied.includes(order.id)) continue;
-        const isMine = user ? (order.userUid === user.uid || (user.email !== null && order.userEmail === user.email)) : false;
-        if (!isMine) continue;
-        if (order.status === 'aprobado') {
-          if (order.kind === 'suscripcion') {
-            setSubscriptionTier(order.itemRef as SubscriptionTier);
-          } else if (order.kind === 'evento') {
-            // Publishing fee paid: the event becomes visible to everyone in the cartelera.
-            setEvents(prev => prev.map(e => e.id === order.itemRef ? { ...e, published: true } : e));
-          }
-          // Extend here with future kinds: 'propuesta_colaboracion', 'premium'
-          nextApplied = [...nextApplied, order.id];
-          showToast(isEs ? '¡Pago aprobado! Tu ' + order.label + ' ya está activo.' : 'Payment approved! Your ' + order.label + ' is now active.');
-        } else if (order.status === 'rechazado') {
-          nextApplied = [...nextApplied, order.id];
-          showToast(isEs ? 'Tu pago fue rechazado por el administrador. Tu cuenta permanece en Plan Gratis.' : 'Your payment was rejected by the admin. Your account stays on the Free Plan.', 'error');
-        }
-      }
-      if (nextApplied.length !== applied.length) {
-        try { localStorage.setItem('appswinguer_spei_applied', JSON.stringify(nextApplied)); } catch { /* ignore */ }
-        setAppliedSpeiOrderIds(nextApplied);
-      }
-    };
-    const sync = async () => {
-      if (user) {
-        const remote = await fetchRemoteSpeiOrdersForUser(user.uid);
-        if (cancelled) return;
-        if (remote.length > 0) {
-          const local = loadLocalSpeiOrders();
-          const merged = [...remote];
-          for (const l of local) {
-            if (!merged.some(r => r.id === l.id)) merged.push(l);
-          }
-          saveLocalSpeiOrders(merged);
-          applyDecisions(merged);
-          return;
-        }
-      }
-      applyDecisions(loadLocalSpeiOrders());
-    };
-    void sync();
-    const timer = window.setInterval(() => { void sync(); }, 30000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [user, isEs]);
-
-  // Organizers: sync file, wallet and withdrawals (local + remote) and apply admin decisions automatically.
-  // Application approval enables publishing; withdrawal decisions notify and refund the wallet.
-  useEffect(() => {
-    let cancelled = false;
-    const readAppliedWd = (): string[] => {
-      try { return JSON.parse(localStorage.getItem('appswinguer_wd_applied') || '[]'); } catch { return []; }
-    };
-    const sync = async () => {
-      if (!user) return;
-      const [remoteApp, remoteWallet, remoteWithdrawals] = await Promise.all([
-        fetchRemoteOrganizerApplication(user.uid),
-        fetchRemoteWalletForUser(user.uid),
-        fetchRemoteWithdrawalsForUser(user.uid),
-      ]);
-      if (cancelled) return;
-      if (remoteApp) {
-        const localApp = loadOrganizerApplication();
-        if (!localApp || remoteApp.createdAt >= localApp.createdAt) {
-          saveOrganizerApplication(remoteApp);
-          setOrganizerApplication(remoteApp);
-        }
-      }
-      const wallet = mergeById(loadWallet(), remoteWallet);
-      saveWallet(wallet);
-      setWalletTransactions(wallet);
-      const allWithdrawals = mergeById(loadWithdrawals(), remoteWithdrawals);
-      saveWithdrawals(allWithdrawals);
-      setWithdrawals(allWithdrawals);
-      let appliedWd = readAppliedWd();
-      for (const wd of allWithdrawals) {
-        if (appliedWd.includes(wd.id)) continue;
-        if (wd.status === 'transferido') {
-          appliedWd = [...appliedWd, wd.id];
-          showToast(isEs ? '¡Retiro transferido! Revisa tu cuenta bancaria.' : 'Withdrawal transferred! Check your bank account.');
-        } else if (wd.status === 'rechazado') {
-          appliedWd = [...appliedWd, wd.id];
-          const refundId = 'tx_refund_' + wd.id;
-          const currentWallet = loadWallet();
-          if (!currentWallet.some(t => t.id === refundId)) {
-            const refundTx: WalletTransaction = {
-              id: refundId,
-              userUid: user.uid,
-              kind: 'ajuste',
-              gross: 0,
-              commission: 0,
-              isrRetained: 0,
-              net: wd.amount,
-              note: isEs ? 'Retiro rechazado: monto devuelto a la cartera.' : 'Withdrawal rejected: amount returned to the wallet.',
-              ts: Date.now(),
-            };
-            const nextWallet = [...currentWallet, refundTx];
-            saveWallet(nextWallet);
-            setWalletTransactions(nextWallet);
-            void saveRemoteWalletTransaction(refundTx);
-          }
-          showToast(isEs ? 'Tu retiro fue rechazado. El monto regresó a tu cartera.' : 'Your withdrawal was rejected. The amount returned to your wallet.', 'error');
-        }
-      }
-      if (appliedWd.length !== readAppliedWd().length) {
-        try { localStorage.setItem('appswinguer_wd_applied', JSON.stringify(appliedWd)); } catch { /* ignore */ }
-      }
-    };
-    void sync();
-    const timer = window.setInterval(() => { void sync(); }, 30000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [user, isEs]);
-
-  // Event reservation handler (free events only: paid events go through the
-  // attendance deposit modal — one SPEI payment per user, VIP pass issued by
-  // the admin, and the organizer is paid at settlement, not at reservation).
-  const handleReserveEvent = (eventId: string, tierId: string | null) => {
-    const code = `AS-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.floor(100 + Math.random() * 900)}`;
-    const newReservation: Reservation = {
-      id: `res_${Date.now()}`,
-      eventId,
-      tier: tierId,
-      folio: `F-${Math.floor(100 + Math.random() * 900)}`,
-      code,
-      ts: Date.now(),
-      status: 'pagado',
-    };
-    setReservations(prev => [newReservation, ...prev]);
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, sold: e.sold + 1 } : e));
-    showToast(isEs ? `¡Pase apartado con éxito! Tu código de acceso es ${code}.` : `Pass confirmed! Your access code is ${code}.`);
-  };
-
-  // Paid event: open the attendance deposit modal (SPEI once per user; the
-  // admin approves and issues the 12-digit VIP access pass).
-  const handleAttendEvent = (eventId: string, tierId: string | null) => {
-    const event = events.find(e => e.id === eventId);
-    if (!event) return;
-    const tier = EVENT_TIERS.find(t => t.id === tierId) || null;
-    setAttendModal({ event, tier });
-  };
-
-  // Post-event rating push (opened automatically the day after the event).
-  const handleRatePass = (pass: EventAccessPass) => {
-    setRatingPass(pass);
-  };
-
-  const handleRated = (rating: EventRating) => {
-    setRatingPass(null);
-    void fetchAllEventRatings().then(all => setOrganizerReputation(reputationByOrganizer(all)));
-    showToast(isEs ? '¡Gracias por calificar el evento! Tu opinión genera el estatus de la agencia u organizador.' : 'Thanks for rating the event! Your feedback builds the agency/organizer status.', 'success');
-  };
-
-  // ---------- Calificación de perfil tras abandonar un chat (cooldown de 7 días) ----------
-  const handleAbandonChat = (profile: Profile, messageCount: number) => {
-    if (messageCount < 2) return;
-    try {
-      const raw = localStorage.getItem('appswinguer_profile_rated');
-      const seen: Record<string, number> = raw ? JSON.parse(raw) : {};
-      const last = seen[profile.id] || 0;
-      if (Date.now() - last < 7 * 24 * 60 * 60 * 1000) return;
-    } catch { /* registro de cooldown no disponible: permitir calificar */ }
-    setProfileRatingTarget(profile);
-  };
-
-  const handleProfileRated = (rating: ProfileRating) => {
-    void saveProfileRating(rating);
-    try {
-      const raw = localStorage.getItem('appswinguer_profile_rated');
-      const seen: Record<string, number> = raw ? JSON.parse(raw) : {};
-      seen[rating.targetProfileId] = Date.now();
-      localStorage.setItem('appswinguer_profile_rated', JSON.stringify(seen));
-    } catch { /* ignore */ }
-    setProfileRatingTarget(null);
-    showToast(isEs ? '¡Gracias por calificar este perfil! Tu opinión mantiene una comunidad segura y confiable.' : 'Thanks for rating this profile! Your feedback keeps the community safe.', 'success');
-  };
-
-  // ---------- Alerta SOS (6 toques en el chat; ticket con ubicación en tiempo real) ----------
-  const handleSosAlert = (info: { targetName: string; location: string }) => {
-    void createRemoteTicket(newSupportTicket({
-      userUid: user?.uid || null,
-      userName: userProfile.alias,
-      userEmail: user?.email || 'sin-correo@local',
-      requester: 'usuario',
-      subject: 'ALERTA SOS EN VIVO (emergencia)',
-      message: 'La usuaria activó el botón de emergencia SOS (6 toques). Persona involucrada: ' + info.targetName + '. Ubicación en tiempo real: ' + info.location + '. Valorar el reporte inmediato a la policía.',
-    }));
-    showToast(isEs ? 'ALERTA SOS ENVIADA. Compartimos tu ubicación con el Administrador; te recomendamos llamar al 911 de inmediato.' : 'SOS ALERT SENT. Your location was shared with the Administrator; we recommend calling 911 immediately.', 'error');
-  };
-
-  // ---------- Retroalimentación de inasistencia a eventos ----------
-  const handleNoShowFeedback = (pass: EventAccessPass, reason: string, details: string) => {
-    void createRemoteTicket(newSupportTicket({
-      userUid: user?.uid || null,
-      userName: userProfile.alias,
-      userEmail: user?.email || 'sin-correo@local',
-      requester: 'usuario',
-      subject: 'Inasistencia a evento: ' + pass.eventTitle,
-      message: 'Motivo: ' + reason + (details ? '. Detalles: ' + details : '') + '. Pase: ' + pass.code + '. Agencia/Organizador: ' + pass.organizerName + '.',
-    }));
-    showToast(isEs ? 'Gracias. Registramos tu motivo de inasistencia; nos ayuda a mejorar los eventos y proteger a la comunidad.' : 'Thank you. Your no-show reason was registered.', 'info');
-  };
-
-  // ---------- Uber Privado de Seguridad (9 PM a 12 AM; +20% de honorarios + IVA 16%) ----------
-  const handleUberSafeRequest = (origin: string, destination: string, uberFare: number) => {
-    const base = Number(uberFare) || 0;
-    const serviceFee = Math.round(base * 0.2 * 100) / 100;
-    const tax = Math.round((base + serviceFee) * 0.16 * 100) / 100;
-    const total = Math.round((base + serviceFee + tax) * 100) / 100;
-    void createRemoteTicket(newSupportTicket({
-      userUid: user?.uid || null,
-      userName: userProfile.alias,
-      userEmail: user?.email || 'sin-correo@local',
-      requester: 'usuario',
-      subject: 'Solicitud Uber Privado de Seguridad (9 PM - 12 AM)',
-      message: 'Origen: ' + origin + '. Destino: ' + destination + '. Tarifa Uber estimada: $' + base + '. Honorarios (20%): $' + serviceFee + '. IVA (16%): $' + tax + '. Total a cobrar: $' + total + '. Despachar el viaje y coordinar el pago con la usuaria.',
-    }));
-    setUberSafeOpen(false);
-    showToast(isEs ? 'Solicitud enviada al Administrador. Total del servicio (incluye 20% de honorarios e IVA 16%): $' + total : 'Request sent to the Administrator. Service total: $' + total, 'info');
-  };
-
-  const handleCancelReservation = (reservationId: string) => {
-    setReservations(prev => prev.map(r => r.id === reservationId ? { ...r, status: 'cancelado' } : r));
-  };
-
-  // Settlement released instantly (attendance >= 50%): the organizer's wallet
-  // is credited locally and remotely so the money appears on their device.
-  const handleOrganizerWalletCredit = (tx: WalletTransaction) => {
-    const nextWallet = [...loadWallet(), tx];
-    saveWallet(nextWallet);
-    setWalletTransactions(nextWallet);
-    void saveRemoteWalletTransaction(tx);
-  };
-
-  // Proposal handlers with strict weekly quota enforcement
-  const handleApplyProposal = (proposal: Proposal) => {
-    const weeklyLimit = getWeeklyLimit(subscriptionTier);
-    const usedThisWeek = getWeeklyApplicationsCount();
-
-    if (usedThisWeek >= weeklyLimit) {
-      const planName = subscriptionTier === 'free' 
-        ? (isEs ? 'Plan Gratis (máx. 4 por semana)' : 'Free Plan (max 4/week)')
-        : (isEs ? 'Plan VIP Plus (máx. 15 por semana)' : 'VIP Plus Plan (max 15/week)');
-      
-      const nextPlanOffer = subscriptionTier === 'free'
-        ? (isEs ? 'Siguiente plan (15 postulaciones/semana) o Ultra Plan (Ilimitadas)' : 'Next plan (15/week) or Ultra Plan (Unlimited)')
-        : (isEs ? 'Ultra Plan (Postulaciones Ilimitadas)' : 'Ultra Plan (Unlimited postulations)');
-
-      const alertMsg = isEs
-        ? `Has alcanzado el límite semanal de ${weeklyLimit} postulaciones de tu ${planName}.\n\nPara continuar postulándote a fiestas y propuestas exclusivas, sube a: ${nextPlanOffer}.`
-        : `You reached the weekly limit of ${weeklyLimit} applications of your ${planName}.\n\nUpgrade to ${nextPlanOffer} to post unlimited requests.`;
-      
-      showToast(alertMsg, 'info');
-      setExtrasModalOpen(true);
-      return;
-    }
-
-    const newRecord = {
-      id: `app_${Date.now()}`,
-      proposalId: proposal.id,
-      ts: Date.now(),
-    };
-    setProposalApplications(prev => [newRecord, ...prev]);
-    setAppliedProposalIds(prev => [...prev, proposal.id]);
-
-    const remaining = weeklyLimit === Infinity ? (isEs ? 'Ilimitadas' : 'Unlimited') : (weeklyLimit - (usedThisWeek + 1));
-    const msg = isEs
-      ? `¡Postulación enviada con éxito a "${proposal.title}"!\nTu identidad se mantiene confidencial.\n\nPostulaciones restantes esta semana: ${remaining}.`
-      : `Application sent successfully to "${proposal.title}"!\nConfidentiality preserved.\n\nRemaining applications this week: ${remaining}.`;
-    showToast(msg);
-  };
-
-  const handleToggleSaveProposal = (proposalId: string) => {
-    setSavedProposalIds(prev => 
-      prev.includes(proposalId) ? prev.filter(id => id !== proposalId) : [...prev, proposalId]
-    );
-  };
-
-  const handleCreateProposal = (newProp: { title: string; cat: string; body: string; limited: boolean }) => {
-    const created: Proposal = {
-      id: `prop_${Date.now()}`,
-      title: newProp.title,
-      cat: newProp.cat,
-      author: newProp.limited ? (isEs ? 'Tú (Identidad limitada)' : 'You (Discreet)') : (userProfile.alias || 'Tú'),
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: newProp.body || (isEs ? 'Propuesta privada con reglas claras.' : 'Private proposal with clear boundaries.'),
-      mine: true,
-    };
-    setProposals(prev => [created, ...prev]);
-    showToast(isEs ? 'Propuesta enviada para revisión.' : 'Proposal submitted for review.');
-  };
-
-  // Collaboration Proposal (Swinger/Gangbang $350 MXN / $80 USD)
-  const handleSubmitCollaboration = (proposal: Omit<CollaborationProposal, 'id' | 'createdAt' | 'status' | 'paid'>) => {
-    const fullProposal: CollaborationProposal = {
-      ...proposal,
-      id: `collab_${Date.now()}`,
-      status: 'en revisión',
-      paid: true,
-      createdAt: Date.now(),
-    };
-    // Also insert as a public proposal
-    const asProp: Proposal = {
-      id: fullProposal.id,
-      title: fullProposal.title,
-      cat: fullProposal.eventType,
-      author: `${fullProposal.organizerName} (${fullProposal.organizerType} Verificada)`,
-      when: isEs ? 'ahora' : 'just now',
-      apps: 0,
-      status: 'en revisión',
-      body: `Ciudad: ${fullProposal.city} | Ratio: ${fullProposal.attendeeRatio} | Reglas: ${fullProposal.consentRules} | Salud: ${fullProposal.healthProtocols}`,
-      mine: true,
-    };
-    setProposals(prev => [asProp, ...prev]);
-    // Legal archive: persist the collaborator's INE and selfie for potential legal disputes.
-    void saveRemoteIneRecord(newIneRecord({
-      userUid: user?.uid || null,
-      userEmail: user?.email || 'sin-correo@local',
-      alias: userProfile.alias,
-      legalName: fullProposal.organizerName,
-      source: 'colaboracion',
-      context: fullProposal.title,
-      ineFront: fullProposal.ineFrontUrl,
-      ineBack: fullProposal.ineBackUrl,
-      selfie: fullProposal.selfieUrl,
-    })).then(ok => {
-      if (ok) showToast(isEs ? 'Identificación resguardada en el archivo legal de la plataforma.' : 'Identification stored in the platform legal archive.');
-    });
-  };
-
-  // Creator subscriptions (content earnings credit the creator's virtual card,
-  // keyed by handle; the 85% net rule after 30% commission minus ISR is the
-  // same breakdown used for events and donations)
-  const creditCreatorEarning = (creator: Creator, gross: number, concept: string) => {
-    const split = computeEarningSplit(gross);
-    const tx: WalletTransaction = {
-      id: 'wtx_c_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-      userUid: null,
-      kind: 'ingreso_contenido',
-      creatorHandle: creator.handle,
-      gross,
-      commission: split.commission,
-      isrRetained: split.isrRetained,
-      net: split.net,
-      note: `${concept}: ${creator.name} (${creator.handle})`,
-      ts: Date.now(),
-    };
-    void saveRemoteWalletTransaction(tx);
-    if (userCreator && userCreator.handle === creator.handle) {
-      setCreatorWallet(prev => [tx, ...prev]);
-    }
-  };
-
-  const handleSubscribeCreator = (creator: Creator) => {
-    setSubscribedCreatorHandles(prev => [...prev, creator.handle]);
-    creditCreatorEarning(creator, creator.price, isEs ? 'Suscripción' : 'Subscription');
-    showToast(isEs ? `¡Suscripción confirmada a ${creator.name} (${creator.handle})!` : `Subscribed to ${creator.name}!`);
-  };
-
-  const handleBuyLiveAccess = (live: LiveStream) => {
-    setLiveAccessIds(prev => [...prev, live.id]);
-    const hostCreator = creators.find(c => c.handle === live.host || c.name === live.host);
-    if (hostCreator) {
-      creditCreatorEarning(hostCreator, live.price, isEs ? 'Acceso a directo' : 'Live access');
-    }
-    showToast(isEs ? `¡Pase adquirido para "${live.title}"!` : `Live access confirmed!`);
-  };
-
-  // Donations to creators: user pays IVA + the donated amount; the creator
-  // sees which profile sent it and the value is credited to her virtual card.
-  const handleDonate = (creator: Creator) => {
-    setDonateCreator(creator);
-  };
-
-  // Creator withdrawal request (the creator's card is a balance ledger: money
-  // enters from subscriptions, lives and donations; withdrawals run through
-  // the same 24-36 h SPEI queue as the organizers).
-  const handleCreatorWithdrawal = (amount: number) => {
-    if (!organizerApplication || organizerApplication.status !== 'aprobada') {
-      showToast(
-        isEs
-          ? 'Para retirar fondos de tu tarjeta de creadora registra y aprueba tu expediente con cuenta de retiro (banco y CLABE a tu nombre). Puedes hacerlo desde el Panel de Organizadores, sección Registro.'
-          : 'To withdraw funds from your creator card, register and get your payout file approved (bank and CLABE in your name). You can do it from the Organizer Panel, File section.',
-        'error'
-      );
-      return;
-    }
-    const balance = walletBalance(mergeById(walletTransactions, creatorWallet));
-    if (amount <= 0 || amount > balance) {
-      showToast(
-        isEs ? 'Monto inválido: no puede exceder tu saldo disponible.' : 'Invalid amount: it cannot exceed your available balance.',
-        'error'
-      );
-      return;
-    }
-    const wd = newWithdrawalRequest({
-      userUid: user?.uid || null,
-      userName: organizerApplication.legalName,
-      userEmail: user?.email || 'sin-correo@local',
-      amount,
-      bank: organizerApplication.payoutBank,
-      clabe: organizerApplication.payoutClabe,
-      holder: organizerApplication.payoutHolder,
-    });
-    const nextWithdrawals = [wd, ...loadWithdrawals()];
-    saveWithdrawals(nextWithdrawals);
-    setWithdrawals(nextWithdrawals);
-    void createRemoteWithdrawal(wd);
-    const withdrawalTx: WalletTransaction = {
-      id: 'wtx_cwd_' + Date.now(),
-      userUid: user?.uid || null,
-      kind: 'retiro',
-      creatorHandle: userCreator?.handle,
-      gross: amount,
-      commission: 0,
-      isrRetained: 0,
-      net: -amount,
-      note: isEs ? 'Solicitud de retiro (tarjeta de creadora)' : 'Withdrawal request (creator card)',
-      ts: Date.now(),
-    };
-    setCreatorWallet(prev => [withdrawalTx, ...prev]);
-    void saveRemoteWalletTransaction(withdrawalTx);
-    showToast(isEs
-      ? 'Retiro solicitado: transferencia en máximo 24-36 h a tu cuenta registrada.'
-      : 'Withdrawal requested: transfer within 24-36 h to your registered account.', 'success');
-  };
-
-  // Creator card balance: transactions keyed by the creator handle (remote)
-  // merged with the local organizer wallet.
-  useEffect(() => {
-    const handle = userCreator?.handle;
-    if (!handle) { setCreatorWallet([]); return; }
-    let cancelled = false;
-    void fetchRemoteWalletForCreator(handle).then(list => {
-      if (!cancelled) setCreatorWallet(prev => {
-        const merged = [...list];
-        for (const t of prev) if (!merged.some(m => m.id === t.id)) merged.push(t);
-        return merged.sort((a, b) => b.ts - a.ts);
-      });
-    }).catch(() => { /* ignore */ });
-    return () => { cancelled = true; };
-  }, [userCreator?.handle, donateCreator]);
-
-  // Club reward redemption
-  const handleRedeemClubReward = () => {
-    const folio = `CLB-${Math.floor(1000 + Math.random() * 9000)}`;
-    setRedeemedClubFolio(folio);
-    showToast(isEs ? `¡Felicidades! Has canjeado tu recompensa del Club de Experiencias. Folio: ${folio}` : `Club reward redeemed! Folio: ${folio}`);
-  };
-
-  // Data privacy wipe
-  const handleWipeData = () => {
-    if (window.confirm(isEs ? '¿Restablecer datos locales de este dispositivo?' : 'Reset local data on this device?')) {
-      setCurrentIndex(0);
-      setSwipedHistory([]);
-      setMatches([]);
-      setAppliedProposalIds([]);
-      setSavedProposalIds([]);
-      showToast(isEs ? 'Datos restablecidos.' : 'Data reset.');
-    }
-  };
-
-  const handleExportData = () => {
-    const payload = {
-      userProfile,
-      matches,
-      reservations,
-      appliedProposalIds,
-      attendStamps,
-    };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `appswinguer-data-${Date.now()}.json`;
-    a.click();
-  };
-
-  // ---------- PUBLIC GATE 1: landing screen for visitors without a session ----------
-  if (!user && !onboardingMode) {
-    return (
-      <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
-        <LandingScreen
-          isEs={isEs}
-          onRegister={() => setOnboardingMode('register')}
-          onLogin={() => setOnboardingMode('login')}
-          onGoogleSignIn={handleGoogleSignIn}
-          onOpenLegal={(topic) => { setLegalTopic(topic || null); setLegalModalOpen(true); }}
-        />
-        {legalModalOpen && (
-          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTopic={legalTopic} />
-        )}
-        <ToastHost />
-      </div>
-    );
-  }
-
-  // ---------- PUBLIC GATE 2: onboarding wizard until the funnel (profile + INE) is complete ----------
-  if (onboardingMode) {
-    return (
-      <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
-        <OnboardingWizard
-          mode={onboardingMode}
-          isEs={isEs}
-          region={region}
-          onCreateAccount={handleCreateAccount}
-          onLoginAccount={handleLoginAccount}
-          onComplete={handleOnboardingComplete}
-          onAbort={handleAbortOnboarding}
-          onOpenLegal={(topic) => { setLegalTopic(topic || null); setLegalModalOpen(true); }}
-        />
-        {legalModalOpen && (
-          <LegalModal isOpen={legalModalOpen} onClose={() => setLegalModalOpen(false)} initialTopic={legalTopic} />
-        )}
-        <ToastHost />
-      </div>
-    );
-  }
-
-  // ---------- IDENTITY GATE: accounts rejected or banned by the admin ----------
-  // Reject: the owner is notified that we could not validate who they claim to
-  // be and deletes account + credentials here. Ban: credentials stay retained
-  // for one year (legal window) and the account remains blocked.
-  if (user && !isAdminEmail(user.email) && (identityStatus === 'rechazada' || identityStatus === 'baneada')) {
-    return (
-      <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
-        <IdentityGate
-          mode={identityStatus}
-          isEs={isEs}
-          alias={userProfile.alias}
-          notifications={notifications}
-          deleting={deletingAccount}
-          onDeleteAccount={() => { void handleDeleteRejectedAccount(); }}
-          onSignOut={() => { void handleSignOut(); }}
-        />
-        <ToastHost />
-      </div>
-    );
-  }
 
   return (
-    <div className="min-h-screen bg-[#050307] text-[#f5eeff] flex justify-center font-sans select-none antialiased overflow-x-hidden">
-      {/* Mobile Screen Shell container */}
-      <div className="relative w-full max-w-[430px] min-h-screen h-[100dvh] flex flex-col bg-[#050307] shadow-[0_0_80px_rgba(177,76,255,0.25)] border-x border-purple-500/20 overflow-hidden">
-        
-        {/* Ambient Neon Aura Blob */}
-        <div className="absolute top-1/4 -left-20 w-72 h-72 bg-purple-600/20 rounded-full blur-3xl pointer-events-none animate-pulse" />
-        <div className="absolute top-2/3 -right-20 w-72 h-72 bg-pink-600/15 rounded-full blur-3xl pointer-events-none" />
-
-        {/* Top Bar Header */}
-        <header className="px-4 py-3 flex items-center justify-between border-b border-purple-500/20 bg-[#08050c]/90 backdrop-blur-xl sticky top-0 z-40 shrink-0">
-          
-          {/* Brand Wordmark with Country Switcher in place of ULTRA */}
-          <div className="flex items-center gap-1.5">
-            <div 
-              onClick={() => setActiveTab('match')}
-              className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-[0_0_15px_rgba(255,45,120,0.5)] cursor-pointer hover:scale-105 transition-transform"
-              title={isEs ? 'Ir a Match' : 'Go to Match'}
-            >
-              <Flame className="w-5 h-5 fill-white" />
-            </div>
-            <div className="leading-none flex items-center gap-1">
-              <span 
-                onClick={() => setActiveTab('match')}
-                className="font-black text-sm tracking-wider uppercase text-white font-mono cursor-pointer"
-              >
-                APPSWINGUER
-              </span>
-              {/* Selectores independientes: País (MX/US) e Idioma (ES/EN) */}
-              <div className="flex items-center gap-1 ml-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const nextReg = region === 'MX' ? 'US' : 'MX';
-                    setRegion(nextReg);
-                    setCurrentIndex(0);
-                    setPushToast({
-                      title: nextReg === 'MX' ? '🇲🇽 Región: México' : '🇺🇸 Region: United States',
-                      body: nextReg === 'MX' 
-                        ? 'Catálogo regional de México activado (distancias en KM).' 
-                        : 'US lifestyle catalog activated (distances in MI).'
-                    });
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-purple-900/90 hover:bg-pink-900/90 text-[10px] font-black tracking-wider uppercase text-pink-300 border border-pink-400/50 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
-                  title={isEs ? 'Cambiar región: México / Estados Unidos' : 'Switch region: Mexico / United States'}
-                  aria-label="Selector de país o región"
-                >
-                  <span>{region === 'MX' ? '🇲🇽 MX' : '🇺🇸 US'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const nextLang = lang === 'es' ? 'en' : 'es';
-                    setLang(nextLang);
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-purple-950 text-[10px] font-black tracking-wider uppercase text-purple-200 border border-purple-500/30 flex items-center gap-0.5 active:scale-95 transition shadow-sm"
-                  title={isEs ? 'Cambiar idioma: Español / English' : 'Switch language: Spanish / English'}
-                  aria-label="Selector de idioma"
-                >
-                  <Globe className="w-2.5 h-2.5 text-pink-400" />
-                  <span>{lang.toUpperCase()}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Right Controls */}
-          <div className="flex items-center gap-1.5">
-            
-            {/* Push Notification Lookup Button */}
-            <button
-              type="button"
-              onClick={() => setPushLookupOpen(true)}
-              className="relative p-2 rounded-xl bg-purple-950/70 hover:bg-purple-900/80 border border-purple-500/30 text-white transition active:scale-95 flex items-center justify-center"
-              title={isEs ? 'Lookup de Notificaciones Push & Diagnóstico' : 'Push Notification Lookup & Alert System'}
-              aria-label="Push notifications lookup"
-            >
-              <Bell className="w-4 h-4 text-pink-400" />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-purple-950 animate-pulse" />
-            </button>
-
-            {/* User Profile / Registration Pill */}
-            <button
-              type="button"
-              onClick={() => setRegistrationModalOpen(true)}
-              className="px-2.5 py-1 rounded-xl bg-neutral-900/80 hover:bg-purple-950 border border-purple-500/30 text-[11px] font-bold text-purple-200 flex items-center gap-1 transition truncate max-w-[105px]"
-              title={isEs ? 'Editar perfil, pareja o individual, y gustos' : 'Edit profile & fantasies'}
-            >
-              <UserIcon className="w-3 h-3 text-pink-400 shrink-0" />
-              <span className="truncate">{userProfile.alias}</span>
-            </button>
-
-            {/* Messages Drawer Trigger */}
-            <button
-              type="button"
-              onClick={() => {
-                setActiveChatUserId(null);
-                setChatDrawerOpen(true);
-              }}
-              className="relative p-2 rounded-xl bg-purple-950/60 hover:bg-purple-900/70 border border-purple-500/30 text-white transition active:scale-95"
-              aria-label={dict.messages}
-            >
-              <MessageCircle className="w-4 h-4 text-pink-400" />
-              {matches.length > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-gradient-to-r from-pink-500 to-rose-500 text-[9px] font-bold text-white flex items-center justify-center shadow-md">
-                  {matches.length}
-                </span>
-              )}
-            </button>
-          </div>
-        </header>
-
-        {/* Location GPS Permission Reminder Banner - Ultra-Compact */}
-        {!locationGranted && !locationBannerDismissed && (
-          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-purple-950/90 border border-purple-500/30 flex items-center justify-between gap-2 text-[10px] shadow-sm shrink-0 z-30">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Navigation className="w-3 h-3 text-pink-400 shrink-0" />
-              <span className="text-purple-200 truncate">
-                {isEs 
-                  ? 'Activa GPS para calcular KM exactos' 
-                  : 'Enable GPS for accurate KM calculations'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                disabled={isLocating}
-                onClick={() => requestLocationAccess(true)}
-                className="px-2 py-0.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-600 text-[10px] font-bold text-white shrink-0 active:scale-95 transition flex items-center gap-1 shadow-sm disabled:opacity-60"
-              >
-                {isLocating ? (
-                  <>
-                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                    <span>...</span>
-                  </>
-                ) : (
-                  <span>{isEs ? 'Activar' : 'Enable'}</span>
-                )}
-              </button>
-              <button
-                onClick={() => setLocationBannerDismissed(true)}
-                className="p-0.5 rounded text-purple-300 hover:text-white transition"
-                title={isEs ? 'Cerrar' : 'Dismiss'}
-                aria-label={isEs ? 'Cerrar' : 'Dismiss'}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* System Announcement Banner - Ultra-Compact */}
-        {activeAnnouncement && (
-          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-[10px] shadow-sm flex items-center justify-between gap-2 shrink-0 z-30">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <Sparkles className="w-3 h-3 text-pink-400 shrink-0 animate-pulse" />
-              <div className="truncate">
-                <span className="text-white font-bold mr-1.5">{activeAnnouncement.title}</span>
-                <span className="text-purple-200/80 hidden sm:inline">{activeAnnouncement.body}</span>
-              </div>
-            </div>
-            <button
-              onClick={() => setActiveAnnouncement(null)}
-              className="text-white/60 hover:text-white p-0.5 shrink-0"
-              aria-label="Cerrar anuncio"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-
-        {/* Tab Content Display */}
-        <main className={`flex-1 flex flex-col relative min-h-0 ${activeTab === 'match' ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'}`}>
-          
-          {/* TAB 1: MATCH / DISCOVER DECK */}
-          {activeTab === 'match' && (
-            <div className="flex-1 flex flex-col justify-between px-3 pt-1 pb-[62px] h-full min-h-0 select-none overflow-hidden">
-              
-              {/* Distance adjustment & Extras bar */}
-              <div className="flex items-center justify-between py-1 px-1 shrink-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-purple-200/90 font-medium flex items-center gap-1">
-                    <SlidersHorizontal className="w-3.5 h-3.5 text-pink-400" />
-                    <span>{isEs ? 'Radio:' : 'Radius:'} <strong className="text-white">{maxDistance} km</strong></span>
-                  </span>
-
-                  {/* Radius recommendation based on the granted GPS location */}
-                  {locationGranted && maxDistance > 6 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const suggested = recommendRadiusKm();
-                        setMaxDistance(suggested);
-                        setUserProfile(prev => ({ ...prev, maxKm: suggested }));
-                        showToast(isEs
-                          ? `Con tu ubicación te recomendamos un radio de ${suggested} km: perfiles cercanos y mayor seguridad.`
-                          : `Based on your location we recommend a ${suggested} km radius: nearby profiles and higher safety.`);
-                      }}
-                      className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-[9px] font-bold text-emerald-300 flex items-center gap-1 active:scale-95 transition"
-                    >
-                      <MapPinIcon className="w-2.5 h-2.5" />
-                      {isEs ? `Sugerido: ${recommendRadiusKm()} km` : `Suggested: ${recommendRadiusKm()} km`}
-                    </button>
-                  )}
-
-                  {/* Premium state-search pass entry (travelers & tourists) */}
-                  <button
-                    onClick={() => setPremiumSearchOpen(true)}
-                    className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/25 to-pink-500/25 hover:from-amber-500/40 hover:to-pink-500/40 border border-amber-400/50 text-[10px] font-bold text-amber-200 flex items-center gap-1 active:scale-95 transition shadow-sm"
-                    title={isEs ? 'Búsqueda por estado para viajeros (pase premium de 24 horas)' : 'State search for travelers (24-hour premium pass)'}
-                  >
-                    <CrownIcon className="w-3 h-3 text-amber-300" />
-                    <span>
-                      {statePass
-                        ? `${statePass.stateName} · ${Math.max(0, Math.ceil((statePass.expiresAt - Date.now()) / 3600000))} h`
-                        : (isEs ? 'Búsqueda por estado' : 'Search by state')}
-                    </span>
-                  </button>
-
-                  {/* Extras Modal button safely placed here */}
-                  <button
-                    onClick={() => setExtrasModalOpen(true)}
-                    className="px-2 py-0.5 rounded-full bg-purple-900/60 hover:bg-purple-800 border border-purple-400/40 text-[10px] font-bold text-pink-300 flex items-center gap-1 active:scale-95 transition shadow-sm"
-                    title="Ver Extras y Beneficios VIP"
-                  >
-                    <Sparkles className="w-3 h-3 text-amber-300" />
-                    <span>＋ Extras VIP</span>
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => setRegistrationModalOpen(true)}
-                  className="text-[11px] text-pink-400 font-bold hover:underline flex items-center gap-1"
-                >
-                  <Sparkles className="w-3 h-3" />
-                  <span>{isEs ? 'Fantasías & Filtros' : 'Fantasies & Filters'}</span>
-                </button>
-              </div>
-
-              {/* Card Deck Viewport - Flexible adapting to screen height with 100% visible buttons */}
-              <div className="relative w-full flex-1 min-h-0 my-0.5 overflow-hidden">
-                {currentProfile ? (
-                  <>
-                    {currentIndex + 1 < visibleProfiles.length && (
-                      <SwipeCard
-                        key={visibleProfiles[currentIndex + 1].id}
-                        profile={visibleProfiles[currentIndex + 1]}
-                        isFront={false}
-                        onSwipe={() => {}}
-                        onOpenDetails={() => {}}
-                      />
-                    )}
-
-                    <SwipeCard
-                      key={currentProfile.id}
-                      profile={currentProfile}
-                      isFront={true}
-                      onSwipe={handleSwipe}
-                      onOpenDetails={(p) => setDetailsProfile(p)}
-                    />
-                  </>
-                ) : (
-                  <div className="absolute inset-0 rounded-[28px] bg-neutral-900/80 border border-purple-500/25 p-5 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
-                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600/30 to-pink-600/30 border border-purple-500/40 flex items-center justify-center mb-2.5">
-                      <Sparkles className="w-7 h-7 text-pink-400 animate-pulse" />
-                    </div>
-                    <h3 className="text-base font-bold text-white mb-1">
-                      {isEs ? 'Has visto todos los perfiles en este radio' : 'No more profiles in this radius'}
-                    </h3>
-                    <p className="text-[11px] text-purple-200/70 max-w-xs mb-3 leading-relaxed">
-                      {isEs 
-                        ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en tu región.` 
-                        : `Expand your ${maxDistance} km radius or explore private parties.`}
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleResetDeck}
-                        className="py-2 px-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        {isEs ? 'Revisar de nuevo' : 'Review again'}
-                      </button>
-                      <button
-                        onClick={() => setRegistrationModalOpen(true)}
-                        className="py-2 px-3.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
-                      >
-                        {isEs ? 'Aumentar KM' : 'Expand KM'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Action Buttons: 100% Visible, Guaranteed Unclipped above bottom nav */}
-              <div className="shrink-0 pt-0.5 pb-1 z-30">
-                <ActionButtons
-                  onSwipe={handleSwipe}
-                  onRewind={handleRewind}
-                  canRewind={swipedHistory.length > 0 && currentIndex > 0}
-                  onQuickMessage={() => {
-                    if (currentProfile) {
-                      setDetailsProfile(currentProfile);
-                    }
-                  }}
-                  disabled={!currentProfile}
-                />
-              </div>
+    <div className="screen">
+      <div className="aura" />
+      <div className="topbar">
+        <span className="wordmark">App<b>Swinguer</b></span>
+        <span className="tag"><Sparkles size={12} /> Ultra Plus</span>
+      </div>
+      <div className="body" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+        <div className="h1" style={{ fontSize: 38 }}>{mode === 'login' ? 'Vuelve al' : 'Crea tu'}</div>
+        <div className="h1" style={{ fontSize: 38, marginBottom: 8 }}>{mode === 'login' ? 'club' : 'cuenta'}</div>
+        <p className="sub">Conexiones exclusivas para parejas liberales y solteros verificados. Solo adultos, solo reales.</p>
+        <div className="stack" style={{ gap: 10 }}>
+          <input className="field" placeholder="Correo" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="field" placeholder="Contraseña" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={pass} onChange={(e) => setPass(e.target.value)} />
+          {mode === 'registro' && (
+            <input className="field" placeholder="Confirmar contraseña" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          )}
+          {err && (
+            <div className="row" style={{ gap: 8, color: 'var(--bad)', fontSize: 15 }}>
+              <AlertTriangle size={16} /> {err}
             </div>
           )}
-
-          {/* TAB 2: PROPUESTAS */}
-          {activeTab === 'propuestas' && (
-            <ProposalsView
-              proposals={proposals}
-              appliedIds={appliedProposalIds}
-              savedIds={savedProposalIds}
-              onApply={handleApplyProposal}
-              onToggleSave={handleToggleSaveProposal}
-              onCreateProposal={handleCreateProposal}
-              onOpenReport={(target) => showToast(isEs ? `Reporte recibido para "${target.name}".` : `Report registered.`, 'info')}
-              subscriptionTier={subscriptionTier}
-              weeklyApplicationsUsed={getWeeklyApplicationsCount()}
-              weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
-              onUpgradePlan={() => setExtrasModalOpen(true)}
-              isEs={isEs}
-            />
-          )}
-
-          {/* TAB 3: EVENTOS */}
-          {activeTab === 'eventos' && (
-            <EventsView
-              events={events.filter(e => e.published)}
-              reservations={reservations}
-              passes={eventPasses}
-              reputation={organizerReputation}
-              onReserve={handleReserveEvent}
-              onAttend={handleAttendEvent}
-              onCancelReservation={handleCancelReservation}
-              onRatePass={handleRatePass}
-              onOpenOrganizerPanel={() => setOrganizerModalOpen(true)}
-              onOpenOrganizerProfile={(name, uid) => setOrganizerProfileOpen({ name, uid })}
-              onNoShowFeedback={handleNoShowFeedback}
-              onAgencyPromoRequest={(data) => {
-                showToast(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
-              }}
-            />
-          )}
-
-          {/* TAB 4: VIRTUAL & CREADORAS */}
-          {activeTab === 'virtual' && (
-            <VirtualView
-              creators={creators}
-              lives={lives}
-              userCreator={userCreator}
-              subscribedIds={subscribedCreatorHandles}
-              liveAccessIds={liveAccessIds}
-              region={region}
-              lang={lang}
-              walletTransactions={mergeById(walletTransactions, creatorWallet)}
-              onSubscribe={handleSubscribeCreator}
-              onBuyLiveAccess={handleBuyLiveAccess}
-              onDonate={handleDonate}
-              onRegisterCreator={(c) => {
-                setUserCreator(c);
-                setCreators(prev => [c, ...prev]);
-                showToast(isEs ? "¡Perfil de creadora registrado! Ya puedes fijar precios y subir sets exclusivos." : "Creator profile registered!");
-              }}
-              onUploadMedia={(data) => {
-                showToast(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
-              }}
-              onRequestWithdrawal={handleCreatorWithdrawal}
-            />
-          )}
-
-          {/* TAB 5: COMUNIDAD */}
-          {activeTab === 'comunidad' && (
-            <CommunityView
-              region={region}
-              isEs={isEs}
-            />
-          )}
-
-          {/* TAB 6: PERFIL & CLUB */}
-          {activeTab === 'perfil' && (
-            <ProfileView
-              user={user}
-              onSignIn={handleGoogleSignIn}
-              onSignOut={handleSignOut}
-              stats={{
-                swipesCount: swipedHistory.length,
-                matchesCount: matches.length,
-                likesCount: swipedHistory.filter(h => h.action === 'like' || h.action === 'superlike').length,
-              }}
-              attendStamps={attendStamps}
-              redeemedClubFolio={redeemedClubFolio}
-              onRedeemClubReward={handleRedeemClubReward}
-              maxDistance={maxDistance}
-              onChangeMaxDistance={(val) => {
-                setMaxDistance(val);
-                setUserProfile(prev => ({ ...prev, maxKm: val }));
-              }}
-              isFirestoreConnected={isFirestoreConnected}
-              onOpenAdmin={() => setAdminModalOpen(true)}
-              onOpenLegal={() => setLegalModalOpen(true)}
-              onExportData={handleExportData}
-              onWipeData={handleWipeData}
-              currentTier={subscriptionTier}
-              onSelectTier={handleRequestPlanPayment}
-              weeklyApplicationsUsed={getWeeklyApplicationsCount()}
-              weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
-              region={region}
-              isEs={isEs}
-              onOpenExtrasModal={() => setExtrasModalOpen(true)}
-              matches={matches}
-              adminUser={isAdminEmail(user?.email)}
-              identityApproved={isAdminEmail(user?.email) || identityStatus === 'aprobada'}
-            />
-          )}
-        </main>
-
-        {/* Bottom Navigation Bar */}
-        <nav className="fixed bottom-0 inset-x-0 max-w-[430px] mx-auto z-40 px-3 py-2 bg-[#08050c]/90 backdrop-blur-2xl border-t border-purple-500/20 flex items-center justify-around shadow-2xl">
-          <button
-            onClick={() => setActiveTab('match')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'match' ? 'text-pink-500 scale-105' : 'text-neutral-500 hover:text-white'
-            }`}
-            aria-label="Descubrir"
-          >
-            <Flame className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold">{dict.tabMatch}</span>
+          <button className="btn btn-neon full" onClick={submit} disabled={busy}>
+            {busy ? <Loader2 size={18} className="spin" /> : mode === 'login' ? <Lock size={18} /> : <Plus size={18} />}
+            {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}
           </button>
-
-          <button
-            onClick={() => setActiveTab('propuestas')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'propuestas' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
-            }`}
-            aria-label="Propuestas"
-          >
-            <Megaphone className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold">{dict.tabProposals}</span>
+          <button className="btn btn-ghost full" onClick={() => { setMode(mode === 'login' ? 'registro' : 'login'); setErr(null); }}>
+            {mode === 'login' ? 'No tengo cuenta. Registrarme' : 'Ya tengo cuenta. Iniciar sesión'}
           </button>
-
-          <button
-            onClick={() => setActiveTab('eventos')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'eventos' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
-            }`}
-            aria-label="Eventos"
-          >
-            <CalendarDays className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold">{dict.tabEvents}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('virtual')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'virtual' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
-            }`}
-            aria-label="Virtual"
-          >
-            <Radio className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold">{dict.tabVirtual}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('comunidad')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'comunidad' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
-            }`}
-            aria-label="Comunidad"
-          >
-            <BookOpen className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold">{dict.tabCommunity}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('perfil')}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'perfil' ? 'text-pink-500 scale-105' : 'text-neutral-500 hover:text-white'
-            }`}
-            aria-label="Perfil"
-          >
-            <UserIcon className="w-5 h-5 stroke-[2.2]" />
-            <span className="text-[10px] font-bold">{dict.tabProfile}</span>
-          </button>
-        </nav>
-
-        {/* DRAWER: CHAT & MENSAJES (WITH PAPERCLIP 📎, MIC 🎙, AND BLOCK/REPORT) */}
-        {chatDrawerOpen && (
-          <div className="fixed inset-0 z-50 flex justify-center bg-black/85 backdrop-blur-xl">
-            <div className="w-full max-w-[430px] h-full bg-[#090414] flex flex-col relative">
-              <div className="p-3 border-b border-purple-500/20 flex items-center justify-between bg-neutral-950/80">
-                <span className="text-xs font-bold uppercase tracking-wider text-purple-300">
-                  {dict.inboxTitle}
-                </span>
-                <button
-                  onClick={() => {
-                    setChatDrawerOpen(false);
-                    setActiveChatUserId(null);
-                  }}
-                  className="p-1.5 rounded-full hover:bg-white/10 text-white/80"
-                  aria-label="Cerrar chat"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <ChatView
-                  matches={matches}
-                  initialChatUserId={activeChatUserId}
-                  onOpenProfile={(p) => setDetailsProfile(p)}
-                  onOpenReport={(t) => showToast(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`, 'info')}
-                  onBlockUser={(id) => {
-                    setMatches(prev => prev.filter(m => m.profile.id !== id));
-                    if (activeChatUserId === id) {
-                      setActiveChatUserId(null);
-                    }
-                  }}
-                  onBackToApp={() => setChatDrawerOpen(false)}
-                  onAbandonChat={handleAbandonChat}
-                  onSosAlert={handleSosAlert}
-                  onRequestUberSafe={() => setUberSafeOpen(true)}
-                  isDama={userProfile.kind === 'Dama'}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL 1: REGISTRATION & SEXUAL TASTES / FANTASIES */}
-        <RegistrationModal
-          isOpen={registrationModalOpen}
-          onClose={() => setRegistrationModalOpen(false)}
-          lang={lang}
-          region={region}
-          initialData={userProfile}
-          onSave={(data) => {
-            setUserProfile({
-              alias: data.alias,
-              kind: data.kind,
-              bio: data.bio,
-              interests: data.interests,
-              seeking: data.seeking,
-              ages: data.ages,
-              maxKm: data.maxKm,
-              locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
-            });
-            setMaxDistance(data.maxKm);
-            showToast(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
-          }}
-          onRequestLocation={() => requestLocationAccess(true)}
-          locationGranted={locationGranted}
-        />
-
-        {/* MODAL 2: MONETIZATION EXTRAS (from script!) */}
-        <MonetizationExtrasModal
-          isOpen={extrasModalOpen}
-          onClose={() => setExtrasModalOpen(false)}
-          region={region}
-          isEs={isEs}
-          currentTier={subscriptionTier}
-          onSelectTier={handleRequestPlanPayment}
-        />
-
-        {/* MODAL 2B: SPEI CHECKOUT (instructions + transfer confirmation) */}
-        <SpeiModal
-          isOpen={speiModalOpen}
-          onClose={() => {
-            setSpeiModalOpen(false);
-            setActiveSpeiOrder(null);
-          }}
-          order={activeSpeiOrder}
-          region={region}
-          isEs={isEs}
-          onTransferSent={handleSpeiTransferSent}
-        />
-
-        {/* MODAL 2C: ORGANIZER PANEL (expediente documental, publicación de eventos y cartera virtual) */}
-        <OrganizerModal
-          isOpen={organizerModalOpen}
-          onClose={() => setOrganizerModalOpen(false)}
-          isEs={isEs}
-          region={region}
-          userEmail={user?.email || 'sin-correo@local'}
-          userName={userProfile.alias}
-          userUid={user?.uid || null}
-          application={organizerApplication}
-          benefit={organizerBenefitState(organizerApplication)}
-          eventFee={getEventPublishFee(region)}
-          ownEvents={organizerApplication ? events.filter(e => e.organizer === organizerApplication.legalName) : []}
-          wallet={walletTransactions}
-          withdrawals={withdrawals}
-          onSubmitApplication={handleSubmitOrganizerApplication}
-          onPublishEvent={handlePublishOrganizerEvent}
-          onRequestWithdrawal={handleRequestWithdrawal}
-          onWalletCredit={handleOrganizerWalletCredit}
-        />
-
-        {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}
-        <CollaborationModal
-          isOpen={collaborationModalOpen}
-          onClose={() => setCollaborationModalOpen(false)}
-          userKind={userProfile.kind}
-          userName={userProfile.alias}
-          region={region}
-          onSwitchProfileKind={(kind) => {
-            setUserProfile(prev => ({ ...prev, kind }));
-          }}
-          onSubmitProposal={handleSubmitCollaboration}
-        />
-
-        {/* MODAL 4: CELEBRATORY MATCH MODAL (DIRECT CHAT BUTTON) */}
-        <MatchModal
-          isOpen={!!matchModalProfile}
-          matchProfile={matchModalProfile}
-          currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
-          currentUserName={userProfile.alias}
-          isEs={isEs}
-          onClose={() => setMatchModalProfile(null)}
-          onOpenSafetyTips={() => setSafetyTipsOpen(true)}
-          onStartChat={handleStartChatFromMatch}
-        />
-
-        {/* MODAL 5: COMPLETE PROFILE DETAILS */}
-        <ProfileDetailsModal
-          profile={detailsProfile}
-          lang={lang}
-          onClose={() => setDetailsProfile(null)}
-          onSwipe={(action) => {
-            setDetailsProfile(null);
-            handleSwipe(action);
-          }}
-        />
-
-        {/* MODAL 6: ADMIN PANEL */}
-        {adminModalOpen && (
-          <AdminModal
-            isOpen={adminModalOpen}
-            onClose={() => setAdminModalOpen(false)}
-            isEs={isEs}
-            signedInAdminEmail={isAdminEmail(user?.email) ? (user?.email || null) : null}
-          />
-        )}
-
-        {/* MODAL 7: LEGAL RULES & CONSENT */}
-        {legalModalOpen && (
-          <LegalModal
-            isOpen={legalModalOpen}
-            onClose={() => setLegalModalOpen(false)}
-            initialTopic={legalTopic}
-          />
-        )}
-
-        {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
-        <PushLookupModal
-          isOpen={pushLookupOpen}
-          onClose={() => setPushLookupOpen(false)}
-          region={region}
-          isEs={isEs}
-          onSendTestNotification={(title, body) => {
-            setPushToast({ title, body });
-            setTimeout(() => setPushToast(null), 5500);
-          }}
-        />
-
-        {/* MODAL 9: PREMIUM STATE SEARCH (travelers & tourists, 24-hour SPEI pass) */}
-        <PremiumStateSearch
-          isOpen={premiumSearchOpen}
-          onClose={() => setPremiumSearchOpen(false)}
-          isEs={isEs}
-          region={region}
-          userUid={user?.uid || null}
-          userName={userProfile.alias}
-          userEmail={user?.email || 'sin-correo@local'}
-          profiles={profiles}
-          events={events}
-          onConnect={(p) => { void handleStatePassConnect(p); }}
-          onPassChange={(p) => setStatePass(p)}
-        />
-
-        {/* MODAL 10: EVENT ATTENDANCE DEPOSIT (paid events: one SPEI payment
-            per user, VIP pass issued by the admin, same-day location release) */}
-        <EventAttendModal
-          isOpen={!!attendModal}
-          onClose={() => setAttendModal(null)}
-          isEs={isEs}
-          region={region}
-          event={attendModal?.event || null}
-          tier={attendModal?.tier || null}
-          userUid={user?.uid || null}
-          userName={userProfile.alias}
-          userEmail={user?.email || 'sin-correo@local'}
-          passes={eventPasses}
-          onPassChange={(list) => setEventPasses(list)}
-        />
-
-        {/* MODAL 11: DONATION TO CREATOR (user pays IVA + amount; the creator
-            sees which profile donated; credited to her virtual card) */}
-        <DonateModal
-          isOpen={!!donateCreator}
-          onClose={() => setDonateCreator(null)}
-          isEs={isEs}
-          region={region}
-          creator={donateCreator}
-          userUid={user?.uid || null}
-          userName={userProfile.alias}
-          userProfileName={userProfile.alias}
-          userEmail={user?.email || 'sin-correo@local'}
-        />
-
-        {/* MODAL 12: POST-EVENT RATING (5 stars + comment; builds the agency
-            reputation and raises admin alerts on bad references) */}
-        <EventRatingModal
-          isOpen={!!ratingPass}
-          onClose={() => setRatingPass(null)}
-          isEs={isEs}
-          pass={ratingPass}
-          userUid={user?.uid || null}
-          userName={userProfile.alias}
-          onRated={handleRated}
-        />
-
-        {/* MODAL 13: CALIFICACIÓN DE PERFIL TRAS ABANDONAR UN CHAT (5 estrellas +
-            tipo de encuentro; construye la reputación de cada perfil con cooldown de 7 días) */}
-        <ProfileRatingModal
-          isOpen={!!profileRatingTarget}
-          onClose={() => setProfileRatingTarget(null)}
-          isEs={isEs}
-          target={profileRatingTarget}
-          raterUid={user?.uid || null}
-          raterName={userProfile.alias}
-          onPublished={handleProfileRated}
-        />
-
-        {/* MODAL 14: PERFIL PÚBLICO DE AGENCIA/ORGANIZADOR (calificación, número de
-            eventos publicados y comentarios de asistentes; sin mensajería directa) */}
-        {organizerProfileOpen && (
-          <OrganizerProfileModal
-            isOpen={true}
-            onClose={() => setOrganizerProfileOpen(null)}
-            isEs={isEs}
-            organizerName={organizerProfileOpen.name}
-            organizerUid={organizerProfileOpen.uid}
-            events={events.filter(e => e.published)}
-          />
-        )}
-
-        {/* MODAL 15: UBER PRIVADO DE SEGURIDAD (9 PM a 12 AM; +20% honorarios + IVA) */}
-        <UberSafeModal
-          isOpen={uberSafeOpen}
-          onClose={() => setUberSafeOpen(false)}
-          isEs={isEs}
-          onRequest={handleUberSafeRequest}
-        />
-
-        {/* MODAL 16: CONSEJOS DE SEGURIDAD E HIGIENE (lugar público, protección,
-            avisar a un contacto de confianza) */}
-        <SafetyTipsModal
-          isOpen={safetyTipsOpen}
-          onClose={() => setSafetyTipsOpen(false)}
-          isEs={isEs}
-          onRequestUberSafe={() => setUberSafeOpen(true)}
-        />
-
-        {/* GLOBAL IN-APP TOASTS (replaces native alert dialogs) */}
-        <ToastHost />
-
-        {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
-        {pushToast && (
-          <div className="fixed top-4 inset-x-4 max-w-sm mx-auto z-[9999] p-3.5 rounded-2xl bg-[#17092c]/95 border border-pink-500/60 shadow-[0_0_35px_rgba(255,45,120,0.5)] backdrop-blur-2xl text-white flex items-start gap-3 animate-in slide-in-from-top-4 duration-300">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shrink-0 text-white shadow-md">
-              <Bell className="w-5 h-5 fill-white/20 animate-bounce" />
-            </div>
-            <div className="flex-1 min-w-0 pr-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
-                {region === 'MX' ? 'Notificación Push México (SLP)' : 'Push Notification USA'}
-              </span>
-              <h4 className="font-bold text-xs text-white truncate mt-0.5">{pushToast.title}</h4>
-              <p className="text-[11px] text-purple-200/90 leading-tight mt-0.5">{pushToast.body}</p>
-            </div>
-            <button
-              onClick={() => setPushToast(null)}
-              className="p-1 rounded-full text-white/50 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
+        </div>
+        <p className="tiny" style={{ textAlign: 'center', marginTop: 18 }}>
+          Al continuar confirmas ser mayor de 18 años y aceptas nuestras normas de consentimiento y discreción.
+        </p>
       </div>
     </div>
   );
 }
 
+// ---------------------------- Captura INE ------------------------------------
+
+function IneCapture({ uid, email, alias, onToast, onDone }: {
+  uid: string; email: string; alias: string; onToast: (s: string) => void; onDone: () => void;
+}) {
+  const [legalName, setLegalName] = useState('');
+  const [front, setFront] = useState<string | null>(null);
+  const [back, setBack] = useState<string | null>(null);
+  const [selfie, setSelfie] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const grab = async (file: File, which: 'front' | 'back' | 'selfie') => {
+    try {
+      const data = await compressImage(file);
+      if (which === 'front') setFront(data); else if (which === 'back') setBack(data); else setSelfie(data);
+    } catch {
+      onToast('No fue posible procesar la imagen.');
+    }
+  };
+
+  const submit = async () => {
+    if (!legalName.trim() || !front || !back || !selfie) {
+      onToast('Completa los tres documentos y tu nombre legal.');
+      return;
+    }
+    setBusy(true);
+    const rec = newIneRecord({
+      userUid: uid, userEmail: email, alias, legalName: legalName.trim(),
+      source: 'registro', context: 'Validación de identidad de registro',
+      ineFront: front, ineBack: back, selfie,
+    });
+    const saved = await saveRemoteIneRecord(rec);
+    await docUpdate('users', uid, { identityStatus: 'en revisión' });
+    setBusy(false);
+    if (saved) {
+      onToast('INE enviado. Administración validará tu identidad.');
+      onDone();
+    } else {
+      onToast('No fue posible subir el expediente. Intenta de nuevo.');
+    }
+  };
+
+  const Thumb = ({ src, onClear }: { src: string | null; onClear: () => void }) => src ? (
+    <div style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+      <img src={src} alt="Documento" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <button className="iconbtn" style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32 }} aria-label="Quitar" onClick={onClear}>
+        <X size={14} />
+      </button>
+    </div>
+  ) : (
+    <div style={{ aspectRatio: '3/4', borderRadius: 14, background: 'var(--s2)', boxShadow: 'inset 0 0 0 1.5px var(--line)', display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+      <span className="tiny">Sin foto</span>
+    </div>
+  );
+
+  return (
+    <div className="stack" style={{ gap: 12 }}>
+      <input className="field" placeholder="Nombre legal como aparece en tu INE" value={legalName} onChange={(e) => setLegalName(e.target.value.slice(0, 80))} />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+        <Thumb src={front} onClear={() => setFront(null)} />
+        <Thumb src={back} onClear={() => setBack(null)} />
+        <Thumb src={selfie} onClear={() => setSelfie(null)} />
+      </div>
+      <div className="grid2">
+        <FileButton onFiles={(f) => grab(f, 'front')}><Camera size={16} /> INE frente</FileButton>
+        <FileButton onFiles={(f) => grab(f, 'back')}><Camera size={16} /> INE reverso</FileButton>
+      </div>
+      <FileButton className="btn btn-dark btn-sm full" onFiles={(f) => grab(f, 'selfie')} capture><Camera size={16} /> Selfie con tu INE</FileButton>
+      <p className="tiny">Tus documentos se guardan cifrados en el archivo legal de la plataforma y solo los revisa administración. Aprobada tu identidad, tu perfil obtiene el sello de verificación.</p>
+      <button className="btn btn-neon full" onClick={submit} disabled={busy}>
+        {busy ? <Loader2 size={18} className="spin" /> : <ShieldCheck size={18} />} Enviar a validación
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------- Onboarding -------------------------------------
+
+function Onboarding({ user, seed, onFinish, onToast }: {
+  user: User; seed: Partial<UserDoc> | null;
+  onFinish: (doc: UserDoc) => Promise<void>;
+  onToast: (s: string) => void;
+}) {
+  const steps = ['cuenta', 'gustos', 'ine', 'permiso'];
+  const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<Partial<UserDoc>>({
+    alias: '', kind: 'Pareja', age: 30, bio: '', avatar: null, photos: [],
+    interests: [], seeking: [], agesPref: [], km: 50, region: 'MX',
+    ...seed,
+  });
+  const upd = (p: Partial<UserDoc>) => setDraft((d) => ({ ...d, ...p }));
+
+  const grabPhoto = async (file: File, which: 'avatar' | 'gallery') => {
+    try {
+      const data = await compressImage(file);
+      if (which === 'avatar') upd({ avatar: data });
+      else upd({ photos: [...(draft.photos ?? []), data].slice(0, 9) });
+    } catch { onToast('No fue posible procesar la imagen.'); }
+  };
+
+  const finish = async () => {
+    setBusy(true);
+    const doc: UserDoc = {
+      uid: user.uid, email: user.email, alias: (draft.alias || '').trim() || 'Anónimo',
+      kind: draft.kind ?? 'Pareja', age: Number(draft.age) || 30, bio: draft.bio ?? '',
+      avatar: draft.avatar ?? null, photos: draft.photos ?? [], interests: draft.interests ?? [],
+      seeking: draft.seeking ?? [], agesPref: draft.agesPref ?? [], km: draft.km ?? 50, region: 'MX',
+      identityStatus: draft.identityStatus ?? seed?.identityStatus ?? 'sin iniciar', premium: 'free', premiumUntil: null,
+      status: 'activo', onboardingDone: true, badge: undefined,
+      createdAt: seed?.createdAt ?? Date.now(), lastSeen: Date.now(),
+    };
+    await onFinish(doc);
+    setBusy(false);
+  };
+
+  return (
+    <div className="screen">
+      <div className="aura" />
+      <div className="topbar">
+        <button className="iconbtn" aria-label="Atrás" onClick={() => setStep(Math.max(0, step - 1))} style={{ visibility: step === 0 ? 'hidden' : 'visible' }}>
+          <ChevronLeft size={20} />
+        </button>
+        <span className="wordmark">App<b>Swinguer</b></span>
+        <span className="tag">{step + 1}/{steps.length}</span>
+      </div>
+      <div className="body" style={{ display: 'flex', flexDirection: 'column' }}>
+        <Steps n={step} total={steps.length} />
+        {steps[step] === 'cuenta' && (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <h2 className="h1">Tu perfil</h2>
+            <p className="sub">Así te verá la comunidad. Nada de relleno: solo tú.</p>
+            <div className="row" style={{ gap: 14, marginBottom: 6 }}>
+              <div style={{ position: 'relative' }}>
+                <div style={{ width: 84, height: 84, borderRadius: 28, overflow: 'hidden', background: 'var(--s3)', boxShadow: 'var(--glow)' }}>
+                  {draft.avatar ? <img src={draft.avatar} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}><Camera size={28} color="var(--lila)" /></div>}
+                </div>
+              </div>
+              <div className="grid2" style={{ flex: 1 }}>
+                <FileButton onFiles={(f) => grabPhoto(f, 'avatar')}><Camera size={16} /> Cámara</FileButton>
+                <FileButton onFiles={(f) => grabPhoto(f, 'avatar')}><ImagePlus size={16} /> Galería</FileButton>
+              </div>
+            </div>
+            <input className="field" placeholder="Alias artístico" value={draft.alias ?? ''} onChange={(e) => upd({ alias: e.target.value.slice(0, 24) })} />
+            <div className="label" style={{ margin: '16px 0 8px' }}>Quiénes son</div>
+            <div className="chips">
+              {KINDS.map((k) => (
+                <button key={k} className={'chip' + (draft.kind === k ? ' sel' : '')} onClick={() => upd({ kind: k })}>{k}</button>
+              ))}
+            </div>
+            <div className="label" style={{ margin: '16px 0 8px' }}>Edad (18+)</div>
+            <input className="field" inputMode="numeric" value={draft.age ?? ''} onChange={(e) => upd({ age: Number(e.target.value.replace(/\D/g, '').slice(0, 2)) })} />
+            <textarea className="field" placeholder="Preséntate en pocas líneas…" value={draft.bio ?? ''} onChange={(e) => upd({ bio: e.target.value.slice(0, 300) })} />
+            <button className="btn btn-neon full" style={{ marginTop: 'auto' }} onClick={() => setStep(1)} disabled={!draft.alias?.trim() || Number(draft.age) < 18}>
+              Continuar
+            </button>
+          </div>
+        )}
+        {steps[step] === 'gustos' && (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <h2 className="h1">Gustos pasionales</h2>
+            <p className="sub">Lo que te prende. Elige al menos dos.</p>
+            <div className="chips">
+              {INTERESTS.map((i) => (
+                <button key={i} className={'chip' + ((draft.interests ?? []).includes(i) ? ' sel' : '')}
+                  onClick={() => upd({ interests: (draft.interests ?? []).includes(i) ? (draft.interests ?? []).filter((x) => x !== i) : [...(draft.interests ?? []), i] })}>
+                  {i}
+                </button>
+              ))}
+            </div>
+            <div className="label" style={{ margin: '18px 0 8px' }}>Busco</div>
+            <div className="chips">
+              {SEEKING.map((s) => (
+                <button key={s} className={'chip' + ((draft.seeking ?? []).includes(s) ? ' sel' : '')}
+                  onClick={() => upd({ seeking: (draft.seeking ?? []).includes(s) ? (draft.seeking ?? []).filter((x) => x !== s) : [...(draft.seeking ?? []), s] })}>
+                  {s}
+                </button>
+              ))}
+            </div>
+            <div className="label" style={{ margin: '18px 0 8px' }}>Edad que prefieres</div>
+            <div className="chips">
+              {AGE_PREFS.map((a) => (
+                <button key={a} className={'chip' + ((draft.agesPref ?? []).includes(a) ? ' sel' : '')}
+                  onClick={() => upd({ agesPref: (draft.agesPref ?? []).includes(a) ? (draft.agesPref ?? []).filter((x) => x !== a) : [...(draft.agesPref ?? []), a] })}>
+                  {a}
+                </button>
+              ))}
+            </div>
+            <div className="card" style={{ marginTop: 18 }}>
+              <div className="row between">
+                <span className="label">Radio de búsqueda</span>
+                <span className="caps" style={{ fontSize: 24 }}>{draft.km} km</span>
+              </div>
+              <input type="range" min={1} max={200} value={draft.km ?? 50} onChange={(e) => upd({ km: Number(e.target.value) })} aria-label="Radio en km" style={{ width: '100%', accentColor: 'var(--lila)' }} />
+            </div>
+            <button className="btn btn-neon full" style={{ marginTop: 'auto' }} onClick={() => setStep(2)} disabled={(draft.interests ?? []).length < 2}>
+              Continuar
+            </button>
+          </div>
+        )}
+        {steps[step] === 'ine' && (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <h2 className="h1">Validación INE</h2>
+            <p className="sub">Tu identidad real, resguardada. Necesaria para el sello verificado y para pagar con SPEI.</p>
+            <IneCapture
+              uid={user.uid} email={user.email} alias={draft.alias ?? ''} onToast={onToast}
+              onDone={() => { upd({ identityStatus: 'en revisión' }); setStep(3); }}
+            />
+            <button className="btn btn-ghost full" style={{ marginTop: 12 }} onClick={() => setStep(3)}>
+              Validar más tarde
+            </button>
+          </div>
+        )}
+        {steps[step] === 'permiso' && (
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <h2 className="h1">Permisos</h2>
+            <p className="sub">Actívalos para no perderte matches, pases y avisos de pago.</p>
+            <div className="card">
+              <Toggle
+                on={typeof Notification !== 'undefined' && Notification.permission === 'granted'}
+                label="Notificaciones"
+                hint="Matches, validación INE y aprobación de pagos"
+                onClick={async () => {
+                  if (typeof Notification === 'undefined') return;
+                  if (Notification.permission === 'granted') return;
+                  await Notification.requestPermission();
+                }}
+              />
+            </div>
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="row" style={{ gap: 10 }}>
+                <ShieldCheck size={20} color="var(--lila)" />
+                <span className="small">Solo adultos. Consentimiento explícito. Tolerancia cero a contenido sin permiso.</span>
+              </div>
+            </div>
+            <button className="btn btn-neon full" style={{ marginTop: 'auto' }} onClick={finish} disabled={busy}>
+              {busy ? <Loader2 size={18} className="spin" /> : <Sparkles size={18} />} Entrar a la comunidad
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// APP RAÍZ
+// ============================================================================
+
+export default function App() {
+  const [booting, setBooting] = useState(true);
+  const [user, setUser] = useState<User | null>(null);
+  const [view, setView] = useState<'carga' | 'auth' | 'onboarding' | 'app'>('carga');
+  const [tab, setTab] = useState<Tab>('match');
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [allUsers, setAllUsers] = useState<UserDoc[]>([]);
+  const [mySwipes, setMySwipes] = useState<SwipeDoc[]>([]);
+  const [matches, setMatches] = useState<MatchEntry[]>([]);
+  const [orders, setOrders] = useState<SpeiOrder[]>([]);
+  const [notifs, setNotifs] = useState<AppNotification[]>([]);
+  const [events, setEvents] = useState<EventDoc[]>([]);
+  const [passes, setPasses] = useState<PassDoc[]>([]);
+  const [bankCfg, setBankCfg] = useState<SpeiBankConfig>(getSpeiConfig());
+
+  const [orderSheet, setOrderSheet] = useState<SpeiOrder | null>(null);
+  const [eventSheet, setEventSheet] = useState<EventDoc | null>(null);
+  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar'>(null);
+  const [chatWith, setChatWith] = useState<UserDoc | null>(null);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [matchPopup, setMatchPopup] = useState<UserDoc | null>(null);
+
+  const isAdmin = useMemo(() => !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()), [user]);
+  const myDoc = useMemo(() => allUsers.find((u) => u.uid === user?.uid) ?? null, [allUsers, user]);
+  const vip = isVip(myDoc);
+
+  const notify = useCallback((s: string) => {
+    setToast(s);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 2600);
+  }, []);
+
+  // ------------------------- Autenticación ---------------------------------
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      if (booting) setBooting(false);
+      // Mientras exista sesión, la vista la decide el bootstrap del documento
+      // propio (onboarding vs app); en pantallas intermedias se muestra "carga".
+      if (u) setView('carga'); else setView('auth');
+    });
+    return () => { unsub?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ------------------------- Carga de datos --------------------------------
+  const refreshCore = useCallback(async () => {
+    if (!user) return;
+    const uid = user.uid;
+    const [users, swipes, ordersList, notifsList, evts, passList, matchesList] = await Promise.all([
+      docAll<UserDoc>('users'),
+      docQuery<SwipeDoc>('swipes', 'from', uid),
+      fetchRemoteSpeiOrdersForUser(uid),
+      fetchNotificationsForUser(uid),
+      docAll<EventDoc>('events'),
+      docQuery<PassDoc>('event_passes', 'userUid', uid),
+      docAll<MatchEntry>('matches'),
+    ]);
+    setAllUsers(users);
+    setMySwipes(swipes);
+    setOrders(ordersList);
+    setNotifs(notifsList);
+    setEvents(evts.filter((e) => e.published).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)));
+    setPasses(passList.sort((a, b) => b.createdAt - a.createdAt));
+    setMatches(matchesList.filter((m) => m.users?.includes(uid)));
+    const remoteBank = await fetchRemoteSpeiConfig();
+    if (remoteBank) setBankCfg(remoteBank);
+  }, [user]);
+
+  useEffect(() => {
+    void refreshCore();
+    const t = setInterval(() => void refreshCore(), 45000);
+    return () => clearInterval(t);
+  }, [refreshCore]);
+
+  // Bootstrap del documento propio (incluye bypass de administración).
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const existing = await docGet<UserDoc>('users', user.uid);
+      if (cancelled) return;
+      if (ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+        if (!existing || !existing.onboardingDone) {
+          await docSet<UserDoc>('users', user.uid, {
+            uid: user.uid, email: user.email, alias: existing?.alias || 'Administración',
+            kind: existing?.kind || 'Pareja', age: existing?.age || 30, bio: existing?.bio || '',
+            avatar: existing?.avatar ?? null, photos: existing?.photos ?? [], interests: existing?.interests ?? [],
+            seeking: existing?.seeking ?? [], agesPref: existing?.agesPref ?? [], km: existing?.km ?? 50, region: 'MX',
+            identityStatus: 'aprobada', premium: 'ultra', premiumUntil: null, status: 'activo',
+            onboardingDone: true, badge: 'oro', createdAt: existing?.createdAt ?? Date.now(), lastSeen: Date.now(),
+          }, true);
+        } else {
+          await docUpdate('users', user.uid, { lastSeen: Date.now(), identityStatus: 'aprobada', badge: 'oro' });
+        }
+        setView('app');
+        await refreshCore();
+        return;
+      }
+      if (!existing || !existing.onboardingDone) {
+        setView('onboarding');
+      } else {
+        await docUpdate('users', user.uid, { lastSeen: Date.now() });
+        setView('app');
+        await refreshCore();
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  const finishOnboarding = async (doc: UserDoc) => {
+    await docSet<UserDoc>('users', user!.uid, doc, true);
+    setView('app');
+    await refreshCore();
+    notify('Perfil activo. Bienvenido a la comunidad.');
+  };
+
+  // ------------------------- Perfiles del mazo -----------------------------
+  const swipedIds = useMemo(() => new Set(mySwipes.map((s) => s.to)), [mySwipes]);
+  const deck = useMemo(() => {
+    if (!user || !myDoc) return [];
+    return allUsers.filter((u) => {
+      if (u.uid === user.uid) return false;
+      if (ADMIN_EMAILS.includes((u.email || '').toLowerCase())) return false;
+      if (u.status !== 'activo') return false;
+      if (!u.onboardingDone) return false;
+      if (u.identityStatus === 'rechazada' || u.identityStatus === 'baneada') return false;
+      if (swipedIds.has(u.uid)) return false;
+      return true;
+    });
+  }, [allUsers, user, myDoc, swipedIds]);
+
+  const likesToday = useMemo(
+    () => mySwipes.filter((s) => s.action !== 'pass' && s.ts > startOfToday()).length,
+    [mySwipes]
+  );
+
+  const actOn = async (target: UserDoc, action: 'like' | 'superlike' | 'pass') => {
+    if (!user) return;
+    if (action !== 'pass' && !vip && likesToday >= FREE_DAILY_LIKES) {
+      notify('Llegaste a tus ' + FREE_DAILY_LIKES + ' likes de hoy. VIP Plus te da likes ilimitados.');
+      return;
+    }
+    await docSet('swipes', `${user.uid}_${target.uid}`, { from: user.uid, to: target.uid, action, ts: Date.now() });
+    setMySwipes((prev) => [...prev.filter((s) => s.to !== target.uid), { id: `${user.uid}_${target.uid}`, from: user.uid, to: target.uid, action, ts: Date.now() }]);
+    if (action !== 'pass') {
+      const recips = await docQuery<SwipeDoc>('swipes', 'from', target.uid);
+      const hit = recips.find((r) => r.to === user.uid && (r.action === 'like' || r.action === 'superlike'));
+      if (hit) {
+        const id = matchIdFor(user.uid, target.uid);
+        await docSet('matches', id, { id, users: [user.uid, target.uid], createdAt: Date.now(), lastMessage: '', lastTs: Date.now() });
+        setMatchPopup(target);
+      }
+    }
+  };
+
+  // ------------------------- Chat -------------------------------------------
+  const [chatMsgs, setChatMsgs] = useState<ChatMsg[]>([]);
+  const [chatDraft, setChatDraft] = useState('');
+
+  useEffect(() => {
+    if (!chatWith || !user) return;
+    const id = chatIdFor(user.uid, chatWith.uid);
+    let stop = false;
+    const pull = async () => {
+      const doc = await docGet<{ messages?: ChatMsg[] }>('messages', id);
+      if (!stop) setChatMsgs(Array.isArray(doc?.messages) ? doc!.messages! : []);
+    };
+    void pull();
+    const t = setInterval(() => void pull(), 6000);
+    return () => { stop = true; clearInterval(t); };
+  }, [chatWith, user]);
+
+  const sendMsg = async () => {
+    if (!chatWith || !user || !chatDraft.trim()) return;
+    const text = chatDraft.trim();
+    setChatDraft('');
+    const id = chatIdFor(user.uid, chatWith.uid);
+    const doc = await docGet<{ messages?: ChatMsg[] }>('messages', id);
+    const msgs = Array.isArray(doc?.messages) ? [...doc!.messages!] : [];
+    msgs.push({ id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), uid: user.uid, t: text, ts: Date.now() });
+    await docSet('messages', id, { id, users: [user.uid, chatWith.uid], messages: msgs });
+    await docUpdate('matches', matchIdFor(user.uid, chatWith.uid), { lastMessage: text, lastTs: Date.now() });
+    setChatMsgs(msgs);
+  };
+
+  // ------------------------- SPEI ------------------------------------------
+  const pricing = getPlanPricing('MX');
+
+  const createSubscriptionOrder = async (plan: 'plus' | 'ultra') => {
+    if (!user || !myDoc) return;
+    const price = pricing[plan];
+    const order = newSpeiOrder({
+      kind: 'suscripcion', itemRef: plan, label: price.labelEs, amount: price.total,
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setOrderSheet(order);
+      notify('Orden SPEI creada. Realiza la transferencia a la brevedad.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  const createEventOrder = async (ev: EventDoc) => {
+    if (!user || !myDoc) return;
+    const total = Math.round(ev.price * (1 + IVA) * 100) / 100;
+    const order = newSpeiOrder({
+      kind: 'evento', itemRef: ev.id, label: 'Entrada: ' + ev.title, amount: total,
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    order.meta = JSON.stringify({ eventId: ev.id, eventTitle: ev.title, eventDate: ev.date, eventTime: ev.time, eventZone: ev.zone });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setEventSheet(null);
+      setOrderSheet(order);
+      notify('Orden SPEI creada para tu entrada.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  const claimFreePass = async (ev: EventDoc) => {
+    if (!user || !myDoc) return;
+    const pass: PassDoc = {
+      id: 'pass_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      code: vipCode(), eventId: ev.id, eventTitle: ev.title, eventDate: ev.date,
+      eventTime: ev.time, eventZone: ev.zone, userUid: user.uid, userName: myDoc.alias,
+      amount: 0, orderRef: 'GRATIS', status: 'activo', createdAt: Date.now(),
+    };
+    const ok = await docSet('event_passes', pass.id, pass);
+    if (ok) {
+      await docUpdate('events', ev.id, { sold: Math.min(ev.cap, (ev.sold ?? 0) + 1) });
+      await docSet('notifications', 'nt_' + Date.now() + '_' + user.uid, {
+        id: 'nt_' + Date.now() + '_' + user.uid, userUid: user.uid, kind: 'pase',
+        title: 'Entrada confirmada', body: 'Tu pase para "' + ev.title + '" ya está activo. Preséntalo en la entrada.',
+        ts: Date.now(), read: false,
+      } as AppNotification);
+      setEventSheet(null);
+      await refreshCore();
+      notify('Entrada confirmada. Consulta tu pase en Eventos.');
+    } else {
+      notify('No fue posible reservar. Intenta de nuevo.');
+    }
+  };
+
+  const reportTransfer = async (order: SpeiOrder) => {
+    const bot = runBotValidation(order);
+    if (!bot.passed) {
+      notify(bot.expired ? 'La orden expiró. Genera una nueva.' : 'La orden no pasó la validación automática.');
+      return;
+    }
+    const ok = await appendRemoteTimelineAndStatus(order.id, 'verificado', 'El usuario reportó su transferencia. Validación automática aprobada; espera confirmación del administrador.');
+    if (ok) {
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: 'verificado', timeline: [...o.timeline, { ts: Date.now(), text: 'El usuario reportó su transferencia. Validación automática aprobada; espera confirmación del administrador.' }] } : o)));
+      setOrderSheet((o) => (o && o.id === order.id ? { ...o, status: 'verificado' } : o));
+      notify('Transferencia reportada. Administración confirmará en breve.');
+    }
+  };
+
+  // ------------------------- Notificaciones -------------------------------
+  const unread = notifs.filter((n) => !n.read).length;
+  const openAvisos = async () => {
+    setSheet('avisos');
+    const unreadIds = notifs.filter((n) => !n.read).map((n) => n.id);
+    if (unreadIds.length && user) {
+      await markNotificationsRead(user.uid, unreadIds);
+      setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+    }
+  };
+
+  // ------------------------- Render ----------------------------------------
+  if (booting || view === 'carga') {
+    return (
+      <div className="shell">
+        <div className="screen" style={{ display: 'grid', placeItems: 'center' }}>
+          <Loader2 size={36} className="spin" color="var(--lila)" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="shell">
+      <div className="screen">
+        <div className="aura" />
+        {view === 'auth' && <AuthScreen onToast={notify} />}
+        {view === 'onboarding' && user && (
+          <Onboarding user={user} seed={myDoc} onFinish={finishOnboarding} onToast={notify} />
+        )}
+        {view === 'app' && user && myDoc && (
+          <>
+            <div className="topbar">
+              {tab === 'perfil' ? (
+                <span className="tag">{vipLabel(myDoc)}</span>
+              ) : (
+                <span className="wordmark">App<b>Swinguer</b></span>
+              )}
+              <div className="row">
+                <button className="iconbtn" aria-label="Avisos" onClick={openAvisos}>
+                  <Bell size={18} />
+                  {unread > 0 && <span className="badge">{unread}</span>}
+                </button>
+                <button className="iconbtn" aria-label="Perfil" onClick={() => setTab('perfil')}>
+                  <Avatar doc={myDoc} size={26} />
+                </button>
+              </div>
+            </div>
+
+            <div className="body">
+              {tab === 'match' && <MatchTab deck={deck} vip={vip} likesToday={likesToday} onAct={actOn} />}
+              {tab === 'chats' && (
+                <ChatsTab
+                  matches={matches}
+                  allUsers={allUsers}
+                  myUid={user.uid}
+                  onOpen={(peer) => setChatWith(peer)}
+                />
+              )}
+              {tab === 'eventos' && (
+                <EventsTab
+                  events={events}
+                  passes={passes}
+                  onOpenEvent={(ev) => setEventSheet(ev)}
+                  onToast={notify}
+                />
+              )}
+              {tab === 'pago' && (
+                <PayTab
+                  myDoc={myDoc}
+                  orders={orders}
+                  pricing={pricing}
+                  bank={bankCfg}
+                  onBuy={createSubscriptionOrder}
+                  onOpenOrder={(o) => setOrderSheet(o)}
+                  onToast={notify}
+                />
+              )}
+              {tab === 'perfil' && (
+                <ProfileTab
+                  myDoc={myDoc}
+                  isAdmin={isAdmin}
+                  passesCount={passes.filter((p) => p.status === 'activo').length}
+                  onOpenIne={() => setSheet('ine')}
+                  onOpenEdit={() => setSheet('editar')}
+                  onGoPago={() => setTab('pago')}
+                  onOpenAvisos={openAvisos}
+                  onOpenAdmin={() => setAdminOpen(true)}
+                  onToast={notify}
+                  onSaved={async (doc) => { await docUpdate('users', user.uid, doc); await refreshCore(); }}
+                  onPhoto={async (file, kind) => {
+                    try {
+                      const data = await compressImage(file);
+                      if (kind === 'avatar') {
+                        await docUpdate('users', user.uid, { avatar: data });
+                      } else {
+                        const photos = [...(myDoc.photos ?? []), data].slice(0, 9);
+                        await docUpdate('users', user.uid, { photos });
+                      }
+                      await refreshCore();
+                    } catch { notify('No fue posible procesar la imagen.'); }
+                  }}
+                  onRemovePhoto={async (idx) => {
+                    const photos = (myDoc.photos ?? []).filter((_, i) => i !== idx);
+                    await docUpdate('users', user.uid, { photos });
+                    await refreshCore();
+                  }}
+                  onLogout={async () => { await signOut(auth); setView('auth'); setTab('match'); }}
+                />
+              )}
+            </div>
+
+            <nav className="nav">
+              {([
+                ['match', <Heart size={22} />, 'Match'],
+                ['chats', <MessageCircle size={22} />, 'Chats'],
+                ['eventos', <CalendarDays size={22} />, 'Eventos'],
+                ['pago', <Banknote size={22} />, 'Pago'],
+                ['perfil', <Users size={22} />, 'Perfil'],
+              ] as [Tab, React.ReactNode, string][]).map(([id, icon, label]) => (
+                <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
+                  {icon}
+                  {label}
+                </button>
+              ))}
+            </nav>
+          </>
+        )}
+
+        {/* ---------------------- Pop-up de match ---------------------- */}
+        <AnimatePresence>
+          {matchPopup && (
+            <motion.div
+              className="overlay"
+              style={{ background: 'radial-gradient(circle at 50% 40%, #6d1fb8, #050307 70%)', justifyContent: 'center', alignItems: 'center', textAlign: 'center', padding: 28 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            >
+              <motion.div initial={{ scale: 0.6, rotate: -8 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', damping: 12 }}>
+                <div className="caps" style={{ fontSize: 64, lineHeight: 0.9, textShadow: '0 0 40px rgba(199,125,255,.9)' }}>
+                  Es<br />Match
+                </div>
+              </motion.div>
+              <p style={{ fontSize: 19, margin: '20px 0 30px' }}>
+                Tú y <b>{matchPopup.alias}</b> se interesaron mutuamente.
+              </p>
+              <button
+                className="btn btn-neon full"
+                onClick={() => { setChatWith(matchPopup); setMatchPopup(null); setTab('chats'); }}
+              >
+                <MessageCircle size={18} /> Abrir chat
+              </button>
+              <button className="btn btn-ghost full" style={{ marginTop: 10 }} onClick={() => setMatchPopup(null)}>
+                Seguir explorando
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Chat abierto -------------------------- */}
+        <AnimatePresence>
+          {chatWith && user && (
+            <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
+              <div className="topbar">
+                <button className="iconbtn" aria-label="Salir" onClick={() => setChatWith(null)}><ChevronLeft size={20} /></button>
+                <span className="caps" style={{ fontSize: 16 }}>{chatWith.alias}</span>
+                <button className="iconbtn" aria-label="Reportar" onClick={() => setSheet('reportar')}><AlertTriangle size={18} /></button>
+              </div>
+              <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {chatMsgs.length === 0 && (
+                  <div className="card" style={{ textAlign: 'center', marginTop: 20 }}>
+                    <Sparkles size={26} color="var(--lila)" />
+                    <p className="muted small" style={{ margin: '8px 0 0' }}>Sin mensajes aún. Rompe el hielo con respeto y consentimiento.</p>
+                  </div>
+                )}
+                {chatMsgs.map((m) => (
+                  <div key={m.id} className={'bubble ' + (m.uid === user.uid ? 'me' : 'them')}>{m.t}</div>
+                ))}
+              </div>
+              <div className="composer">
+                <input
+                  className="field" placeholder="Mensaje…" value={chatDraft}
+                  onChange={(e) => setChatDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void sendMsg(); }}
+                />
+                <button className="iconbtn" style={{ background: 'var(--lila)', color: '#12051f' }} aria-label="Enviar" onClick={() => void sendMsg()}>
+                  <Send size={18} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Hoja de orden SPEI ------------------- */}
+        <AnimatePresence>
+          {(orderSheet || eventSheet || sheet) && <motion.div className="scrim" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setOrderSheet(null); setEventSheet(null); setSheet(null); }} />}
+        </AnimatePresence>
+        <AnimatePresence>
+          {orderSheet && (
+            <SpeiOrderSheet
+              order={orderSheet}
+              bank={bankCfg}
+              onToast={notify}
+              onReport={() => void reportTransfer(orderSheet)}
+              onClose={() => setOrderSheet(null)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Hoja de evento ------------------------ */}
+        <AnimatePresence>
+          {eventSheet && user && myDoc && (
+            <EventSheet
+              ev={eventSheet}
+              onClose={() => setEventSheet(null)}
+              onReserve={(ev) => (ev.price > 0 ? void createEventOrder(ev) : void claimFreePass(ev))}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Hojas de perfil ---------------------- */}
+        <AnimatePresence>
+          {sheet === 'ine' && user && myDoc && (
+            <motion.div key="sheet-ine" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <div className="grab" />
+              <div className="caps" style={{ fontSize: 22 }}>Validación INE</div>
+              <p className="muted small" style={{ margin: '4px 0 12px' }}>Estado actual: <IdentityTag status={myDoc.identityStatus} /></p>
+              <IneCapture
+                uid={user.uid} email={user.email} alias={myDoc.alias} onToast={notify}
+                onDone={async () => { setSheet(null); await refreshCore(); }}
+              />
+            </motion.div>
+          )}
+          {sheet === 'editar' && myDoc && user && (
+            <EditProfileSheet key="sheet-editar"
+              doc={myDoc}
+              onClose={() => setSheet(null)}
+              onToast={notify}
+              onSave={async (patch) => { await docUpdate('users', user.uid, patch); await refreshCore(); setSheet(null); notify('Perfil actualizado.'); }}
+            />
+          )}
+          {sheet === 'avisos' && (
+            <motion.div key="sheet-avisos" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <div className="grab" />
+              <div className="caps" style={{ fontSize: 22 }}>Avisos</div>
+              <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+                {notifs.length === 0 && <p className="muted small">Sin avisos por ahora.</p>}
+                {notifs.map((n) => (
+                  <div key={n.id} className="card" style={{ padding: 14, background: n.read ? 'var(--s2)' : 'var(--s3)', boxShadow: n.read ? 'inset 0 0 0 1px var(--line)' : 'inset 0 0 0 1px var(--lila), var(--glow)' }}>
+                    <div className="row between">
+                      <span className="caps" style={{ fontSize: 15 }}>{n.title}</span>
+                      <span className="tiny">{ago(n.ts)}</span>
+                    </div>
+                    <span className="small" style={{ display: 'block', marginTop: 4 }}>{n.body}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+          {sheet === 'reportar' && chatWith && user && myDoc && (
+            <ReportSheet key="sheet-reportar"
+              peer={chatWith}
+              myDoc={myDoc}
+              onClose={() => setSheet(null)}
+              onToast={notify}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Panel Admin -------------------------- */}
+        <AnimatePresence>
+          {adminOpen && user && myDoc && (
+            <AdminPanel
+              onClose={() => setAdminOpen(false)}
+              onToast={notify}
+              myEmail={user.email}
+              onRefresh={refreshCore}
+              events={events}
+              allUsers={allUsers}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Toast -------------------------------- */}
+        <AnimatePresence>
+          {toast && (
+            <motion.div className="toast" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 16 }}>
+              <Sparkles size={16} /> {toast}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// PESTAÑA MATCH
+// ============================================================================
+
+function MatchTab({ deck, vip, likesToday, onAct }: {
+  deck: UserDoc[]; vip: boolean; likesToday: number;
+  onAct: (target: UserDoc, action: 'like' | 'superlike' | 'pass') => Promise<void>;
+}) {
+  const [removed, setRemoved] = useState<string[]>([]);
+  const cards = deck.filter((p) => !removed.includes(p.uid));
+  const top = cards.slice(-3);
+  const rest = cards.slice(0, -3);
+
+  const fly = async (p: UserDoc, action: 'like' | 'superlike' | 'pass') => {
+    setRemoved((r) => [...r, p.uid]);
+    await onAct(p, action);
+  };
+
+  if (cards.length === 0) {
+    return (
+      <>
+        <div className="h1">Descubre</div>
+        <p className="sub">{vip ? 'Likes ilimitados' : `Te quedan ${Math.max(0, FREE_DAILY_LIKES - likesToday)} likes de hoy`}</p>
+        <div className="card" style={{ textAlign: 'center', marginTop: 30 }}>
+          <Users size={30} color="var(--lila)" />
+          <p className="muted" style={{ margin: '10px 0 0' }}>
+            Aún no hay perfiles para mostrar. La comunidad crece con personas reales: invita a quienes compartan esta vibra y vuelve pronto.
+          </p>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="row between">
+        <div>
+          <div className="h1">Descubre</div>
+          <p className="sub" style={{ marginBottom: 0 }}>{vip ? 'Likes ilimitados · Ultra Plus' : `Te quedan ${Math.max(0, FREE_DAILY_LIKES - likesToday)} likes de hoy`}</p>
+        </div>
+      </div>
+      <div className="deck">
+        <AnimatePresence>
+          {rest.map((p) => (
+            <DeckCard key={p.uid} p={p} onFly={fly} behind />
+          ))}
+          {top.map((p, i) => (
+            <DeckCard key={p.uid} p={p} onFly={fly} top={i === top.length - 1} />
+          ))}
+        </AnimatePresence>
+      </div>
+      {top.length > 0 && (
+        <div className="actions">
+          <button className="round bad" aria-label="Pasar" onClick={() => void fly(top[top.length - 1], 'pass')}>
+            <X size={26} />
+          </button>
+          <button className="round star" aria-label="Superlike" onClick={() => void fly(top[top.length - 1], 'superlike')}>
+            <Star size={24} fill="currentColor" />
+          </button>
+          <button className="round big" aria-label="Me gusta" onClick={() => void fly(top[top.length - 1], 'like')}>
+            <Heart size={32} fill="currentColor" />
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
+function DeckCard({ p, onFly, top, behind }: {
+  p: UserDoc; top?: boolean; behind?: boolean;
+  onFly: (p: UserDoc, action: 'like' | 'superlike' | 'pass') => Promise<void>;
+}) {
+  const hue = hueFrom(p.uid + p.alias);
+  const photo = p.photos?.[0] || null;
+  return (
+    <motion.div
+      className="pcard"
+      style={{ zIndex: behind ? 1 : 2 }}
+      drag={top ? 'x' : false}
+      dragElastic={0.7}
+      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+      onDragEnd={top ? (_e, info) => {
+    if (info.offset.x > 110) void onFly(p, 'like');
+    else if (info.offset.x < -110) void onFly(p, 'pass');
+  } : undefined}
+      initial={{ scale: 0.96, y: 12, opacity: 0 }}
+      animate={{ scale: 1, y: 0, opacity: 1 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      whileDrag={{ scale: 1.04 }}
+    >
+      {photo ? (
+        <img src={photo} alt={p.alias} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        <Portrait hue={hue} />
+      )}
+      <div className="veil">
+        <span className="pill"><span className="caps" style={{ fontSize: 22, color: 'var(--lila)' }}>{(p.alias || '?').slice(0, 1).toUpperCase()}</span></span>
+        <span className="pill">{p.kind}</span>
+      </div>
+      <div className="pinfo">
+        <div className="row between">
+          <span className="pname">{p.alias}</span>
+          <span className="pill">{p.age}</span>
+        </div>
+        {(p.interests ?? []).length > 0 && (
+          <div className="chips" style={{ marginTop: 10 }}>
+            {p.interests.slice(0, 3).map((t) => <span key={t} className="tag">{t}</span>)}
+          </div>
+        )}
+        {p.bio && <p className="line-clamp-2 small" style={{ margin: '10px 0 0', color: 'var(--muted)' }}>{p.bio}</p>}
+      </div>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// PESTAÑA CHATS
+// ============================================================================
+
+function ChatsTab({ matches, allUsers, myUid, onOpen }: {
+  matches: MatchEntry[]; allUsers: UserDoc[]; myUid: string;
+  onOpen: (peer: UserDoc) => void;
+}) {
+  const rows = matches
+    .map((m) => {
+      const peerUid = m.users.find((u) => u !== myUid);
+      const peer = allUsers.find((u) => u.uid === peerUid);
+      return peer ? { m, peer } : null;
+    })
+    .filter((x): x is { m: MatchEntry; peer: UserDoc } => !!x)
+    .sort((a, b) => (b.m.lastTs ?? b.m.createdAt) - (a.m.lastTs ?? a.m.createdAt));
+
+  return (
+    <>
+      <div className="h1">Chats</div>
+      <p className="sub">Los mensajes se abren solo con interés mutuo.</p>
+      {rows.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', marginTop: 20 }}>
+          <MessageCircle size={28} color="var(--lila)" />
+          <p className="muted" style={{ margin: '10px 0 0' }}>Aún no hay matches. Explora y da like a quien te intriga.</p>
+        </div>
+      )}
+      <div className="stack" style={{ gap: 8 }}>
+        {rows.map(({ m, peer }) => (
+          <button key={m.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpen(peer)}>
+            <Avatar doc={peer} size={46} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span className="caps" style={{ display: 'block', fontSize: 16 }}>{peer.alias}</span>
+              <span className="tiny" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {m.lastMessage || 'Say hello'}
+              </span>
+            </span>
+            <span className="tiny">{ago(m.lastTs ?? m.createdAt)}</span>
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ============================================================================
+// PESTAÑA EVENTOS
+// ============================================================================
+
+function EventsTab({ events, passes, onOpenEvent, onToast }: {
+  events: EventDoc[]; passes: PassDoc[];
+  onOpenEvent: (ev: EventDoc) => void; onToast: (s: string) => void;
+}) {
+  return (
+    <>
+      <div className="h1">Eventos</div>
+      <p className="sub">Fiestas y encuentros publicados por administración.</p>
+
+      {passes.length > 0 && (
+        <>
+          <div className="label" style={{ margin: '8px 0 10px' }}>Mis pases</div>
+          <div className="stack" style={{ gap: 10, marginBottom: 20 }}>
+            {passes.slice(0, 3).map((pass) => (
+              <div key={pass.id} className="ticket">
+                <div className="top">
+                  <div className="tiny" style={{ color: '#4a2a66' }}>{pass.eventDate} · {pass.eventTime}</div>
+                  <div className="caps" style={{ fontSize: 20, marginTop: 2 }}>{pass.eventTitle}</div>
+                  <div className="row between" style={{ marginTop: 8 }}>
+                    <span className="tiny" style={{ color: '#4a2a66' }}>{pass.eventZone}</span>
+                    <span className="tag" style={{ background: '#12051f', color: '#f5eeff' }}>{pass.status}</span>
+                  </div>
+                </div>
+                <div className="perf" />
+                <div className="stub">
+                  <span className="code" style={{ fontSize: 18 }}>{pass.code}</span>
+                  <Ticket size={22} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {events.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <CalendarDays size={30} color="var(--lila)" />
+          <p className="muted" style={{ margin: '10px 0 0' }}>
+            Aún no hay eventos publicados. Cuando administración verifique una fiesta o encuentro, aparecerá aquí con su entrada y pases VIP.
+          </p>
+        </div>
+      ) : (
+        <div className="stack" style={{ gap: 12 }}>
+          {events.map((ev) => {
+            const left = Math.max(0, ev.cap - (ev.sold ?? 0));
+            return (
+              <button key={ev.id} className="card" style={{ textAlign: 'left', padding: 0, overflow: 'hidden' }} onClick={() => onOpenEvent(ev)}>
+                <div className="cover">
+                  <Portrait hue={ev.hue ?? hueFrom(ev.id)} blur />
+                  <CalendarDays size={30} color="var(--lila)" style={{ position: 'absolute', inset: 0, margin: 'auto' }} />
+                </div>
+                <div style={{ padding: '14px 18px 18px' }}>
+                  <div className="label" style={{ fontSize: 13 }}>{ev.theme}</div>
+                  <div className="caps" style={{ fontSize: 22, margin: '4px 0 6px' }}>{ev.title}</div>
+                  <div className="row between">
+                    <span className="muted small">{ev.date} · {ev.zone}</span>
+                    <span className="ui" style={{ fontWeight: 800, fontSize: 15 }}>{ev.price > 0 ? 'desde ' + money(ev.price) : 'Gratis'}</span>
+                  </div>
+                  <div style={{ height: 4, borderRadius: 2, background: 'var(--s3)', marginTop: 12 }}>
+                    <div style={{ height: 4, borderRadius: 2, width: `${100 - (left / ev.cap) * 100}%`, background: 'var(--lila)', boxShadow: 'var(--glow)' }} />
+                  </div>
+                  <div className="tiny" style={{ marginTop: 6 }}>
+                    {left > 0 ? `Quedan ${left} de ${ev.cap} lugares` : 'Cupo lleno'}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function EventSheet({ ev, onClose, onReserve }: {
+  ev: EventDoc; onClose: () => void; onReserve: (ev: EventDoc) => void;
+}) {
+  const total = Math.round(ev.price * (1 + IVA) * 100) / 100;
+  return (
+    <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+      <div className="grab" />
+      <div className="label">{ev.theme}</div>
+      <div className="caps" style={{ fontSize: 28, margin: '4px 0 6px' }}>{ev.title}</div>
+      <div className="muted small">{ev.date} · {ev.time} · {ev.zone}</div>
+      <div className="muted small" style={{ marginTop: 2 }}>Organiza: {ev.organizer}</div>
+      {(ev.reqs ?? []).length > 0 && (
+        <>
+          <div className="label" style={{ margin: '16px 0 8px' }}>Requisitos</div>
+          <div className="stack" style={{ gap: 6 }}>
+            {ev.reqs.map((r) => (
+              <div key={r} className="row small"><BadgeCheck size={16} color="var(--lila)" /> {r}</div>
+            ))}
+          </div>
+        </>
+      )}
+      <div className="card row" style={{ marginTop: 16, gap: 10, padding: 14 }}>
+        <Lock size={18} color="var(--lila)" />
+        <span className="small">La dirección exacta se comparte solo con asistentes confirmados.</span>
+      </div>
+      {ev.price > 0 && (
+        <div className="card stack" style={{ marginTop: 12, gap: 6 }}>
+          <div className="row between small"><span>Entrada</span><b className="ui">{money(ev.price)}</b></div>
+          <div className="row between small"><span>IVA (16%)</span><b className="ui">{money(total - ev.price)}</b></div>
+          <div className="row between" style={{ borderTop: '1px solid var(--line)', paddingTop: 6 }}>
+            <span className="caps">Total</span>
+            <span className="caps" style={{ fontSize: 22 }}>{money(total)} MXN</span>
+          </div>
+        </div>
+      )}
+      <button className="btn btn-neon full" style={{ marginTop: 16 }} onClick={() => onReserve(ev)}>
+        <Banknote size={18} /> {ev.price > 0 ? 'Pagar entrada por SPEI' : 'Reservar lugar gratis'}
+      </button>
+      <p className="tiny" style={{ textAlign: 'center', marginTop: 8 }}>Cancelación con reembolso hasta 48 h antes del evento.</p>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// PESTAÑA PAGO (SPEI)
+// ============================================================================
+
+function PayTab({ myDoc, orders, pricing, bank, onBuy, onOpenOrder, onToast }: {
+  myDoc: UserDoc; orders: SpeiOrder[];
+  pricing: ReturnType<typeof getPlanPricing>;
+  bank: SpeiBankConfig;
+  onBuy: (plan: 'plus' | 'ultra') => Promise<void>;
+  onOpenOrder: (o: SpeiOrder) => void;
+  onToast: (s: string) => void;
+}) {
+  const vipActive = isVip(myDoc);
+  return (
+    <>
+      <div className="h1">Pago SPEI</div>
+      <p className="sub">Suscripción y entradas por transferencia bancaria. Sin tarjetas.</p>
+
+      <div className="card" style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+        {vipActive ? <Crown size={30} color="var(--lila)" /> : <CreditCard size={30} color="var(--lila)" />}
+        <div style={{ flex: 1 }}>
+          <div className="caps" style={{ fontSize: 18 }}>{vipLabel(myDoc)}</div>
+          {vipActive ? (
+            <div className="tiny">Vigente hasta {new Date(myDoc.premiumUntil!).toLocaleDateString('es-MX', { day: 'numeric', month: 'long' })}</div>
+          ) : (
+            <div className="tiny">Plan gratuito · {FREE_DAILY_LIKES} likes al día</div>
+          )}
+        </div>
+        {vipActive && <span className="tag ok"><BadgeCheck size={12} /> Activo</span>}
+      </div>
+
+      <div className="label" style={{ margin: '20px 0 10px' }}>Planes</div>
+      <div className="stack" style={{ gap: 10 }}>
+        {(['plus', 'ultra'] as const).map((plan) => {
+          const price = pricing[plan];
+          return (
+            <div key={plan} className="card">
+              <div className="row between">
+                <div>
+                  <div className="caps" style={{ fontSize: 19 }}>{plan === 'plus' ? 'VIP Plus' : 'Ultra VIP'}</div>
+                  <div className="tiny">{plan === 'plus' ? '15 días · likes ilimitados' : '1 mes · likes ilimitados + insignia'}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className="caps" style={{ fontSize: 24 }}>{money(price.total)}</div>
+                  <div className="tiny">IVA incluido</div>
+                </div>
+              </div>
+              <button className="btn btn-neon full" style={{ marginTop: 12 }} onClick={() => void onBuy(plan)}>
+                <Banknote size={18} /> Pagar por SPEI
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="label" style={{ margin: '20px 0 10px' }}>Mis órdenes SPEI</div>
+      {orders.length === 0 ? (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <Banknote size={26} color="var(--lila)" />
+          <p className="muted small" style={{ margin: '8px 0 0' }}>Sin órdenes todavía. Tus transferencias y su estado aparecerán aquí.</p>
+        </div>
+      ) : (
+        <div className="stack" style={{ gap: 8 }}>
+          {orders.map((o) => (
+            <button key={o.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpenOrder(o)}>
+              <span className="thumb" style={{ display: 'grid', placeItems: 'center' }}><Banknote size={20} color="var(--lila)" /></span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="caps" style={{ display: 'block', fontSize: 15 }}>{o.label}</span>
+                <span className="tiny" style={{ display: 'block' }}>{o.reference} · {money(o.amount)}</span>
+              </span>
+              <StatusTagOrder status={o.status} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      <p className="tiny" style={{ marginTop: 16, textAlign: 'center' }}>
+        Banco receptor: {bank.bank} · Beneficiario: {bank.beneficiary}
+      </p>
+    </>
+  );
+}
+
+function SpeiOrderSheet({ order, bank, onToast, onReport, onClose }: {
+  order: SpeiOrder; bank: SpeiBankConfig;
+  onToast: (s: string) => void; onReport: () => void; onClose: () => void;
+}) {
+  const [left, setLeft] = useState(Math.max(0, order.expiresAt - Date.now()));
+  useEffect(() => {
+    const t = setInterval(() => setLeft(Math.max(0, order.expiresAt - Date.now())), 1000);
+    return () => clearInterval(t);
+  }, [order.expiresAt]);
+  const mm = Math.floor(left / 60000);
+  const ss = Math.floor((left % 60000) / 1000);
+  const expired = left <= 0 && order.status === 'pendiente';
+
+  return (
+    <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Transferencia SPEI</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>{order.label}</p>
+
+      <div className="card" style={{ textAlign: 'center', boxShadow: 'inset 0 0 0 1.5px var(--lila), var(--glow)' }}>
+        <div className="tiny">Monto exacto a transferir</div>
+        <div className="caps" style={{ fontSize: 32, marginTop: 4 }}>{money(order.amount)}</div>
+        <div className="tiny" style={{ marginTop: 4 }}>IVA incluido · sin cargos ocultos</div>
+      </div>
+
+      {order.status === 'pendiente' && !expired && (
+        <div className="row" style={{ justifyContent: 'center', margin: '10px 0' }}>
+          <span className="tag warn"><Clock size={12} /> Completa tu transferencia en {mm}:{String(ss).padStart(2, '0')}</span>
+        </div>
+      )}
+      {expired && (
+        <div className="row" style={{ justifyContent: 'center', margin: '10px 0' }}>
+          <span className="tag bad">Ventana de pago expirada. Genera una nueva orden.</span>
+        </div>
+      )}
+
+      <div className="stack" style={{ gap: 8, marginTop: 6 }}>
+        <CopyRow label="Banco" value={bank.bank} onToast={onToast} />
+        <CopyRow label="CLABE" value={formatClabe(bank.clabe)} onToast={onToast} />
+        <CopyRow label="Beneficiario" value={bank.beneficiary} onToast={onToast} />
+        <CopyRow label="Concepto (cópialo exacto)" value={order.concept} onToast={onToast} />
+        <CopyRow label="Referencia de pago" value={order.reference} onToast={onToast} />
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="label" style={{ marginBottom: 8 }}>Cómo pagar</div>
+        <div className="stack" style={{ gap: 8 }}>
+          <div className="row small" style={{ gap: 8 }}><span className="caps" style={{ color: 'var(--lila)' }}>1</span> Abre tu app bancaria y elige transferir con SPEI.</div>
+          <div className="row small" style={{ gap: 8 }}><span className="caps" style={{ color: 'var(--lila)' }}>2</span> Pega la CLABE y el monto exacto.</div>
+          <div className="row small" style={{ gap: 8 }}><span className="caps" style={{ color: 'var(--lila)' }}>3</span> Pega el concepto completo, tal cual. Tu referencia viaja ahí.</div>
+          <div className="row small" style={{ gap: 8 }}><span className="caps" style={{ color: 'var(--lila)' }}>4</span> Regresa aquí y pulsa "Ya pagué" para acelerar la validación.</div>
+        </div>
+      </div>
+
+      {(order.timeline ?? []).length > 0 && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <div className="label" style={{ marginBottom: 8 }}>Seguimiento</div>
+          <div className="stack" style={{ gap: 6 }}>
+            {order.timeline.map((tl, i) => (
+              <div key={i} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                <span className="tiny" style={{ flex: 'none' }}>{ago(tl.ts)}</span>
+                <span className="small">{tl.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {order.status === 'pendiente' && !expired && (
+        <button className="btn btn-neon full" style={{ marginTop: 14 }} onClick={onReport}>
+          <FileCheck2 size={18} /> Ya realicé la transferencia
+        </button>
+      )}
+      <button className="btn btn-dark full" style={{ marginTop: 10 }} onClick={onClose}>Cerrar</button>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// PESTAÑA PERFIL
+// ============================================================================
+
+function ProfileTab(props: {
+  myDoc: UserDoc;
+  isAdmin: boolean;
+  passesCount: number;
+  onOpenIne: () => void;
+  onOpenEdit: () => void;
+  onGoPago: () => void;
+  onOpenAvisos: () => void;
+  onOpenAdmin: () => void;
+  onToast: (s: string) => void;
+  onSaved: (doc: Partial<UserDoc>) => Promise<void>;
+  onPhoto: (file: File, kind: 'avatar' | 'gallery') => Promise<void>;
+  onRemovePhoto: (idx: number) => Promise<void>;
+  onLogout: () => Promise<void>;
+}) {
+  const { myDoc } = props;
+  return (
+    <>
+      <div className="h1">{myDoc.alias}</div>
+      <p className="sub">{myDoc.kind} · {myDoc.age} años</p>
+
+      <div className="card">
+        <div className="row" style={{ gap: 14 }}>
+          <div style={{ position: 'relative' }}>
+            <Avatar doc={myDoc} size={64} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="row wrap" style={{ gap: 6 }}>
+              <IdentityTag status={myDoc.identityStatus} />
+              {myDoc.badge === 'oro' && <span className="tag warn"><Crown size={12} /> Admin</span>}
+              {isVip(myDoc) && <span className="tag ok"><Sparkles size={12} /> {vipLabel(myDoc)}</span>}
+            </div>
+            <div className="grid2" style={{ marginTop: 10 }}>
+              <FileButton onFiles={(f) => props.onPhoto(f, 'avatar')}><Camera size={16} /> Avatar</FileButton>
+              <button className="btn btn-dark btn-sm" onClick={props.onOpenEdit}><Users size={16} /> Editar</button>
+            </div>
+          </div>
+        </div>
+        {myDoc.bio && <p style={{ fontSize: 17, margin: '14px 0 0' }}>{myDoc.bio}</p>}
+        {(myDoc.interests ?? []).length > 0 && (
+          <div className="chips" style={{ marginTop: 12 }}>
+            {myDoc.interests.map((t) => <span key={t} className="chip">{t}</span>)}
+          </div>
+        )}
+      </div>
+
+      <div className="row between" style={{ margin: '20px 0 8px' }}>
+        <span className="label">Mis fotos</span>
+        <span className="tiny">{(myDoc.photos ?? []).length}/9</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6 }}>
+        {(myDoc.photos ?? []).map((src, i) => (
+          <div key={i} style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 14, overflow: 'hidden' }}>
+            <img src={src} alt={'Foto ' + (i + 1)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <button
+              className="iconbtn" aria-label="Quitar foto" style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32 }}
+              onClick={() => void props.onRemovePhoto(i)}
+            >
+              <Trash2 size={14} />
+            </button>
+          </div>
+        ))}
+        {(myDoc.photos ?? []).length < 9 && (
+          <FileButton
+            className="btn btn-dark btn-sm"
+            style={{ aspectRatio: '3/4', borderRadius: 14 }}
+            onFiles={(f) => props.onPhoto(f, 'gallery')}
+          >
+            <div style={{ display: 'grid', placeItems: 'center', gap: 4 }}>
+              <ImagePlus size={22} color="var(--lila)" />
+              <span className="tiny">Añadir</span>
+            </div>
+          </FileButton>
+        )}
+      </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <div className="row between">
+          <span className="label">Validación INE</span>
+          <IdentityTag status={myDoc.identityStatus} />
+        </div>
+        <p className="muted small" style={{ margin: '8px 0 12px' }}>
+          Requerida para el sello verificado y para compras. Solo la ve administración.
+        </p>
+        <button className="btn btn-dark full" onClick={props.onOpenIne}>
+          <ShieldCheck size={18} /> {myDoc.identityStatus === 'aprobada' ? 'Volver a validar' : 'Subir mi INE'}
+        </button>
+      </div>
+
+      <div className="grid2" style={{ marginTop: 12 }}>
+        <button className="btn btn-dark btn-sm" onClick={props.onGoPago}><Banknote size={16} /> {vipLabel(myDoc)}</button>
+        <button className="btn btn-dark btn-sm" onClick={props.onOpenAvisos}><Bell size={16} /> Avisos</button>
+      </div>
+
+      {props.isAdmin && (
+        <button
+          className="btn full"
+          style={{ marginTop: 16, background: 'transparent', boxShadow: 'inset 0 0 0 2px var(--lila), var(--glow)', color: 'var(--soft)', letterSpacing: '.08em' }}
+          onClick={props.onOpenAdmin}
+        >
+          <Eye size={18} /> PANEL ADMIN
+        </button>
+      )}
+
+      <button className="btn btn-bad full" style={{ marginTop: 12 }} onClick={() => void props.onLogout()}>
+        <LogOut size={18} /> Cerrar sesión
+      </button>
+    </>
+  );
+}
+
+function EditProfileSheet({ doc, onClose, onSave, onToast }: {
+  doc: UserDoc; onClose: () => void; onToast: (s: string) => void;
+  onSave: (patch: Partial<UserDoc>) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<Partial<UserDoc>>({ ...doc });
+  const upd = (p: Partial<UserDoc>) => setDraft((d) => ({ ...d, ...p }));
+  return (
+    <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Editar perfil</div>
+      <div className="stack" style={{ gap: 10, marginTop: 12 }}>
+        <input className="field" placeholder="Alias" value={draft.alias ?? ''} onChange={(e) => upd({ alias: e.target.value.slice(0, 24) })} />
+        <input className="field" inputMode="numeric" placeholder="Edad" value={draft.age ?? ''} onChange={(e) => upd({ age: Number(e.target.value.replace(/\D/g, '').slice(0, 2)) })} />
+        <div className="chips">
+          {KINDS.map((k) => (
+            <button key={k} className={'chip' + (draft.kind === k ? ' sel' : '')} onClick={() => upd({ kind: k })}>{k}</button>
+          ))}
+        </div>
+        <textarea className="field" placeholder="Bio" value={draft.bio ?? ''} onChange={(e) => upd({ bio: e.target.value.slice(0, 300) })} />
+        <div className="label">Gustos</div>
+        <div className="chips">
+          {INTERESTS.map((i) => (
+            <button key={i} className={'chip' + ((draft.interests ?? []).includes(i) ? ' sel' : '')}
+              onClick={() => upd({ interests: (draft.interests ?? []).includes(i) ? (draft.interests ?? []).filter((x) => x !== i) : [...(draft.interests ?? []), i] })}>
+              {i}
+            </button>
+          ))}
+        </div>
+        <div className="card">
+          <div className="row between">
+            <span className="label">Radio</span>
+            <span className="caps" style={{ fontSize: 24 }}>{draft.km} km</span>
+          </div>
+          <input type="range" min={1} max={200} value={draft.km ?? 50} onChange={(e) => upd({ km: Number(e.target.value) })} aria-label="Radio en km" style={{ width: '100%', accentColor: 'var(--lila)' }} />
+        </div>
+        <button className="btn btn-neon full" onClick={() => void onSave(draft)} disabled={!(draft.alias ?? '').trim()}>
+          <BadgeCheck size={18} /> Guardar cambios
+        </button>
+        <button className="btn btn-dark full" onClick={onClose}>Cancelar</button>
+      </div>
+    </motion.div>
+  );
+}
+
+function ReportSheet({ peer, myDoc, onClose, onToast }: {
+  peer: UserDoc; myDoc: UserDoc; onClose: () => void; onToast: (s: string) => void;
+}) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    if (!text.trim()) { onToast('Describe lo que pasó.'); return; }
+    setBusy(true);
+    const id = 'st_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await docSet('support_tickets', id, {
+      id, userUid: myDoc.uid, userName: myDoc.alias, userEmail: myDoc.email,
+      requester: 'usuario', subject: 'Reporte de conversación: ' + peer.alias,
+      message: text.trim(), status: 'abierto', reply: null, createdAt: Date.now(), repliedAt: null,
+    });
+    setBusy(false);
+    onToast('Reporte enviado a moderación.');
+    onClose();
+  };
+  return (
+    <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Reportar</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>{peer.alias}. Solo guardamos la evidencia necesaria.</p>
+      <textarea className="field" placeholder="Cuéntanos qué pasó…" value={text} onChange={(e) => setText(e.target.value.slice(0, 500))} />
+      <button className="btn btn-bad full" style={{ marginTop: 12 }} onClick={() => void send()} disabled={busy}>
+        {busy ? <Loader2 size={18} className="spin" /> : <AlertTriangle size={18} />} Enviar reporte
+      </button>
+    </motion.div>
+  );
+}
+
+// ============================================================================
+// PANEL ADMIN (alto nivel)
+// ============================================================================
+
+type AdminSection = 'resumen' | 'ine' | 'pagos' | 'usuarios' | 'eventos' | 'banco';
+
+function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
+  onClose: () => void;
+  onToast: (s: string) => void;
+  onRefresh: () => Promise<void>;
+  events: EventDoc[];
+  allUsers: UserDoc[];
+}) {
+  const [section, setSection] = useState<AdminSection>('resumen');
+  const [busy, setBusy] = useState(false);
+  const [ineRecords, setIneRecords] = useState<IneRecord[]>([]);
+  const [orders, setOrders] = useState<SpeiOrder[]>([]);
+  const [cfg, setCfg] = useState<SpeiBankConfig>(getSpeiConfig());
+  const [imgView, setImgView] = useState<string | null>(null);
+  const [evForm, setEvForm] = useState({ title: '', theme: '', date: '', time: '', zone: '', organizer: '', cap: 40, price: 0, reqs: '' });
+
+  const loadAdminData = useCallback(async () => {
+    const [records, allOrders, remoteCfg] = await Promise.all([
+      fetchAllRemoteIneRecords(),
+      fetchAllRemoteSpeiOrders(),
+      fetchRemoteSpeiConfig(),
+    ]);
+    setIneRecords(records.sort((a, b) => b.createdAt - a.createdAt));
+    setOrders(allOrders);
+    if (remoteCfg) setCfg(remoteCfg);
+  }, []);
+
+  useEffect(() => { void loadAdminData(); }, [loadAdminData]);
+
+  const pendingIne = ineRecords.filter((r) => ineRecordVerdict(r) === 'pendiente');
+  const pendingOrders = orders.filter((o) => o.status === 'pendiente' || o.status === 'verificado');
+
+  const verdict = async (rec: IneRecord, v: 'aprobada' | 'rechazada' | 'baneada') => {
+    setBusy(true);
+    const ok = await issueIdentityVerdict({ record: rec, verdict: v });
+    setBusy(false);
+    if (ok) { await loadAdminData(); await onRefresh(); onToast('Veredicto emitido y notificado.'); }
+    else onToast('No fue posible emitir el veredicto.');
+  };
+
+  const approveOrder = async (o: SpeiOrder) => {
+    setBusy(true);
+    const now = Date.now();
+    await appendRemoteTimelineAndStatus(o.id, 'aprobado', 'Pago aprobado por el administrador. Beneficio activado.');
+    if (o.kind === 'suscripcion' && o.userUid) {
+      const days = o.itemRef === 'ultra' ? 30 : 15;
+      const current = await docGet<UserDoc>('users', o.userUid);
+      const base = current?.premiumUntil && current.premiumUntil > now ? current.premiumUntil : now;
+      await docUpdate('users', o.userUid, {
+        premium: o.itemRef === 'ultra' ? 'ultra' : 'plus',
+        premiumUntil: base + days * 24 * 60 * 60 * 1000,
+      });
+      await docSet('notifications', 'nt_' + now + '_' + o.userUid, {
+        id: 'nt_' + now + '_' + o.userUid, userUid: o.userUid, kind: 'sistema',
+        title: 'Pago aprobado', body: 'Tu pago de "' + o.label + '" fue confirmado. Suscripción activa.',
+        ts: now, read: false,
+      } as AppNotification);
+    }
+    if (o.kind === 'evento' && o.userUid) {
+      let meta: any = {};
+      try { meta = o.meta ? JSON.parse(o.meta) : {}; } catch { meta = {}; }
+      const ev = events.find((e) => e.id === o.itemRef) ?? (await docGet<EventDoc>('events', o.itemRef));
+      const pass: PassDoc = {
+        id: 'pass_' + now + '_' + Math.random().toString(36).slice(2, 6),
+        code: vipCode(), eventId: o.itemRef, eventTitle: meta.eventTitle ?? ev?.title ?? 'Evento',
+        eventDate: meta.eventDate ?? ev?.date ?? '', eventTime: meta.eventTime ?? ev?.time ?? '',
+        eventZone: meta.eventZone ?? ev?.zone ?? '', userUid: o.userUid, userName: o.userName,
+        amount: o.amount, orderRef: o.reference, status: 'activo', createdAt: now,
+      };
+      await docSet('event_passes', pass.id, pass);
+      if (ev) await docUpdate('events', ev.id, { sold: Math.min(ev.cap, (ev.sold ?? 0) + 1) });
+      await docSet('notifications', 'nt_' + now + '_' + o.userUid, {
+        id: 'nt_' + now + '_' + o.userUid, userUid: o.userUid, kind: 'pase',
+        title: 'Entrada confirmada', body: 'Tu pago fue aprobado. Tu pase VIP para "' + pass.eventTitle + '" ya está activo.',
+        ts: now, read: false,
+      } as AppNotification);
+    }
+    setBusy(false);
+    await loadAdminData();
+    await onRefresh();
+    onToast('Pago aprobado. Beneficio activado.');
+  };
+
+  const rejectOrder = async (o: SpeiOrder) => {
+    setBusy(true);
+    await appendRemoteTimelineAndStatus(o.id, 'rechazado', 'El administrador rechazó el pago: no se encontró la transferencia con la referencia.');
+    if (o.userUid) {
+      const now = Date.now();
+      await docSet('notifications', 'nt_' + now + '_' + o.userUid, {
+        id: 'nt_' + now + '_' + o.userUid, userUid: o.userUid, kind: 'sistema',
+        title: 'Pago no encontrado', body: 'No localizamos tu transferencia para "' + o.label + '". Verifica el concepto y genera una nueva orden.',
+        ts: now, read: false,
+      } as AppNotification);
+    }
+    setBusy(false);
+    await loadAdminData();
+    onToast('Pago rechazado y notificado.');
+  };
+
+  const toggleUser = async (u: UserDoc) => {
+    const next = u.status === 'activo' ? 'suspendido' : 'activo';
+    await docUpdate('users', u.uid, { status: next });
+    await onRefresh();
+    onToast(next === 'suspendido' ? 'Cuenta suspendida.' : 'Cuenta reactivada.');
+  };
+
+  const publishEvent = async () => {
+    const f = evForm;
+    if (!f.title.trim() || !f.date.trim() || !f.zone.trim()) { onToast('Completa título, fecha y zona.'); return; }
+    const id = 'ev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    await docSet('events', id, {
+      id, title: f.title.trim(), theme: f.theme.trim() || 'Encuentro privado',
+      date: f.date.trim(), time: f.time.trim() || '21:00', zone: f.zone.trim(),
+      organizer: f.organizer.trim() || 'Administración', price: Number(f.price) || 0,
+      cap: Number(f.cap) || 40, sold: 0, published: true, hue: hueFrom(id + f.title),
+      reqs: f.reqs.split('\n').map((s) => s.trim()).filter(Boolean),
+    });
+    setEvForm({ title: '', theme: '', date: '', time: '', zone: '', organizer: '', cap: 40, price: 0, reqs: '' });
+    await onRefresh();
+    onToast('Evento publicado.');
+  };
+
+  const deleteEvent = async (ev: EventDoc) => {
+    await docDelete('events', ev.id);
+    await onRefresh();
+    onToast('Evento eliminado.');
+  };
+
+  const saveBank = async () => {
+    const digits = cfg.clabe.replace(/[^0-9]/g, '');
+    if (digits.length !== 18) { onToast('La CLABE debe tener 18 dígitos.'); return; }
+    const next = saveSpeiConfig({ bank: cfg.bank, clabe: digits, beneficiary: cfg.beneficiary });
+    const ok = await saveRemoteSpeiConfig(next);
+    onToast(ok ? 'Configuración bancaria guardada para toda la plataforma.' : 'Guardada solo en este dispositivo.');
+  };
+
+  const purge = async () => {
+    const n = await purgeExpiredRetainedRecords();
+    await loadAdminData();
+    onToast(n > 0 ? n + ' expedientes vencidos depurados.' : 'No hay expedientes vencidos.');
+  };
+
+  return (
+    <motion.div className="overlay" style={{ zIndex: 50 }} initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
+      <div className="topbar">
+        <button className="iconbtn" aria-label="Salir" onClick={onClose}><ChevronLeft size={20} /></button>
+        <span className="wordmark">PANEL <b>ADMIN</b></span>
+        <button className="iconbtn" aria-label="Recargar" onClick={() => { void loadAdminData(); void onRefresh(); }}><RefreshCw size={16} /></button>
+      </div>
+      <div className="body">
+        <div className="seg" style={{ marginBottom: 16 }}>
+          {([['resumen', 'Resumen'], ['ine', 'INE'], ['pagos', 'Pagos'], ['usuarios', 'Usuarios'], ['eventos', 'Eventos'], ['banco', 'Banco']] as [AdminSection, string][]).map(([id, label]) => (
+            <button key={id} className={section === id ? 'on' : ''} onClick={() => setSection(id)}>{label}</button>
+          ))}
+        </div>
+
+        {busy && <div className="row" style={{ gap: 8, marginBottom: 10 }}><Loader2 size={16} className="spin" /><span className="tiny">Procesando…</span></div>}
+
+        {section === 'resumen' && (
+          <>
+            <div className="grid2" style={{ gap: 8 }}>
+              <div className="kpi"><div className="tiny">Usuarios</div><div className="v">{allUsers.length}</div></div>
+              <div className="kpi"><div className="tiny">INE pendientes</div><div className="v">{pendingIne.length}</div></div>
+              <div className="kpi"><div className="tiny">Pagos por validar</div><div className="v">{pendingOrders.length}</div></div>
+              <div className="kpi"><div className="tiny">Eventos activos</div><div className="v">{events.length}</div></div>
+            </div>
+            <div className="card" style={{ marginTop: 14 }}>
+              <div className="label" style={{ marginBottom: 8 }}>Retención legal</div>
+              <p className="muted small" style={{ margin: '0 0 12px' }}>
+                Las credenciales de cuentas baneadas se retienen un año y después se depuran de forma permanente.
+              </p>
+              <button className="btn btn-dark btn-sm" onClick={() => void purge()}><Trash2 size={16} /> Depurar expedientes vencidos</button>
+            </div>
+          </>
+        )}
+
+        {section === 'ine' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Expedientes INE</div>
+            <p className="sub">{pendingIne.length} pendientes de {ineRecords.length} totales</p>
+            <div className="stack" style={{ gap: 12 }}>
+              {ineRecords.length === 0 && <div className="card"><p className="muted small">Sin expedientes todavía.</p></div>}
+              {ineRecords.map((r) => {
+                const v = ineRecordVerdict(r);
+                return (
+                  <div key={r.id} className="card">
+                    <div className="row between">
+                      <span className="caps" style={{ fontSize: 17 }}>{r.alias}</span>
+                      <span className={'tag ' + (v === 'aprobada' ? 'ok' : v === 'pendiente' ? 'warn' : 'bad')}>{v}</span>
+                    </div>
+                    <div className="tiny" style={{ marginTop: 2 }}>{r.legalName} · {r.userEmail}</div>
+                    <div className="tiny">{r.source} · hace {ago(r.createdAt)}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginTop: 10 }}>
+                      {([['INE frente', r.ineFront], ['INE reverso', r.ineBack], ['Selfie', r.selfie]] as [string, string][]).map(([label, src]) => (
+                        <button key={label} style={{ aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000', position: 'relative' }} onClick={() => setImgView(src)}>
+                          {src ? <img src={src} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span className="tiny">Vacío</span>}
+                        </button>
+                      ))}
+                    </div>
+                    {v === 'pendiente' && (
+                      <div className="grid2" style={{ marginTop: 12 }}>
+                        <button className="btn btn-neon btn-sm" onClick={() => void verdict(r, 'aprobada')}><UserCheck size={16} /> Aprobar</button>
+                        <button className="btn btn-bad btn-sm" onClick={() => void verdict(r, 'rechazada')}><UserX size={16} /> Rechazar</button>
+                        <button className="btn btn-bad btn-sm full" style={{ gridColumn: '1 / -1' }} onClick={() => void verdict(r, 'baneada')}><Ban size={16} /> Banear y retener un año</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {section === 'pagos' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Pagos SPEI</div>
+            <p className="sub">{pendingOrders.length} por validar</p>
+            <div className="stack" style={{ gap: 12 }}>
+              {orders.length === 0 && <div className="card"><p className="muted small">Sin órdenes todavía.</p></div>}
+              {orders.map((o) => {
+                const bot = runBotValidation(o);
+                return (
+                  <div key={o.id} className="card">
+                    <div className="row between">
+                      <span className="caps" style={{ fontSize: 16 }}>{o.label}</span>
+                      <StatusTagOrder status={o.status} />
+                    </div>
+                    <div className="tiny" style={{ marginTop: 2 }}>{o.userName} · {o.userEmail}</div>
+                    <div className="tiny">{o.reference} · {money(o.amount)} · hace {ago(o.createdAt)}</div>
+                    <div className="stack" style={{ gap: 4, marginTop: 10 }}>
+                      {bot.checks.map((c) => (
+                        <div key={c.label} className="row small" style={{ gap: 8 }}>
+                          {c.ok ? <BadgeCheck size={15} color="var(--ok)" /> : <X size={15} color="var(--bad)" />} {c.label}
+                        </div>
+                      ))}
+                    </div>
+                    {(o.status === 'pendiente' || o.status === 'verificado') && (
+                      <div className="grid2" style={{ marginTop: 12 }}>
+                        <button className="btn btn-neon btn-sm" onClick={() => void approveOrder(o)}><BadgeCheck size={16} /> Aprobar pago</button>
+                        <button className="btn btn-bad btn-sm" onClick={() => void rejectOrder(o)}><X size={16} /> Rechazar</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {section === 'usuarios' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Usuarios</div>
+            <p className="sub">{allUsers.length} cuentas registradas</p>
+            <div className="stack" style={{ gap: 10 }}>
+              {allUsers.map((u) => (
+                <div key={u.uid} className="card" style={{ padding: 14 }}>
+                  <div className="row" style={{ gap: 12 }}>
+                    <Avatar doc={u} size={44} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="row" style={{ gap: 6 }}>
+                        <span className="caps" style={{ fontSize: 16 }}>{u.alias || 'Sin alias'}</span>
+                        {u.badge === 'oro' && <Crown size={13} color="var(--warn)" />}
+                      </div>
+                      <div className="tiny">{u.email}</div>
+                      <div className="row wrap" style={{ gap: 6, marginTop: 6 }}>
+                        <IdentityTag status={u.identityStatus} />
+                        <span className={'tag ' + (u.status === 'activo' ? 'ok' : 'bad')}>{u.status}</span>
+                        {isVip(u) && <span className="tag warn">{vipLabel(u)}</span>}
+                      </div>
+                    </div>
+                    {!ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && (
+                      <button className="btn btn-dark btn-sm" onClick={() => void toggleUser(u)}>
+                        {u.status === 'activo' ? <UserX size={16} /> : <UserCheck size={16} />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {section === 'eventos' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Eventos</div>
+            <p className="sub">Publica y administra fiestas verificadas.</p>
+            <div className="card">
+              <div className="stack" style={{ gap: 8 }}>
+                <input className="field" placeholder="Título del evento" value={evForm.title} onChange={(e) => setEvForm({ ...evForm, title: e.target.value.slice(0, 60) })} />
+                <input className="field" placeholder="Tema (ej. Noche de parejas)" value={evForm.theme} onChange={(e) => setEvForm({ ...evForm, theme: e.target.value.slice(0, 40) })} />
+                <div className="grid2">
+                  <input className="field" placeholder="Fecha" value={evForm.date} onChange={(e) => setEvForm({ ...evForm, date: e.target.value.slice(0, 24) })} />
+                  <input className="field" placeholder="Hora" value={evForm.time} onChange={(e) => setEvForm({ ...evForm, time: e.target.value.slice(0, 12) })} />
+                </div>
+                <div className="grid2">
+                  <input className="field" placeholder="Zona" value={evForm.zone} onChange={(e) => setEvForm({ ...evForm, zone: e.target.value.slice(0, 40) })} />
+                  <input className="field" placeholder="Organiza" value={evForm.organizer} onChange={(e) => setEvForm({ ...evForm, organizer: e.target.value.slice(0, 40) })} />
+                </div>
+                <div className="row between card" style={{ padding: '10px 14px' }}>
+                  <span className="label">Cupo</span>
+                  <span className="row">
+                    <button className="iconbtn" style={{ width: 36, height: 36 }} onClick={() => setEvForm({ ...evForm, cap: Math.max(4, evForm.cap - 4) })}>−</button>
+                    <span className="caps" style={{ width: 44, textAlign: 'center' }}>{evForm.cap}</span>
+                    <button className="iconbtn" style={{ width: 36, height: 36 }} onClick={() => setEvForm({ ...evForm, cap: evForm.cap + 4 })}>+</button>
+                  </span>
+                </div>
+                <input className="field" inputMode="numeric" placeholder="Precio de entrada (MXN, 0 = gratis)" value={evForm.price || ''} onChange={(e) => setEvForm({ ...evForm, price: Number(e.target.value.replace(/\D/g, '').slice(0, 6)) })} />
+                <textarea className="field" placeholder="Requisitos (uno por línea)" value={evForm.reqs} onChange={(e) => setEvForm({ ...evForm, reqs: e.target.value.slice(0, 400) })} />
+                <button className="btn btn-neon full" onClick={() => void publishEvent()}><Plus size={18} /> Publicar evento</button>
+              </div>
+            </div>
+            <div className="stack" style={{ gap: 10, marginTop: 16 }}>
+              {events.map((ev) => (
+                <div key={ev.id} className="card" style={{ padding: 14 }}>
+                  <div className="row between">
+                    <span className="caps" style={{ fontSize: 16 }}>{ev.title}</span>
+                    <span className="tiny">{ev.sold}/{ev.cap}</span>
+                  </div>
+                  <div className="tiny">{ev.date} · {ev.zone} · {ev.price > 0 ? money(ev.price) : 'Gratis'}</div>
+                  <button className="btn btn-bad btn-sm" style={{ marginTop: 10 }} onClick={() => void deleteEvent(ev)}><Trash2 size={15} /> Eliminar</button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {section === 'banco' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Cuenta bancaria SPEI</div>
+            <p className="sub">Todos los pagos de la plataforma llegan aquí.</p>
+            <div className="stack" style={{ gap: 10 }}>
+              <input className="field" placeholder="Banco" value={cfg.bank} onChange={(e) => setCfg({ ...cfg, bank: e.target.value.slice(0, 40) })} />
+              <input className="field" inputMode="numeric" placeholder="CLABE (18 dígitos)" value={cfg.clabe} onChange={(e) => setCfg({ ...cfg, clabe: e.target.value.replace(/[^0-9]/g, '').slice(0, 18) })} />
+              <input className="field" placeholder="Beneficiario" value={cfg.beneficiary} onChange={(e) => setCfg({ ...cfg, beneficiary: e.target.value.slice(0, 60) })} />
+              <button className="btn btn-neon full" onClick={() => void saveBank()}><BadgeCheck size={18} /> Guardar configuración</button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Visor de imagen del expediente */}
+      <AnimatePresence>
+        {imgView && (
+          <motion.div className="ann" style={{ zIndex: 60 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setImgView(null)}>
+            <img src={imgView} alt="Documento" style={{ maxWidth: '100%', maxHeight: '80%', borderRadius: 16, boxShadow: 'var(--glow)' }} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
