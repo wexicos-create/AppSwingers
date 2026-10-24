@@ -126,9 +126,13 @@ export async function createUserWithEmailAndPassword(
     options: { data: { displayName: email.split('@')[0] } },
   });
   if (error) throw mapAuthError(error);
-  // Con "Confirm email" activo en Supabase, la cuenta se crea pero sin sesión:
-  // se exige la confirmación del correo antes de continuar con el flujo.
-  if (!data.session) throw authError('auth/email-not-confirmed', 'Confirma tu correo para continuar.');
+  // Con "Confirm email" activo en Supabase, la cuenta se crea sin sesión.
+  // El disparador de la base de datos confirma el correo al crear la cuenta,
+  // de modo que aquí se inicia sesión de inmediato para continuar el flujo.
+  if (!data.session) {
+    const { user: signed } = await signInWithEmailAndPassword(email, password);
+    return { user: signed };
+  }
   if (!data.user) throw authError('auth/error', 'No fue posible crear la cuenta.');
   const user = mapUser(data.user as unknown as SupabaseAuthUser);
   cachedUser = user;
