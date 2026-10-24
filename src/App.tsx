@@ -1734,27 +1734,18 @@ function EditProfileSheet({ doc, onClose, onSave, onToast }: {
       <div className="stack" style={{ gap: 10, marginTop: 12 }}>
         <input className="field" placeholder="Alias" value={draft.alias ?? ''} onChange={(e) => upd({ alias: e.target.value.slice(0, 24) })} />
         <input className="field" inputMode="numeric" placeholder="Edad" value={draft.age ?? ''} onChange={(e) => upd({ age: Number(e.target.value.replace(/\D/g, '').slice(0, 2)) })} />
-        <div className="chips">
-          {KINDS.map((k) => (
-            <button key={k} className={'chip' + (draft.kind === k ? ' sel' : '')} onClick={() => upd({ kind: k })}>{k}</button>
-          ))}
-        </div>
         <textarea className="field" placeholder="Bio" value={draft.bio ?? ''} onChange={(e) => upd({ bio: e.target.value.slice(0, 300) })} />
-        <div className="label">Gustos</div>
-        <div className="chips">
-          {INTERESTS.map((i) => (
-            <button key={i} className={'chip' + ((draft.interests ?? []).includes(i) ? ' sel' : '')}
-              onClick={() => upd({ interests: (draft.interests ?? []).includes(i) ? (draft.interests ?? []).filter((x) => x !== i) : [...(draft.interests ?? []), i] })}>
-              {i}
-            </button>
-          ))}
-        </div>
         <div className="card">
           <div className="row between">
-            <span className="label">Radio</span>
-            <span className="caps" style={{ fontSize: 24 }}>{draft.km} km</span>
+            <span className="label">Fijo desde el registro</span>
+            <Lock size={14} color="var(--muted)" />
           </div>
-          <input type="range" min={1} max={200} value={draft.km ?? 50} onChange={(e) => upd({ km: Number(e.target.value) })} aria-label="Radio en km" style={{ width: '100%', accentColor: 'var(--lila)' }} />
+          <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
+            <span className="tag">{doc.kind}</span>
+            <span className="tag">{doc.interests?.length ?? 0} gustos</span>
+            <span className="tag">{doc.km} km</span>
+          </div>
+          <p className="tiny" style={{ marginTop: 8 }}>El tipo de cuenta, los gustos y el radio se eligen al registrarse y permanecen fijos.</p>
         </div>
         <button className="btn btn-neon full" onClick={() => void onSave(draft)} disabled={!(draft.alias ?? '').trim()}>
           <BadgeCheck size={18} /> Guardar cambios
@@ -2152,3 +2143,4 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
     </motion.div>
   );
 }
+
