@@ -22,7 +22,9 @@ import {
   ThumbsUp,
   MapPin,
   Video,
-  Phone
+  Phone,
+  Siren,
+  Car
 } from 'lucide-react';
 
 interface ChatViewProps {
@@ -32,6 +34,10 @@ interface ChatViewProps {
   onOpenReport?: (target: { type: 'usuario'; id: string; name: string }) => void;
   onBlockUser?: (userId: string) => void;
   onBackToApp?: () => void;
+  onAbandonChat?: (profile: Profile, messageCount: number) => void;
+  onSosAlert?: (info: { targetName: string; location: string }) => void;
+  onRequestUberSafe?: () => void;
+  isDama?: boolean;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -41,6 +47,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onOpenReport,
   onBlockUser,
   onBackToApp,
+  onAbandonChat,
+  onSosAlert,
+  onRequestUberSafe,
+  isDama = false,
 }) => {
   const [activeChat, setActiveChat] = useState<MatchItem | null>(null);
   const [inputText, setInputText] = useState('');
@@ -56,6 +66,50 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [reportDetails, setReportDetails] = useState('');
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // SOS emergency button (women safety): 6 quick taps in 12 seconds trigger a live alert.
+  const [sosTaps, setSosTaps] = useState(0);
+  const [sosOpen, setSosOpen] = useState(false);
+  const sosFirstTapRef = useRef<number | null>(null);
+  const sosTimerRef = useRef<any>(null);
+
+  const handleSosTap = () => {
+    const now = Date.now();
+    if (sosFirstTapRef.current === null || now - sosFirstTapRef.current > 12000) {
+      sosFirstTapRef.current = now;
+      setSosTaps(1);
+      if (sosTimerRef.current !== null) window.clearTimeout(sosTimerRef.current);
+      sosTimerRef.current = window.setTimeout(() => {
+        setSosTaps(0);
+        sosFirstTapRef.current = null;
+      }, 12000);
+      return;
+    }
+    const next = sosTaps + 1;
+    setSosTaps(next);
+    if (next >= 6) {
+      if (sosTimerRef.current !== null) window.clearTimeout(sosTimerRef.current);
+      sosFirstTapRef.current = null;
+      setSosTaps(0);
+      setSosOpen(true);
+      if (!navigator.geolocation) {
+        onSosAlert?.({ targetName: activeChat?.profile.name || 'Desconocido', location: 'Ubicación no disponible' });
+      } else {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const loc = 'https://maps.google.com/?q=' + pos.coords.latitude + ',' + pos.coords.longitude + ' (precisión ' + Math.round(pos.coords.accuracy) + ' m)';
+            onSosAlert?.({ targetName: activeChat?.profile.name || 'Desconocido', location: loc });
+            showToast('ALERTA SOS ENVIADA con tu ubicación en tiempo real al Administrador.');
+          },
+          () => {
+            onSosAlert?.({ targetName: activeChat?.profile.name || 'Desconocido', location: 'Ubicación no disponible (permiso denegado)' });
+            showToast('ALERTA SOS ENVIADA sin ubicación (permiso de ubicación denegado).');
+          },
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      }
+    }
+  };
 
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -380,7 +434,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
         <div className="p-3 border-b border-purple-500/20 flex items-center justify-between bg-neutral-950/90 backdrop-blur-xl sticky top-0 z-30">
           <div className="flex items-center gap-2.5">
             <button
-              onClick={() => setActiveChat(null)}
+              onClick={() => {
+                // Ask for a profile rating when the user leaves a real conversation.
+                if (onAbandonChat && currentMsgs.length >= 2) onAbandonChat(activeChat.profile, currentMsgs.length);
+                setActiveChat(null);
+              }}
               className="p-1.5 rounded-full hover:bg-white/10 text-white/80 transition active:scale-95"
               aria-label="Volver a lista de mensajes"
               title="Volver a lista de mensajes"
@@ -416,6 +474,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           {/* Quick Action Buttons: VideoCall (PeerJS), Keep Sync, Reportar & Bloquear */}
           <div className="flex items-center gap-1.5">
+            {isDama && (
+              <>
+                <button
+                  onClick={handleSosTap}
+                  className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold flex items-center gap-1 active:scale-95 transition ${
+                    sosTaps > 0
+                      ? 'bg-rose-600 border-rose-300 text-white animate-pulse shadow-[0_0_15px_rgba(244,63,94,0.6)]'
+                      : 'bg-rose-950/60 hover:bg-rose-900/70 border-rose-500/50 text-rose-300'
+                  }`}
+                  title="Toca 6 veces para enviar una alerta real de emergencia con tu ubicación en vivo"
+                >
+                  <Siren className="w-3.5 h-3.5 text-rose-400" />
+                  <span>SOS {sosTaps > 0 ? sosTaps + '/6' : ''}</span>
+                </button>
+                {onRequestUberSafe && (
+                  <button
+                    onClick={onRequestUberSafe}
+                    className="px-2.5 py-1 rounded-xl bg-emerald-950/60 hover:bg-emerald-900/70 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-1 active:scale-95 transition"
+                    title="Uber privado de seguridad de la empresa (9 PM a 12 AM)"
+                  >
+                    <Car className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="hidden sm:inline">Uber Seguro</span>
+                  </button>
+                )}
+              </>
+            )}
             <button
               onClick={() => void startVideoCall()}
               className="p-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-500/50 text-pink-300 flex items-center justify-center active:scale-95 transition shadow-sm"
@@ -741,6 +825,39 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   className="flex-1 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-rose-600 text-white text-xs font-bold shadow-lg"
                 >
                   Sí, Bloquear
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: SOS EMERGENCIA (6 toques confirmados) */}
+        {sosOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+            <div className="w-full max-w-sm rounded-3xl bg-[#1a0710] border border-rose-500/50 p-5 shadow-2xl text-white space-y-4">
+              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                <Siren className="w-5 h-5 animate-pulse" />
+                <span>ALERTA SOS ACTIVADA</span>
+              </div>
+
+              <p className="text-xs text-white/80 leading-relaxed">
+                Enviaremos tu ubicación en tiempo real al Administrador de la plataforma para que rinda el reporte correspondiente y, en caso de peligro, se contacte a la policía. También puedes marcar a emergencias de forma inmediata.
+              </p>
+
+              <div className="flex gap-2 pt-2">
+                <a
+                  href="tel:911"
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold text-center shadow-lg shadow-rose-600/30 inline-flex items-center justify-center gap-1.5"
+                >
+                  <Phone className="w-4 h-4" />
+                  Llamar al 911 ahora
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setSosOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"
+                >
+                  Cerrar
                 </button>
               </div>
             </div>

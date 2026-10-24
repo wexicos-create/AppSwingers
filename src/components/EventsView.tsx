@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ClubEvent, EventAccessPass, Reservation, EventTier } from '../types';
 import { EVENT_TIERS } from '../data/mockProfiles';
-import { Calendar, MapPin, Ticket, ShieldCheck, Plus, CheckCircle2, Megaphone, X, Star, Download, BellRing } from 'lucide-react';
+import { Calendar, MapPin, Ticket, ShieldCheck, Plus, CheckCircle2, Megaphone, X, Star, Download, BellRing, HelpCircle } from 'lucide-react';
 import { downloadEventTicket, isEventDay, isEventPast, type OrganizerReputation } from '../eventflow';
 
 interface EventsViewProps {
@@ -15,6 +15,8 @@ interface EventsViewProps {
   onRatePass: (pass: EventAccessPass) => void;
   onAgencyPromoRequest: (data: { agency: string; title: string; date: string; zone: string; cap: number }) => void;
   onOpenOrganizerPanel: () => void;
+  onOpenOrganizerProfile?: (organizer: string, organizerUid: string | null) => void;
+  onNoShowFeedback?: (pass: EventAccessPass, reason: string, details: string) => void;
 }
 
 export const EventsView: React.FC<EventsViewProps> = ({
@@ -28,11 +30,17 @@ export const EventsView: React.FC<EventsViewProps> = ({
   onRatePass,
   onAgencyPromoRequest,
   onOpenOrganizerPanel,
+  onOpenOrganizerProfile,
+  onNoShowFeedback,
 }) => {
   const [viewTab, setViewTab] = useState<'cartelera' | 'reservas'>('cartelera');
   const [selectedEvent, setSelectedEvent] = useState<ClubEvent | null>(null);
   const [selectedTier, setSelectedTier] = useState<string>('pareja');
   const [agencyModalOpen, setAgencyModalOpen] = useState(false);
+  // Post-event no-show feedback (why the user did not attend) with complaints channel.
+  const [noShowPass, setNoShowPass] = useState<EventAccessPass | null>(null);
+  const [noShowReason, setNoShowReason] = useState('Imprevisto personal');
+  const [noShowDetails, setNoShowDetails] = useState('');
   const [agencyForm, setAgencyForm] = useState({
     agency: '',
     title: '',
@@ -153,6 +161,15 @@ export const EventsView: React.FC<EventsViewProps> = ({
                           >
                             <Star className="w-3.5 h-3.5" />
                             Calificar
+                          </button>
+                        )}
+                        {past && pass.status === 'activo' && (
+                          <button
+                            onClick={() => { setNoShowPass(pass); setNoShowReason('Imprevisto personal'); setNoShowDetails(''); }}
+                            className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-purple-500/40 text-purple-200 text-[11px] font-bold flex items-center justify-center gap-1.5 transition"
+                          >
+                            <HelpCircle className="w-3.5 h-3.5" />
+                            ¿Por qué no asististe?
                           </button>
                         )}
                       </div>
@@ -307,7 +324,14 @@ export const EventsView: React.FC<EventsViewProps> = ({
                   {/* Actions */}
                   <div className="flex items-center justify-between pt-1">
                     <span className="text-[11px] text-purple-300/80 flex items-center gap-1">
-                      <span>Organiza: <strong className="text-white">{ev.organizer}</strong></span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onOpenOrganizerProfile?.(ev.organizer, ev.organizerUid ?? null); }}
+                        className="underline decoration-dotted underline-offset-2 hover:text-white transition text-left"
+                        title="Ver perfil, calificación y eventos de la agencia / asociado / organizador"
+                      >
+                        Organiza: <strong className="text-white">{ev.organizer}</strong>
+                      </button>
                       {reputation[ev.organizer] && reputation[ev.organizer].count > 0 && (
                         <span className="flex items-center gap-0.5 text-amber-300 font-bold">
                           <Star className="w-3 h-3 fill-amber-300" />
@@ -449,6 +473,69 @@ export const EventsView: React.FC<EventsViewProps> = ({
             >
               {selectedEvent.paid ? 'Apartar Entrada · Pagar Depósito' : 'Confirmar Reserva Gratuita'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: ¿POR QUÉ NO ASISTISTE? (quejas, sugerencias y reclamos del evento) */}
+      {noShowPass && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="w-full max-w-sm rounded-3xl bg-[#140827] border border-purple-500/40 p-5 shadow-2xl text-white space-y-4">
+            <div className="flex items-center gap-2 text-purple-300 font-bold text-sm">
+              <HelpCircle className="w-5 h-5" />
+              <span>¿Por qué no asististe a {noShowPass.eventTitle}?</span>
+            </div>
+
+            <p className="text-xs text-white/80 leading-relaxed">
+              Tu respuesta ayuda a proteger a la comunidad: las quejas, sugerencias y reclamos sobre la agencia, el trato o las condiciones del evento se envían directamente al Administrador.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-white/70 font-bold block">Motivo de tu inasistencia</label>
+              <select
+                value={noShowReason}
+                onChange={(e) => setNoShowReason(e.target.value)}
+                className="w-full p-2.5 rounded-xl bg-neutral-900 border border-purple-500/40 text-white text-xs focus:outline-none focus:border-pink-400"
+              >
+                <option>Imprevisto personal</option>
+                <option>Cuestiones de seguridad</option>
+                <option>La agencia cambió condiciones o pidió costo extra</option>
+                <option>Mal trato o mala comunicación de la agencia</option>
+                <option>Ubicación lejana o de riesgo</option>
+                <option>Otra razón</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-white/70 font-bold block">Quejas, sugerencias o reclamos (opcional)</label>
+              <textarea
+                rows={3}
+                value={noShowDetails}
+                onChange={(e) => setNoShowDetails(e.target.value)}
+                placeholder="Cuéntanos qué pasó: trato recibido, cambios de último momento, condiciones del lugar, etc."
+                className="w-full p-2.5 rounded-xl bg-neutral-900 border border-purple-500/40 text-white text-xs resize-none focus:outline-none focus:border-pink-400"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setNoShowPass(null)}
+                className="flex-1 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold"
+              >
+                Omitir
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onNoShowFeedback?.(noShowPass, noShowReason, noShowDetails.trim());
+                  setNoShowPass(null);
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white text-xs font-bold shadow-lg"
+              >
+                Enviar al Administrador
+              </button>
+            </div>
           </div>
         </div>
       )}

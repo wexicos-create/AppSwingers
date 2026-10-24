@@ -11,6 +11,7 @@ import {
   FileCheck,
   IdCard,
   Loader2,
+  ShieldCheck,
 } from 'lucide-react';
 
 export interface IdentityFlowResult {
@@ -18,6 +19,7 @@ export interface IdentityFlowResult {
   ineFront: string;
   ineBack: string; // empty for passport
   selfie: string; // close-up frame from the liveness test
+  manualReview?: boolean; // true when the user requests administrator validation
 }
 
 type IdStage =
@@ -44,6 +46,7 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
   const [selfieClose, setSelfieClose] = useState('');
   const [selfieFar, setSelfieFar] = useState('');
   const [detectBusy, setDetectBusy] = useState(false);
+  const [blurError, setBlurError] = useState<string | null>(null);
 
   // Camera plumbing
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -156,33 +159,110 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
     }
   };
 
+  // ---------- Automatic image analysis: sharpness + MRZ (passport) detection ----------
+  const analyzeImage = (dataUrl: string): Promise<{ sharp: boolean; passportMrz: boolean }> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const W = 160;
+          const H = Math.max(2, Math.round((img.height / img.width) * W));
+          const canvas = document.createElement('canvas');
+          canvas.width = W;
+          canvas.height = H;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { resolve({ sharp: true, passportMrz: false }); return; }
+          ctx.drawImage(img, 0, 0, W, H);
+          const px = ctx.getImageData(0, 0, W, H);
+          const gray = new Float32Array(W * H);
+          for (let i = 0; i < W * H; i++) {
+            gray[i] = 0.299 * px.data[i * 4] + 0.587 * px.data[i * 4 + 1] + 0.114 * px.data[i * 4 + 2];
+          }
+          // Sharpness: variance of the Laplacian (sharp documents usually exceed ~55).
+          let sum = 0;
+          let sumSq = 0;
+          let n = 0;
+          for (let y = 1; y < H - 1; y++) {
+            for (let x = 1; x < W - 1; x++) {
+              const v = 4 * gray[y * W + x] - gray[y * W + x - 1] - gray[y * W + x + 1] - gray[(y - 1) * W + x] - gray[(y + 1) * W + x];
+              sum += v;
+              sumSq += v * v;
+              n++;
+            }
+          }
+          const variance = n > 0 ? sumSq / n - (sum / n) * (sum / n) : 0;
+          const sharp = variance > 55;
+          // MRZ detection: passports print two high-contrast character rows in the lower zone.
+          let maxTransitions = 0;
+          for (let y = Math.floor(H * 0.3); y < H; y++) {
+            let trans = 0;
+            for (let x = 1; x < W; x++) {
+              if (Math.abs(gray[y * W + x] - gray[y * W + x - 1]) > 28) trans++;
+            }
+            if (trans > maxTransitions) maxTransitions = trans;
+          }
+          const passportMrz = maxTransitions >= 30;
+          resolve({ sharp, passportMrz });
+        } catch {
+          resolve({ sharp: true, passportMrz: false });
+        }
+      };
+      img.onerror = () => resolve({ sharp: true, passportMrz: false });
+      img.src = dataUrl;
+    });
+  };
+
   // ---------- Document flow ----------
-  const handleFrontCapture = () => {
+  const handleFrontCapture = async () => {
     const data = captureFrame();
     if (!data) return;
-    setIneFront(data);
     setDetectBusy(true);
-    // Brief automatic document-type identification (region-based guess shown on the next screen).
-    window.setTimeout(() => {
-      setDetectBusy(false);
-      setStage('detectado');
-    }, 1200);
+    const info = await analyzeImage(data);
+    setDetectBusy(false);
+    if (!info.sharp) {
+      setBlurError(isEs
+        ? 'La foto salió borrosa. Limpia el lente, asegúrate de tener buena luz, sostén el documento firme y vuelve a capturar.'
+        : 'The photo came out blurry. Clean the lens, make sure you have good lighting, hold the document steady and capture again.');
+      return;
+    }
+    setBlurError(null);
+    setIneFront(data);
+    // Automatic document type detection: MRZ rows => passport; otherwise INE for MX.
+    setDocType(info.passportMrz ? 'pasaporte' : region === 'MX' ? 'ine' : 'pasaporte');
+    setStage('detectado');
   };
 
   const handleFrontFile = async (file: File) => {
     const data = await compressOrRaw(file);
     if (!data) return;
-    setIneFront(data);
     setDetectBusy(true);
-    window.setTimeout(() => {
-      setDetectBusy(false);
-      setStage('detectado');
-    }, 600);
+    const info = await analyzeImage(data);
+    setDetectBusy(false);
+    if (!info.sharp) {
+      setBlurError(isEs
+        ? 'La foto del documento es borrosa. Tómala de nuevo con más luz y sin mover el dispositivo.'
+        : 'The document photo is blurry. Take it again with more light and without moving the device.');
+      return;
+    }
+    setBlurError(null);
+    setIneFront(data);
+    setDocType(info.passportMrz ? 'pasaporte' : region === 'MX' ? 'ine' : 'pasaporte');
+    setStage('detectado');
   };
 
-  const handleBackCapture = () => {
+  const handleBackCapture = async () => {
     const data = captureFrame();
     if (!data) return;
+    setDetectBusy(true);
+    const info = await analyzeImage(data);
+    setDetectBusy(false);
+    if (!info.sharp) {
+      setBlurError(isEs
+        ? 'La foto del reverso salió borrosa. Vuelve a capturar con buena luz y el documento firme.'
+        : 'The back photo came out blurry. Capture again with good lighting and the document steady.');
+      return;
+    }
+    setBlurError(null);
     setIneBack(data);
     setStage('vida');
   };
@@ -190,6 +270,16 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
   const handleBackFile = async (file: File) => {
     const data = await compressOrRaw(file);
     if (!data) return;
+    setDetectBusy(true);
+    const info = await analyzeImage(data);
+    setDetectBusy(false);
+    if (!info.sharp) {
+      setBlurError(isEs
+        ? 'La foto del reverso es borrosa. Súbela de nuevo con más luz y sin movimiento.'
+        : 'The back photo is blurry. Upload it again with more light and no motion.');
+      return;
+    }
+    setBlurError(null);
     setIneBack(data);
     setStage('vida');
   };
@@ -261,6 +351,7 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
     faceHitsRef.current = 0;
     farBoxWRef.current = 0;
     setManualMode(false);
+    setBlurError(null);
     setStage('frente');
   };
 
@@ -421,7 +512,7 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
             {stage === 'acerca' && (isEs ? 'El círculo se cerró: acerca tu rostro para continuar.' : 'The circle shrank: bring your face closer to continue.')}
             {stage === 'analizando' && (isEs ? 'Analizando movimiento y autenticidad del rostro.' : 'Analyzing face movement and authenticity.')}
             {stage === 'exito' && (isEs ? 'Gracias por completar la verificación.' : 'Thank you for completing the verification.')}
-            {stage === 'rechazo' && (isEs ? 'Deberás repetir las fotos y la prueba de vida.' : 'You must repeat the photos and the liveness test.')}
+            {stage === 'rechazo' && (isEs ? 'Puedes repetir la prueba o enviarla a validación manual del Administrador.' : 'You can repeat the test or send it to manual Administrator validation.')}
           </p>
         </div>
       </div>
@@ -491,15 +582,14 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
           {ineFront && (
             <img src={ineFront} alt="Frente" className="w-40 h-28 object-cover rounded-2xl border border-purple-500/40" />
           )}
-          <button
-            type="button"
-            onClick={() => setDocType(docType === 'ine' ? 'pasaporte' : 'ine')}
-            className="text-[11px] text-purple-200/70 hover:text-purple-200 underline underline-offset-4 transition"
-          >
-            {docType === 'ine'
-              ? (isEs ? 'No es INE, es pasaporte/ID' : 'It is not an INE, it is a passport/ID')
-              : (isEs ? 'No es pasaporte, es INE' : 'It is not a passport, it is an INE')}
-          </button>
+          <p className="text-[10px] text-white/40 leading-relaxed flex items-start gap-1.5 max-w-xs mx-auto">
+            <ScanFace className="w-3 h-3 shrink-0 mt-0.5" />
+            <span>
+              {isEs
+                ? 'La detección de tu documento (INE o Pasaporte) es automática en tiempo real; no necesitas indicar el formato.'
+                : 'Your document detection (ID or Passport) is automatic in real time; you do not need to indicate the format.'}
+            </span>
+          </p>
           <button
             type="button"
             onClick={handleNextFromDetected}
@@ -657,18 +747,42 @@ export function IdentityFlow({ isEs, region, onDone }: IdentityFlowProps) {
             </h2>
             <p className="text-xs text-purple-200/70 mt-1.5 max-w-xs mx-auto leading-relaxed">
               {isEs
-                ? 'La prueba de vida no detectó un rostro en movimiento genuino. Deberás repetir las fotos del documento y la prueba de vida.'
-                : 'The liveness test did not detect a genuine moving face. You must repeat the document photos and the liveness test.'}
+                ? 'La prueba de vida no detectó un rostro en movimiento genuino. Puedes intentar de nuevo o enviar tu verificación a validación manual: un Administrador revisará tus documentos y tu rostro, y confirmará tu cuenta.'
+                : 'The liveness test did not detect a genuine moving face. You can try again or send your verification to manual review: an Administrator will review your documents and face, and confirm your account.'}
             </p>
           </div>
           <button
             type="button"
-            onClick={handleRetryAll}
+            onClick={() =>
+              onDone({
+                docType,
+                ineFront,
+                ineBack,
+                selfie: selfieClose || selfieFar,
+                manualReview: true,
+              })
+            }
             className="px-8 py-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/40 hover:brightness-110 active:scale-95 transition inline-flex items-center gap-2"
           >
-            <RefreshCw className="w-4 h-4" />
-            {isEs ? 'Intentar de nuevo' : 'Try again'}
+            <ShieldCheck className="w-4 h-4" />
+            {isEs ? 'Enviar a validación por Administrador' : 'Send to Administrator validation'}
           </button>
+          <button
+            type="button"
+            onClick={handleRetryAll}
+            className="px-8 py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white/80 font-medium text-xs transition active:scale-95 inline-flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {isEs ? 'Intentar de nuevo la prueba' : 'Try the test again'}
+          </button>
+        </div>
+      )}
+
+      {/* BLUR REJECTION: the photo came out blurry, ask the user to retake it */}
+      {blurError && (stage === 'frente' || stage === 'reverso') && (
+        <div className="mt-3 p-3 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[11px] font-semibold flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{blurError}</span>
         </div>
       )}
 

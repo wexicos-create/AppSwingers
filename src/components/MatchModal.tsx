@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { Profile } from '../types';
-import { MessageSquare, Flame, X, Sparkles } from 'lucide-react';
+import { MessageSquare, Flame, X, Sparkles, ShieldCheck } from 'lucide-react';
 
 interface MatchModalProps {
   isOpen: boolean;
@@ -12,6 +12,7 @@ interface MatchModalProps {
   isEs?: boolean;
   onClose: () => void;
   onStartChat: (profile: Profile) => void;
+  onOpenSafetyTips?: () => void;
 }
 
 export const MatchModal: React.FC<MatchModalProps> = ({
@@ -22,6 +23,7 @@ export const MatchModal: React.FC<MatchModalProps> = ({
   isEs = true,
   onClose,
   onStartChat,
+  onOpenSafetyTips,
 }) => {
   useEffect(() => {
     if (isOpen && matchProfile) {
@@ -155,6 +157,16 @@ export const MatchModal: React.FC<MatchModalProps> = ({
             >
               {isEs ? 'Seguir descubriendo perfiles' : 'Keep discovering profiles'}
             </button>
+
+            {onOpenSafetyTips && (
+              <button
+                onClick={onOpenSafetyTips}
+                className="w-full py-3 px-6 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-bold text-xs transition active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                {isEs ? 'Consejos de seguridad e higiene' : 'Safety and hygiene tips'}
+              </button>
+            )}
           </div>
         </motion.div>
       </div>

@@ -114,6 +114,8 @@ import {
   fetchEventPassesForUser,
   fetchRatingsByUser,
   fetchAllEventRatings,
+  newSupportTicket,
+  createRemoteTicket,
   reputationByOrganizer,
   isEventDay,
   isEventPast,
@@ -124,7 +126,12 @@ import { PremiumStateSearch } from './components/PremiumStateSearch';
 import { EventAttendModal } from './components/EventAttendModal';
 import { DonateModal } from './components/DonateModal';
 import { EventRatingModal } from './components/EventRatingModal';
-import { IdentityVerdict, StatePass, AppNotification, EventAccessPass, EventRating, EventTier } from './types';
+import { ProfileRatingModal } from './components/ProfileRatingModal';
+import { OrganizerProfileModal } from './components/OrganizerProfileModal';
+import { UberSafeModal } from './components/UberSafeModal';
+import { SafetyTipsModal } from './components/SafetyTipsModal';
+import { saveProfileRating } from './ratings';
+import { IdentityVerdict, StatePass, AppNotification, EventAccessPass, EventRating, EventTier, ProfileRating } from './types';
 import { DICTIONARY, Language, detectUserRegionAndLang } from './i18n';
 import { 
   Flame, 
@@ -315,6 +322,12 @@ export default function App() {
   const [attendModal, setAttendModal] = useState<{ event: ClubEvent; tier: EventTier | null } | null>(null);
   const [ratingPass, setRatingPass] = useState<EventAccessPass | null>(null);
   const [organizerReputation, setOrganizerReputation] = useState<Record<string, OrganizerReputation>>({});
+
+  // Calificación de perfil tras chat, perfil de agencia, SOS y Uber seguro.
+  const [profileRatingTarget, setProfileRatingTarget] = useState<Profile | null>(null);
+  const [organizerProfileOpen, setOrganizerProfileOpen] = useState<{ name: string; uid: string | null } | null>(null);
+  const [uberSafeOpen, setUberSafeOpen] = useState(false);
+  const [safetyTipsOpen, setSafetyTipsOpen] = useState(false);
 
   // Creator earnings: donations credit a wallet keyed by creator handle
   const [donateCreator, setDonateCreator] = useState<Creator | null>(null);
@@ -534,7 +547,7 @@ export default function App() {
     }
   };
 
-  const handleOnboardingComplete = (data: { alias: string; kind: ProfileKind; seeking: string[]; ineFront: string; ineBack: string; selfie: string; docType: 'ine' | 'pasaporte'; age: number; bio: string; ageMin: number; ageMax: number; photo: string }) => {
+  const handleOnboardingComplete = (data: { alias: string; kind: ProfileKind; seeking: string[]; ineFront: string; ineBack: string; selfie: string; docType: 'ine' | 'pasaporte'; age: number; bio: string; ageMin: number; ageMax: number; photo: string; manualReview?: boolean }) => {
     const uid = user?.uid || null;
     // Sensible "busco" defaults per account kind; editable later in Fantasías & Filtros.
     const defaultSeeking: string[] = data.kind === 'Caballero'
@@ -582,6 +595,17 @@ export default function App() {
       })).then(ok => {
         if (ok) showToast(isEs ? 'Identificación resguardada en el archivo legal de la plataforma.' : 'Identification stored in the platform legal archive.');
       });
+    }
+    if (data.manualReview) {
+      void createRemoteTicket(newSupportTicket({
+        userUid: uid,
+        userName: data.alias,
+        userEmail: user?.email || 'sin-correo@local',
+        requester: 'usuario',
+        subject: 'Solicitud de validación manual de identidad',
+        message: 'El usuario no superó la verificación automática de identidad y prueba de vida, y solicita revisión manual por parte de un Administrador.',
+      }));
+      showToast(isEs ? 'Tu verificación se envió a validación manual por un Administrador. Te avisaremos por notificación.' : 'Your verification was sent for manual review by an Administrator.', 'info');
     }
     setActiveTab('perfil');
     showToast(isEs ? `¡Bienvenido a AppSwinguer, ${data.alias}!` : `Welcome to AppSwinguer, ${data.alias}!`);
@@ -1049,6 +1073,74 @@ export default function App() {
     setRatingPass(null);
     void fetchAllEventRatings().then(all => setOrganizerReputation(reputationByOrganizer(all)));
     showToast(isEs ? '¡Gracias por calificar el evento! Tu opinión genera el estatus de la agencia u organizador.' : 'Thanks for rating the event! Your feedback builds the agency/organizer status.', 'success');
+  };
+
+  // ---------- Calificación de perfil tras abandonar un chat (cooldown de 7 días) ----------
+  const handleAbandonChat = (profile: Profile, messageCount: number) => {
+    if (messageCount < 2) return;
+    try {
+      const raw = localStorage.getItem('appswinguer_profile_rated');
+      const seen: Record<string, number> = raw ? JSON.parse(raw) : {};
+      const last = seen[profile.id] || 0;
+      if (Date.now() - last < 7 * 24 * 60 * 60 * 1000) return;
+    } catch { /* registro de cooldown no disponible: permitir calificar */ }
+    setProfileRatingTarget(profile);
+  };
+
+  const handleProfileRated = (rating: ProfileRating) => {
+    void saveProfileRating(rating);
+    try {
+      const raw = localStorage.getItem('appswinguer_profile_rated');
+      const seen: Record<string, number> = raw ? JSON.parse(raw) : {};
+      seen[rating.targetProfileId] = Date.now();
+      localStorage.setItem('appswinguer_profile_rated', JSON.stringify(seen));
+    } catch { /* ignore */ }
+    setProfileRatingTarget(null);
+    showToast(isEs ? '¡Gracias por calificar este perfil! Tu opinión mantiene una comunidad segura y confiable.' : 'Thanks for rating this profile! Your feedback keeps the community safe.', 'success');
+  };
+
+  // ---------- Alerta SOS (6 toques en el chat; ticket con ubicación en tiempo real) ----------
+  const handleSosAlert = (info: { targetName: string; location: string }) => {
+    void createRemoteTicket(newSupportTicket({
+      userUid: user?.uid || null,
+      userName: userProfile.alias,
+      userEmail: user?.email || 'sin-correo@local',
+      requester: 'usuario',
+      subject: 'ALERTA SOS EN VIVO (emergencia)',
+      message: 'La usuaria activó el botón de emergencia SOS (6 toques). Persona involucrada: ' + info.targetName + '. Ubicación en tiempo real: ' + info.location + '. Valorar el reporte inmediato a la policía.',
+    }));
+    showToast(isEs ? 'ALERTA SOS ENVIADA. Compartimos tu ubicación con el Administrador; te recomendamos llamar al 911 de inmediato.' : 'SOS ALERT SENT. Your location was shared with the Administrator; we recommend calling 911 immediately.', 'error');
+  };
+
+  // ---------- Retroalimentación de inasistencia a eventos ----------
+  const handleNoShowFeedback = (pass: EventAccessPass, reason: string, details: string) => {
+    void createRemoteTicket(newSupportTicket({
+      userUid: user?.uid || null,
+      userName: userProfile.alias,
+      userEmail: user?.email || 'sin-correo@local',
+      requester: 'usuario',
+      subject: 'Inasistencia a evento: ' + pass.eventTitle,
+      message: 'Motivo: ' + reason + (details ? '. Detalles: ' + details : '') + '. Pase: ' + pass.code + '. Agencia/Organizador: ' + pass.organizerName + '.',
+    }));
+    showToast(isEs ? 'Gracias. Registramos tu motivo de inasistencia; nos ayuda a mejorar los eventos y proteger a la comunidad.' : 'Thank you. Your no-show reason was registered.', 'info');
+  };
+
+  // ---------- Uber Privado de Seguridad (9 PM a 12 AM; +20% de honorarios + IVA 16%) ----------
+  const handleUberSafeRequest = (origin: string, destination: string, uberFare: number) => {
+    const base = Number(uberFare) || 0;
+    const serviceFee = Math.round(base * 0.2 * 100) / 100;
+    const tax = Math.round((base + serviceFee) * 0.16 * 100) / 100;
+    const total = Math.round((base + serviceFee + tax) * 100) / 100;
+    void createRemoteTicket(newSupportTicket({
+      userUid: user?.uid || null,
+      userName: userProfile.alias,
+      userEmail: user?.email || 'sin-correo@local',
+      requester: 'usuario',
+      subject: 'Solicitud Uber Privado de Seguridad (9 PM - 12 AM)',
+      message: 'Origen: ' + origin + '. Destino: ' + destination + '. Tarifa Uber estimada: $' + base + '. Honorarios (20%): $' + serviceFee + '. IVA (16%): $' + tax + '. Total a cobrar: $' + total + '. Despachar el viaje y coordinar el pago con la usuaria.',
+    }));
+    setUberSafeOpen(false);
+    showToast(isEs ? 'Solicitud enviada al Administrador. Total del servicio (incluye 20% de honorarios e IVA 16%): $' + total : 'Request sent to the Administrator. Service total: $' + total, 'info');
   };
 
   const handleCancelReservation = (reservationId: string) => {
@@ -1714,6 +1806,8 @@ export default function App() {
               onCancelReservation={handleCancelReservation}
               onRatePass={handleRatePass}
               onOpenOrganizerPanel={() => setOrganizerModalOpen(true)}
+              onOpenOrganizerProfile={(name, uid) => setOrganizerProfileOpen({ name, uid })}
+              onNoShowFeedback={handleNoShowFeedback}
               onAgencyPromoRequest={(data) => {
                 showToast(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
               }}
@@ -1892,6 +1986,10 @@ export default function App() {
                     }
                   }}
                   onBackToApp={() => setChatDrawerOpen(false)}
+                  onAbandonChat={handleAbandonChat}
+                  onSosAlert={handleSosAlert}
+                  onRequestUberSafe={() => setUberSafeOpen(true)}
+                  isDama={userProfile.kind === 'Dama'}
                 />
               </div>
             </div>
@@ -1988,6 +2086,7 @@ export default function App() {
           currentUserName={userProfile.alias}
           isEs={isEs}
           onClose={() => setMatchModalProfile(null)}
+          onOpenSafetyTips={() => setSafetyTipsOpen(true)}
           onStartChat={handleStartChatFromMatch}
         />
 
@@ -2087,6 +2186,48 @@ export default function App() {
           userUid={user?.uid || null}
           userName={userProfile.alias}
           onRated={handleRated}
+        />
+
+        {/* MODAL 13: CALIFICACIÓN DE PERFIL TRAS ABANDONAR UN CHAT (5 estrellas +
+            tipo de encuentro; construye la reputación de cada perfil con cooldown de 7 días) */}
+        <ProfileRatingModal
+          isOpen={!!profileRatingTarget}
+          onClose={() => setProfileRatingTarget(null)}
+          isEs={isEs}
+          target={profileRatingTarget}
+          raterUid={user?.uid || null}
+          raterName={userProfile.alias}
+          onPublished={handleProfileRated}
+        />
+
+        {/* MODAL 14: PERFIL PÚBLICO DE AGENCIA/ORGANIZADOR (calificación, número de
+            eventos publicados y comentarios de asistentes; sin mensajería directa) */}
+        {organizerProfileOpen && (
+          <OrganizerProfileModal
+            isOpen={true}
+            onClose={() => setOrganizerProfileOpen(null)}
+            isEs={isEs}
+            organizerName={organizerProfileOpen.name}
+            organizerUid={organizerProfileOpen.uid}
+            events={events.filter(e => e.published)}
+          />
+        )}
+
+        {/* MODAL 15: UBER PRIVADO DE SEGURIDAD (9 PM a 12 AM; +20% honorarios + IVA) */}
+        <UberSafeModal
+          isOpen={uberSafeOpen}
+          onClose={() => setUberSafeOpen(false)}
+          isEs={isEs}
+          onRequest={handleUberSafeRequest}
+        />
+
+        {/* MODAL 16: CONSEJOS DE SEGURIDAD E HIGIENE (lugar público, protección,
+            avisar a un contacto de confianza) */}
+        <SafetyTipsModal
+          isOpen={safetyTipsOpen}
+          onClose={() => setSafetyTipsOpen(false)}
+          isEs={isEs}
+          onRequestUberSafe={() => setUberSafeOpen(true)}
         />
 
         {/* GLOBAL IN-APP TOASTS (replaces native alert dialogs) */}

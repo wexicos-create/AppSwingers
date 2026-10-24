@@ -10,6 +10,8 @@ import {
   HeartHandshake,
   CheckCircle2,
   AlertTriangle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { IdentityFlow, IdentityFlowResult } from './IdentityFlow';
 import { ProfileCompletion, ProfileCompletionData } from './ProfileCompletion';
@@ -29,6 +31,7 @@ export interface OnboardingResult {
   ageMin: number;
   ageMax: number;
   photo: string;
+  manualReview?: boolean;
 }
 
 interface OnboardingWizardProps {
@@ -60,18 +63,19 @@ const authErrorText = (code: string, isEs: boolean): string => {
   return pair ? (isEs ? pair[0] : pair[1]) : (isEs ? 'No se pudo completar la operación. Inténtalo de nuevo.' : 'Could not complete the operation. Please try again.');
 };
 
-// Shared interest-tag builder (Sugar adapts to the account kind).
+// Shared interest-tag builder, organized per account kind (man / woman / couple).
 export function buildSeekingOptions(kind: ProfileKind | null, isEs: boolean): string[] {
-  const sugar = kind === 'Caballero' ? 'Sugar Daddy' : kind === 'Dama' ? 'Sugar Baby' : 'Sugar';
-  return [
-    isEs ? 'Encuentros casuales' : 'Casual encounters',
-    isEs ? 'Encuentros informales' : 'Informal encounters',
-    isEs ? 'Tríos' : 'Threesomes',
-    'Hotwife',
-    'GangBang',
-    'Swingers',
-    sugar,
-  ];
+  const trios = isEs ? 'Tríos' : 'Threesomes';
+  if (kind === 'Caballero') {
+    return ['Full Swap', trios, 'GangBang', 'Hotwife', 'Sugar Daddy', 'Sugar Mommy'];
+  }
+  if (kind === 'Dama') {
+    return ['Full Swap', trios, 'GangBang', 'Hotwife', 'Sugar Daddy', 'Sugar Baby'];
+  }
+  if (kind === 'Pareja') {
+    return ['Full Swap', 'Soft Swap', trios, 'GangBang', 'Swingers', 'Sugar'];
+  }
+  return ['Full Swap', trios, 'GangBang', 'Hotwife', 'Swingers'];
 }
 
 export function OnboardingWizard({
@@ -92,6 +96,7 @@ export function OnboardingWizard({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   // Step 2: three profile questions
   const [alias, setAlias] = useState('');
@@ -107,16 +112,7 @@ export function OnboardingWizard({
 
   const isRegister = mode !== 'login';
   const stepIndex = STEP_ORDER.indexOf(step);
-  const sugarLabel = kind === 'Caballero' ? 'Sugar Daddy' : kind === 'Dama' ? 'Sugar Baby' : 'Sugar';
-  const seekingOptions = [
-    isEs ? 'Encuentros casuales' : 'Casual encounters',
-    isEs ? 'Encuentros informales' : 'Informal encounters',
-    isEs ? 'Tríos' : 'Threesomes',
-    'Hotwife',
-    'GangBang',
-    'Swingers',
-    sugarLabel,
-  ];
+  const seekingOptions = buildSeekingOptions(kind, isEs);
 
   // ---------- Step navigation ----------
   const handleAccountSubmit = async (e: React.FormEvent) => {
@@ -186,6 +182,7 @@ export function OnboardingWizard({
       ageMin: p.ageMin,
       ageMax: p.ageMax,
       photo: p.photo,
+      manualReview: idResult.manualReview,
     });
   };
 
@@ -275,24 +272,44 @@ export function OnboardingWizard({
               </div>
               <div>
                 <label className="text-[11px] text-white/70 font-bold block mb-1">{isEs ? 'Contraseña' : 'Password'}</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-2xl bg-black/60 border border-purple-500/30 text-white text-sm focus:outline-none focus:border-pink-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-4 py-3 pr-12 rounded-2xl bg-black/60 border border-purple-500/30 text-white text-sm focus:outline-none focus:border-pink-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPw(v => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl text-white/50 hover:text-white transition"
+                    aria-label={showPw ? (isEs ? 'Ocultar contraseña' : 'Hide password') : (isEs ? 'Mostrar contraseña' : 'Show password')}
+                  >
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
               {isRegister && (
                 <div>
                   <label className="text-[11px] text-white/70 font-bold block mb-1">{isEs ? 'Confirmar contraseña' : 'Confirm password'}</label>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-4 py-3 rounded-2xl bg-black/60 border border-purple-500/30 text-white text-sm focus:outline-none focus:border-pink-500"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full px-4 py-3 pr-12 rounded-2xl bg-black/60 border border-purple-500/30 text-white text-sm focus:outline-none focus:border-pink-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw(v => !v)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-xl text-white/50 hover:text-white transition"
+                      aria-label={showPw ? (isEs ? 'Ocultar contraseña' : 'Hide password') : (isEs ? 'Mostrar contraseña' : 'Show password')}
+                    >
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -364,7 +381,12 @@ export function OnboardingWizard({
                       <button
                         key={opt.k}
                         type="button"
-                        onClick={() => { setKind(opt.k); setPerfilWarning(null); }}
+                        onClick={() => {
+                          setKind(opt.k);
+                          setPerfilWarning(null);
+                          // Keep only tags that exist for the newly selected kind.
+                          setSeeking(prev => prev.filter(s => buildSeekingOptions(opt.k, isEs).includes(s)));
+                        }}
                         className={
                           'py-3.5 rounded-2xl border text-[11px] font-extrabold flex flex-col items-center gap-1.5 transition active:scale-95 ' +
                           (active
