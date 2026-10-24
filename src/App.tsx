@@ -1526,3 +1526,595 @@ export default function App() {
         )}
 
         {/* System Announcement Banner - Ultra-Compact */}
+        {activeAnnouncement && (
+          <div className="mx-2 mt-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-purple-950/90 via-pink-950/80 to-purple-950/90 border border-pink-500/40 text-[10px] shadow-sm flex items-center justify-between gap-2 shrink-0 z-30">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Sparkles className="w-3 h-3 text-pink-400 shrink-0 animate-pulse" />
+              <div className="truncate">
+                <span className="text-white font-bold mr-1.5">{activeAnnouncement.title}</span>
+                <span className="text-purple-200/80 hidden sm:inline">{activeAnnouncement.body}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveAnnouncement(null)}
+              className="text-white/60 hover:text-white p-0.5 shrink-0"
+              aria-label="Cerrar anuncio"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Tab Content Display */}
+        <main className={`flex-1 flex flex-col relative min-h-0 ${activeTab === 'match' ? 'overflow-hidden' : 'overflow-y-auto overscroll-y-contain'}`}>
+          
+          {/* TAB 1: MATCH / DISCOVER DECK */}
+          {activeTab === 'match' && (
+            <div className="flex-1 flex flex-col justify-between px-3 pt-1 pb-[62px] h-full min-h-0 select-none overflow-hidden">
+              
+              {/* Distance adjustment & Extras bar */}
+              <div className="flex items-center justify-between py-1 px-1 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-purple-200/90 font-medium flex items-center gap-1">
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-pink-400" />
+                    <span>{isEs ? 'Radio:' : 'Radius:'} <strong className="text-white">{maxDistance} km</strong></span>
+                  </span>
+
+                  {/* Radius recommendation based on the granted GPS location */}
+                  {locationGranted && maxDistance > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const suggested = recommendRadiusKm();
+                        setMaxDistance(suggested);
+                        setUserProfile(prev => ({ ...prev, maxKm: suggested }));
+                        showToast(isEs
+                          ? `Con tu ubicación te recomendamos un radio de ${suggested} km: perfiles cercanos y mayor seguridad.`
+                          : `Based on your location we recommend a ${suggested} km radius: nearby profiles and higher safety.`);
+                      }}
+                      className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-[9px] font-bold text-emerald-300 flex items-center gap-1 active:scale-95 transition"
+                    >
+                      <MapPinIcon className="w-2.5 h-2.5" />
+                      {isEs ? `Sugerido: ${recommendRadiusKm()} km` : `Suggested: ${recommendRadiusKm()} km`}
+                    </button>
+                  )}
+
+                  {/* Premium state-search pass entry (travelers & tourists) */}
+                  <button
+                    onClick={() => setPremiumSearchOpen(true)}
+                    className="px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/25 to-pink-500/25 hover:from-amber-500/40 hover:to-pink-500/40 border border-amber-400/50 text-[10px] font-bold text-amber-200 flex items-center gap-1 active:scale-95 transition shadow-sm"
+                    title={isEs ? 'Búsqueda por estado para viajeros (pase premium de 24 horas)' : 'State search for travelers (24-hour premium pass)'}
+                  >
+                    <CrownIcon className="w-3 h-3 text-amber-300" />
+                    <span>
+                      {statePass
+                        ? `${statePass.stateName} · ${Math.max(0, Math.ceil((statePass.expiresAt - Date.now()) / 3600000))} h`
+                        : (isEs ? 'Búsqueda por estado' : 'Search by state')}
+                    </span>
+                  </button>
+
+                  {/* Extras Modal button safely placed here */}
+                  <button
+                    onClick={() => setExtrasModalOpen(true)}
+                    className="px-2 py-0.5 rounded-full bg-purple-900/60 hover:bg-purple-800 border border-purple-400/40 text-[10px] font-bold text-pink-300 flex items-center gap-1 active:scale-95 transition shadow-sm"
+                    title="Ver Extras y Beneficios VIP"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-300" />
+                    <span>＋ Extras VIP</span>
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setRegistrationModalOpen(true)}
+                  className="text-[11px] text-pink-400 font-bold hover:underline flex items-center gap-1"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>{isEs ? 'Fantasías & Filtros' : 'Fantasies & Filters'}</span>
+                </button>
+              </div>
+
+              {/* Card Deck Viewport - Flexible adapting to screen height with 100% visible buttons */}
+              <div className="relative w-full flex-1 min-h-0 my-0.5 overflow-hidden">
+                {currentProfile ? (
+                  <>
+                    {currentIndex + 1 < visibleProfiles.length && (
+                      <SwipeCard
+                        key={visibleProfiles[currentIndex + 1].id}
+                        profile={visibleProfiles[currentIndex + 1]}
+                        isFront={false}
+                        onSwipe={() => {}}
+                        onOpenDetails={() => {}}
+                      />
+                    )}
+
+                    <SwipeCard
+                      key={currentProfile.id}
+                      profile={currentProfile}
+                      isFront={true}
+                      onSwipe={handleSwipe}
+                      onOpenDetails={(p) => setDetailsProfile(p)}
+                    />
+                  </>
+                ) : (
+                  <div className="absolute inset-0 rounded-[28px] bg-neutral-900/80 border border-purple-500/25 p-5 flex flex-col items-center justify-center text-center shadow-xl backdrop-blur-md">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-purple-600/30 to-pink-600/30 border border-purple-500/40 flex items-center justify-center mb-2.5">
+                      <Sparkles className="w-7 h-7 text-pink-400 animate-pulse" />
+                    </div>
+                    <h3 className="text-base font-bold text-white mb-1">
+                      {isEs ? 'Has visto todos los perfiles en este radio' : 'No more profiles in this radius'}
+                    </h3>
+                    <p className="text-[11px] text-purple-200/70 max-w-xs mb-3 leading-relaxed">
+                      {isEs 
+                        ? `Ajusta tu radio de ${maxDistance} km o explora las propuestas y eventos privados en tu región.` 
+                        : `Expand your ${maxDistance} km radius or explore private parties.`}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleResetDeck}
+                        className="py-2 px-3.5 rounded-2xl bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center gap-1.5 hover:brightness-110 active:scale-95 transition"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        {isEs ? 'Revisar de nuevo' : 'Review again'}
+                      </button>
+                      <button
+                        onClick={() => setRegistrationModalOpen(true)}
+                        className="py-2 px-3.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition"
+                      >
+                        {isEs ? 'Aumentar KM' : 'Expand KM'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons: 100% Visible, Guaranteed Unclipped above bottom nav */}
+              <div className="shrink-0 pt-0.5 pb-1 z-30">
+                <ActionButtons
+                  onSwipe={handleSwipe}
+                  onRewind={handleRewind}
+                  canRewind={swipedHistory.length > 0 && currentIndex > 0}
+                  onQuickMessage={() => {
+                    if (currentProfile) {
+                      setDetailsProfile(currentProfile);
+                    }
+                  }}
+                  disabled={!currentProfile}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: PROPUESTAS */}
+          {activeTab === 'propuestas' && (
+            <ProposalsView
+              proposals={proposals}
+              appliedIds={appliedProposalIds}
+              savedIds={savedProposalIds}
+              onApply={handleApplyProposal}
+              onToggleSave={handleToggleSaveProposal}
+              onCreateProposal={handleCreateProposal}
+              onOpenReport={(target) => showToast(isEs ? `Reporte recibido para "${target.name}".` : `Report registered.`, 'info')}
+              subscriptionTier={subscriptionTier}
+              weeklyApplicationsUsed={getWeeklyApplicationsCount()}
+              weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
+              onUpgradePlan={() => setExtrasModalOpen(true)}
+              isEs={isEs}
+            />
+          )}
+
+          {/* TAB 3: EVENTOS */}
+          {activeTab === 'eventos' && (
+            <EventsView
+              events={events.filter(e => e.published)}
+              reservations={reservations}
+              passes={eventPasses}
+              reputation={organizerReputation}
+              onReserve={handleReserveEvent}
+              onAttend={handleAttendEvent}
+              onCancelReservation={handleCancelReservation}
+              onRatePass={handleRatePass}
+              onOpenOrganizerPanel={() => setOrganizerModalOpen(true)}
+              onAgencyPromoRequest={(data) => {
+                showToast(isEs ? `Solicitud recibida para la agencia "${data.agency}". Nos pondremos en contacto con las tarifas.` : `Request submitted.`);
+              }}
+            />
+          )}
+
+          {/* TAB 4: VIRTUAL & CREADORAS */}
+          {activeTab === 'virtual' && (
+            <VirtualView
+              creators={creators}
+              lives={lives}
+              userCreator={userCreator}
+              subscribedIds={subscribedCreatorHandles}
+              liveAccessIds={liveAccessIds}
+              region={region}
+              lang={lang}
+              walletTransactions={mergeById(walletTransactions, creatorWallet)}
+              onSubscribe={handleSubscribeCreator}
+              onBuyLiveAccess={handleBuyLiveAccess}
+              onDonate={handleDonate}
+              onRegisterCreator={(c) => {
+                setUserCreator(c);
+                setCreators(prev => [c, ...prev]);
+                showToast(isEs ? "¡Perfil de creadora registrado! Ya puedes fijar precios y subir sets exclusivos." : "Creator profile registered!");
+              }}
+              onUploadMedia={(data) => {
+                showToast(isEs ? `Contenido "${data.caption}" enviado a moderación.` : `Content submitted to moderation.`);
+              }}
+              onRequestWithdrawal={handleCreatorWithdrawal}
+            />
+          )}
+
+          {/* TAB 5: COMUNIDAD */}
+          {activeTab === 'comunidad' && (
+            <CommunityView
+              region={region}
+              isEs={isEs}
+            />
+          )}
+
+          {/* TAB 6: PERFIL & CLUB */}
+          {activeTab === 'perfil' && (
+            <ProfileView
+              user={user}
+              onSignIn={handleGoogleSignIn}
+              onSignOut={handleSignOut}
+              stats={{
+                swipesCount: swipedHistory.length,
+                matchesCount: matches.length,
+                likesCount: swipedHistory.filter(h => h.action === 'like' || h.action === 'superlike').length,
+              }}
+              attendStamps={attendStamps}
+              redeemedClubFolio={redeemedClubFolio}
+              onRedeemClubReward={handleRedeemClubReward}
+              maxDistance={maxDistance}
+              onChangeMaxDistance={(val) => {
+                setMaxDistance(val);
+                setUserProfile(prev => ({ ...prev, maxKm: val }));
+              }}
+              isFirestoreConnected={isFirestoreConnected}
+              onOpenAdmin={() => setAdminModalOpen(true)}
+              onOpenLegal={() => setLegalModalOpen(true)}
+              onExportData={handleExportData}
+              onWipeData={handleWipeData}
+              currentTier={subscriptionTier}
+              onSelectTier={handleRequestPlanPayment}
+              weeklyApplicationsUsed={getWeeklyApplicationsCount()}
+              weeklyApplicationsLimit={getWeeklyLimit(subscriptionTier)}
+              region={region}
+              isEs={isEs}
+              onOpenExtrasModal={() => setExtrasModalOpen(true)}
+              matches={matches}
+              identityApproved={identityStatus === 'aprobada'}
+            />
+          )}
+        </main>
+
+        {/* Bottom Navigation Bar */}
+        <nav className="fixed bottom-0 inset-x-0 max-w-[430px] mx-auto z-40 px-3 py-2 bg-[#08050c]/90 backdrop-blur-2xl border-t border-purple-500/20 flex items-center justify-around shadow-2xl">
+          <button
+            onClick={() => setActiveTab('match')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'match' ? 'text-pink-500 scale-105' : 'text-neutral-500 hover:text-white'
+            }`}
+            aria-label="Descubrir"
+          >
+            <Flame className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">{dict.tabMatch}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('propuestas')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'propuestas' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
+            }`}
+            aria-label="Propuestas"
+          >
+            <Megaphone className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">{dict.tabProposals}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('eventos')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'eventos' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
+            }`}
+            aria-label="Eventos"
+          >
+            <CalendarDays className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">{dict.tabEvents}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('virtual')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'virtual' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
+            }`}
+            aria-label="Virtual"
+          >
+            <Radio className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">{dict.tabVirtual}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('comunidad')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'comunidad' ? 'text-purple-400 scale-105' : 'text-neutral-500 hover:text-white'
+            }`}
+            aria-label="Comunidad"
+          >
+            <BookOpen className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">{dict.tabCommunity}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('perfil')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'perfil' ? 'text-pink-500 scale-105' : 'text-neutral-500 hover:text-white'
+            }`}
+            aria-label="Perfil"
+          >
+            <UserIcon className="w-5 h-5 stroke-[2.2]" />
+            <span className="text-[10px] font-bold">{dict.tabProfile}</span>
+          </button>
+        </nav>
+
+        {/* DRAWER: CHAT & MENSAJES (WITH PAPERCLIP 📎, MIC 🎙, AND BLOCK/REPORT) */}
+        {chatDrawerOpen && (
+          <div className="fixed inset-0 z-50 flex justify-center bg-black/85 backdrop-blur-xl">
+            <div className="w-full max-w-[430px] h-full bg-[#090414] flex flex-col relative">
+              <div className="p-3 border-b border-purple-500/20 flex items-center justify-between bg-neutral-950/80">
+                <span className="text-xs font-bold uppercase tracking-wider text-purple-300">
+                  {dict.inboxTitle}
+                </span>
+                <button
+                  onClick={() => {
+                    setChatDrawerOpen(false);
+                    setActiveChatUserId(null);
+                  }}
+                  className="p-1.5 rounded-full hover:bg-white/10 text-white/80"
+                  aria-label="Cerrar chat"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <ChatView
+                  matches={matches}
+                  initialChatUserId={activeChatUserId}
+                  onOpenProfile={(p) => setDetailsProfile(p)}
+                  onOpenReport={(t) => showToast(isEs ? `Reporte registrado para ${t.name}.` : `Report received.`, 'info')}
+                  onBlockUser={(id) => {
+                    setMatches(prev => prev.filter(m => m.profile.id !== id));
+                    if (activeChatUserId === id) {
+                      setActiveChatUserId(null);
+                    }
+                  }}
+                  onBackToApp={() => setChatDrawerOpen(false)}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL 1: REGISTRATION & SEXUAL TASTES / FANTASIES */}
+        <RegistrationModal
+          isOpen={registrationModalOpen}
+          onClose={() => setRegistrationModalOpen(false)}
+          lang={lang}
+          region={region}
+          initialData={userProfile}
+          onSave={(data) => {
+            setUserProfile({
+              alias: data.alias,
+              kind: data.kind,
+              bio: data.bio,
+              interests: data.interests,
+              seeking: data.seeking,
+              ages: data.ages,
+              maxKm: data.maxKm,
+              locationCity: data.locationCity || (region === 'MX' ? 'San Luis Potosí, SLP' : 'United States'),
+            });
+            setMaxDistance(data.maxKm);
+            showToast(isEs ? `¡Perfil actualizado para ${data.alias} (${data.kind})!` : `Profile updated!`);
+          }}
+          onRequestLocation={() => requestLocationAccess(true)}
+          locationGranted={locationGranted}
+        />
+
+        {/* MODAL 2: MONETIZATION EXTRAS (from script!) */}
+        <MonetizationExtrasModal
+          isOpen={extrasModalOpen}
+          onClose={() => setExtrasModalOpen(false)}
+          region={region}
+          isEs={isEs}
+          currentTier={subscriptionTier}
+          onSelectTier={handleRequestPlanPayment}
+        />
+
+        {/* MODAL 2B: SPEI CHECKOUT (instructions + transfer confirmation) */}
+        <SpeiModal
+          isOpen={speiModalOpen}
+          onClose={() => {
+            setSpeiModalOpen(false);
+            setActiveSpeiOrder(null);
+          }}
+          order={activeSpeiOrder}
+          region={region}
+          isEs={isEs}
+          onTransferSent={handleSpeiTransferSent}
+        />
+
+        {/* MODAL 2C: ORGANIZER PANEL (expediente documental, publicación de eventos y cartera virtual) */}
+        <OrganizerModal
+          isOpen={organizerModalOpen}
+          onClose={() => setOrganizerModalOpen(false)}
+          isEs={isEs}
+          region={region}
+          userEmail={user?.email || 'sin-correo@local'}
+          userName={userProfile.alias}
+          userUid={user?.uid || null}
+          application={organizerApplication}
+          benefit={organizerBenefitState(organizerApplication)}
+          eventFee={getEventPublishFee(region)}
+          ownEvents={organizerApplication ? events.filter(e => e.organizer === organizerApplication.legalName) : []}
+          wallet={walletTransactions}
+          withdrawals={withdrawals}
+          onSubmitApplication={handleSubmitOrganizerApplication}
+          onPublishEvent={handlePublishOrganizerEvent}
+          onRequestWithdrawal={handleRequestWithdrawal}
+          onWalletCredit={handleOrganizerWalletCredit}
+        />
+
+        {/* MODAL 3: SWINGER / GANGBANG COLLABORATION PROPOSAL */}
+        <CollaborationModal
+          isOpen={collaborationModalOpen}
+          onClose={() => setCollaborationModalOpen(false)}
+          userKind={userProfile.kind}
+          userName={userProfile.alias}
+          region={region}
+          onSwitchProfileKind={(kind) => {
+            setUserProfile(prev => ({ ...prev, kind }));
+          }}
+          onSubmitProposal={handleSubmitCollaboration}
+        />
+
+        {/* MODAL 4: CELEBRATORY MATCH MODAL (DIRECT CHAT BUTTON) */}
+        <MatchModal
+          isOpen={!!matchModalProfile}
+          matchProfile={matchModalProfile}
+          currentUserPhoto={user?.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=400&q=80'}
+          currentUserName={userProfile.alias}
+          isEs={isEs}
+          onClose={() => setMatchModalProfile(null)}
+          onStartChat={handleStartChatFromMatch}
+        />
+
+        {/* MODAL 5: COMPLETE PROFILE DETAILS */}
+        <ProfileDetailsModal
+          profile={detailsProfile}
+          lang={lang}
+          onClose={() => setDetailsProfile(null)}
+          onSwipe={(action) => {
+            setDetailsProfile(null);
+            handleSwipe(action);
+          }}
+        />
+
+        {/* MODAL 6: ADMIN PANEL */}
+        {adminModalOpen && (
+          <AdminModal
+            isOpen={adminModalOpen}
+            onClose={() => setAdminModalOpen(false)}
+            isEs={isEs}
+          />
+        )}
+
+        {/* MODAL 7: LEGAL RULES & CONSENT */}
+        {legalModalOpen && (
+          <LegalModal
+            isOpen={legalModalOpen}
+            onClose={() => setLegalModalOpen(false)}
+            initialTopic={legalTopic}
+          />
+        )}
+
+        {/* MODAL 8: PUSH NOTIFICATION LOOKUP & SYSTEM */}
+        <PushLookupModal
+          isOpen={pushLookupOpen}
+          onClose={() => setPushLookupOpen(false)}
+          region={region}
+          isEs={isEs}
+          onSendTestNotification={(title, body) => {
+            setPushToast({ title, body });
+            setTimeout(() => setPushToast(null), 5500);
+          }}
+        />
+
+        {/* MODAL 9: PREMIUM STATE SEARCH (travelers & tourists, 24-hour SPEI pass) */}
+        <PremiumStateSearch
+          isOpen={premiumSearchOpen}
+          onClose={() => setPremiumSearchOpen(false)}
+          isEs={isEs}
+          region={region}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          userEmail={user?.email || 'sin-correo@local'}
+          profiles={profiles}
+          events={events}
+          onConnect={(p) => { void handleStatePassConnect(p); }}
+          onPassChange={(p) => setStatePass(p)}
+        />
+
+        {/* MODAL 10: EVENT ATTENDANCE DEPOSIT (paid events: one SPEI payment
+            per user, VIP pass issued by the admin, same-day location release) */}
+        <EventAttendModal
+          isOpen={!!attendModal}
+          onClose={() => setAttendModal(null)}
+          isEs={isEs}
+          region={region}
+          event={attendModal?.event || null}
+          tier={attendModal?.tier || null}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          userEmail={user?.email || 'sin-correo@local'}
+          passes={eventPasses}
+          onPassChange={(list) => setEventPasses(list)}
+        />
+
+        {/* MODAL 11: DONATION TO CREATOR (user pays IVA + amount; the creator
+            sees which profile donated; credited to her virtual card) */}
+        <DonateModal
+          isOpen={!!donateCreator}
+          onClose={() => setDonateCreator(null)}
+          isEs={isEs}
+          region={region}
+          creator={donateCreator}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          userProfileName={userProfile.alias}
+          userEmail={user?.email || 'sin-correo@local'}
+        />
+
+        {/* MODAL 12: POST-EVENT RATING (5 stars + comment; builds the agency
+            reputation and raises admin alerts on bad references) */}
+        <EventRatingModal
+          isOpen={!!ratingPass}
+          onClose={() => setRatingPass(null)}
+          isEs={isEs}
+          pass={ratingPass}
+          userUid={user?.uid || null}
+          userName={userProfile.alias}
+          onRated={handleRated}
+        />
+
+        {/* GLOBAL IN-APP TOASTS (replaces native alert dialogs) */}
+        <ToastHost />
+
+        {/* IN-APP FLOATING PUSH NOTIFICATION TOAST */}
+        {pushToast && (
+          <div className="fixed top-4 inset-x-4 max-w-sm mx-auto z-[9999] p-3.5 rounded-2xl bg-[#17092c]/95 border border-pink-500/60 shadow-[0_0_35px_rgba(255,45,120,0.5)] backdrop-blur-2xl text-white flex items-start gap-3 animate-in slide-in-from-top-4 duration-300">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-pink-500 to-purple-600 flex items-center justify-center shrink-0 text-white shadow-md">
+              <Bell className="w-5 h-5 fill-white/20 animate-bounce" />
+            </div>
+            <div className="flex-1 min-w-0 pr-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-pink-300 block">
+                {region === 'MX' ? 'Notificación Push México (SLP)' : 'Push Notification USA'}
+              </span>
+              <h4 className="font-bold text-xs text-white truncate mt-0.5">{pushToast.title}</h4>
+              <p className="text-[11px] text-purple-200/90 leading-tight mt-0.5">{pushToast.body}</p>
+            </div>
+            <button
+              onClick={() => setPushToast(null)}
+              className="p-1 rounded-full text-white/50 hover:text-white"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+}
