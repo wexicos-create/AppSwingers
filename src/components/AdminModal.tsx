@@ -88,9 +88,13 @@ interface AdminModalProps {
   isOpen: boolean;
   onClose: () => void;
   isEs: boolean;
+  // Correo con sesión iniciada de una cuenta administradora autorizada
+  // (jocervantesa@gmail.com / betylanz0613@gmail.com): acceso directo al panel.
+  // Cualquier otra cuenta ve el panel bloqueado de forma exclusiva.
+  signedInAdminEmail?: string | null;
 }
 
-export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
+export function AdminModal({ isOpen, onClose, isEs, signedInAdminEmail = null }: AdminModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pin, setPin] = useState('');
@@ -109,6 +113,14 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
   const [isChangingCreds, setIsChangingCreds] = useState(false);
   const [newPass, setNewPass] = useState('');
   const [newPin, setNewPin] = useState('');
+
+  // Cuenta administradora autorizada con sesión iniciada: entra directo al panel.
+  useEffect(() => {
+    if (isOpen && signedInAdminEmail) {
+      setIsLoggedIn(true);
+      setError(null);
+    }
+  }, [isOpen, signedInAdminEmail]);
 
   // Active admin tab: 'monetizacion' | 'push' | 'seguridad' | 'spei' | 'eventos' | 'organizadores'
   const [activeAdminTab, setActiveAdminTab] = useState<'monetizacion' | 'push' | 'seguridad' | 'spei' | 'eventos' | 'organizadores'>('monetizacion');
@@ -782,6 +794,13 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
         </div>
 
         {!isLoggedIn ? (
+          !signedInAdminEmail ? (
+            <div className="p-4 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs font-semibold text-center leading-relaxed">
+              {isEs
+                ? 'Panel exclusivo de las cuentas administradoras autorizadas. Inicia sesión con tu cuenta de administrador para administrar la plataforma.'
+                : 'Exclusive panel for the authorized administrator accounts. Sign in with your administrator account to manage the platform.'}
+            </div>
+          ) : (
           <form onSubmit={isAdminConfigured ? handleLogin : handleFirstSetup} className="flex flex-col gap-3.5">
             {!isAdminConfigured && (
               <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-semibold text-center">
@@ -843,6 +862,7 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
               {isAdminConfigured ? (isEs ? 'Verificar e Ingresar al Sistema' : 'Verify & Enter System') : (isEs ? 'Configurar y Entrar' : 'Configure & Enter')}
             </button>
           </form>
+          )
         ) : (
           <div className="flex flex-col gap-4">
             
@@ -852,15 +872,17 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
                 <ShieldCheck className="w-6 h-6 text-emerald-400 shrink-0" />
                 <div>
                   <h4 className="font-bold text-white text-xs">{isEs ? 'Sesión Autorizada (Root Admin)' : 'Authorized Session'}</h4>
-                  <p className="text-[10px] text-emerald-200">{storedEmail}</p>
+                  <p className="text-[10px] text-emerald-200">{signedInAdminEmail || storedEmail}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setIsLoggedIn(false)}
-                className="px-2.5 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 text-[11px] font-bold border border-rose-500/30 transition"
-              >
-                {isEs ? 'Salir' : 'Logout'}
-              </button>
+              {!signedInAdminEmail && (
+                <button
+                  onClick={() => setIsLoggedIn(false)}
+                  className="px-2.5 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 text-[11px] font-bold border border-rose-500/30 transition"
+                >
+                  {isEs ? 'Salir' : 'Logout'}
+                </button>
+              )}
             </div>
 
             {/* Navigation Tabs */}
@@ -1613,3 +1635,4 @@ export function AdminModal({ isOpen, onClose, isEs }: AdminModalProps) {
     </div>
   );
 }
+

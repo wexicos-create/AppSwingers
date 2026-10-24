@@ -155,6 +155,13 @@ import {
   Crown as CrownIcon
 } from 'lucide-react';
 
+// ---------- Cuentas administradoras autorizadas (exclusivamente estas dos) ----------
+// Inician sesión y entran directo a la app: sin embudo de nombres y sin
+// verificación INE, y acceden al Panel Admin sin credenciales locales.
+const ADMIN_EMAILS = ['jocervantesa@gmail.com', 'betylanz0613@gmail.com'];
+const isAdminEmail = (email?: string | null): boolean =>
+  Boolean(email && ADMIN_EMAILS.includes(email.trim().toLowerCase()));
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isFirestoreConnected, setIsFirestoreConnected] = useState(false);
@@ -422,6 +429,13 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
+        // Cuentas administradoras: entrada directa sin nombres ni INE.
+        if (isAdminEmail(currentUser.email)) {
+          setOnboardingMode(null);
+          setUserProfile(prev => prev.alias === 'Pareja Fuego'
+            ? { ...prev, alias: 'Administrador', kind: 'Individual', bio: 'Cuenta administradora de la plataforma AppSwinguer.' }
+            : prev);
+        }
         try {
           await syncUserProfile(currentUser);
           const remoteMatches = await fetchUserMatches(currentUser.uid);
@@ -440,11 +454,14 @@ export default function App() {
           console.warn('Firebase user sync note:', e);
         }
         // Cross-device funnel state: a user without a completed onboarding profile must finish the wizard.
-        const storedOnboarding = await fetchOnboardingProfile(currentUser.uid);
-        if (storedOnboarding) {
-          setOnboardingMode(null);
-        } else {
-          setOnboardingMode(prev => (prev === 'register' || prev === 'login') ? prev : 'resume');
+        // (Las cuentas administradoras ya entraron directo y nunca reabren el embudo.)
+        if (!isAdminEmail(currentUser.email)) {
+          const storedOnboarding = await fetchOnboardingProfile(currentUser.uid);
+          if (storedOnboarding) {
+            setOnboardingMode(null);
+          } else {
+            setOnboardingMode(prev => (prev === 'register' || prev === 'login') ? prev : 'resume');
+          }
         }
         // Identity verdict, platform notifications and premium state pass.
         const [status, notes, pass] = await Promise.all([
@@ -1447,7 +1464,7 @@ export default function App() {
   // Reject: the owner is notified that we could not validate who they claim to
   // be and deletes account + credentials here. Ban: credentials stay retained
   // for one year (legal window) and the account remains blocked.
-  if (user && (identityStatus === 'rechazada' || identityStatus === 'baneada')) {
+  if (user && !isAdminEmail(user.email) && (identityStatus === 'rechazada' || identityStatus === 'baneada')) {
     return (
       <div className="min-h-screen bg-[#050307] text-[#f5eeff]">
         <IdentityGate
@@ -1880,7 +1897,8 @@ export default function App() {
               isEs={isEs}
               onOpenExtrasModal={() => setExtrasModalOpen(true)}
               matches={matches}
-              identityApproved={identityStatus === 'aprobada'}
+              adminUser={isAdminEmail(user?.email)}
+              identityApproved={isAdminEmail(user?.email) || identityStatus === 'aprobada'}
             />
           )}
         </main>
@@ -2107,6 +2125,7 @@ export default function App() {
             isOpen={adminModalOpen}
             onClose={() => setAdminModalOpen(false)}
             isEs={isEs}
+            signedInAdminEmail={isAdminEmail(user?.email) ? (user?.email || null) : null}
           />
         )}
 
@@ -2259,3 +2278,4 @@ export default function App() {
     </div>
   );
 }
+

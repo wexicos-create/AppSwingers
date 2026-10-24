@@ -176,12 +176,14 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <p className="text-xs text-purple-200/70">Identidad, recompensas y privacidad</p>
         </div>
 
-        <button
-          onClick={onOpenAdmin}
-          className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-900 to-indigo-900 border border-purple-500/40 text-xs font-bold text-pink-300 shadow-md active:scale-95 transition"
-        >
-          Panel Admin
-        </button>
+        {adminUser && (
+          <button
+            onClick={onOpenAdmin}
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-900 to-indigo-900 border border-purple-500/40 text-xs font-bold text-pink-300 shadow-md active:scale-95 transition"
+          >
+            Panel Admin
+          </button>
+        )}
       </div>
 
       {/* User Hero Card */}
@@ -840,4 +842,5 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     </div>
   );
 };
+
 
