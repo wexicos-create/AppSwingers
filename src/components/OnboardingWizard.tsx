@@ -54,9 +54,7 @@ const authErrorText = (code: string, isEs: boolean): string => {
     'auth/wrong-password': ['Contraseña incorrecta.', 'Incorrect password.'],
     'auth/too-many-requests': ['Demasiados intentos fallidos. Espera un momento antes de continuar.', 'Too many failed attempts. Please wait before trying again.'],
     'auth/network-request-failed': ['Error de red. Revisa tu conexión e inténtalo de nuevo.', 'Network error. Check your connection and try again.'],
-    'auth/configuration-not-found': ['La autenticación de Firebase no está configurada en el proyecto. Habilita Authentication en Firebase Console (proveedores Correo/contraseña y Google).', 'Firebase Authentication is not configured in the project. Enable Authentication in the Firebase Console (Email/Password and Google providers).'],
-    'auth/operation-not-allowed': ['El proveedor de acceso no está habilitado en Firebase Console (Authentication → Sign-in method).', 'The sign-in provider is not enabled in the Firebase Console (Authentication → Sign-in method).'],
-    'auth/unauthorized-domain': ['Este dominio no está autorizado en Firebase Console (Authentication → Settings → Authorized domains).', 'This domain is not authorized in the Firebase Console (Authentication → Settings → Authorized domains).'],
+    'auth/email-not-confirmed': ['Confirma tu correo para iniciar sesión: revisa tu bandeja de entrada.', 'Confirm your email to log in: check your inbox.'],
   };
   const pair = map[code];
   return pair ? (isEs ? pair[0] : pair[1]) : (isEs ? 'No se pudo completar la operación. Inténtalo de nuevo.' : 'Could not complete the operation. Please try again.');
