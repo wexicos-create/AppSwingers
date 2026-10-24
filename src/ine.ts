@@ -95,7 +95,8 @@ export async function fetchIneRecordsForUser(uid: string): Promise<IneRecord[]> 
 /**
  * Publica el veredicto del administrador sobre un expediente INE:
  * 1. Actualiza el expediente (veredicto, nota, ventana de retención al banear).
- * 2. Escribe identityStatus en el documento del usuario.
+ * 2. Escribe identityStatus en el documento del usuario (y suspende la cuenta
+ *    cuando el veredicto es baneo, para que el bloqueo sea efectivo).
  * 3. Crea una notificación que el propietario lee en su siguiente sesión.
  */
 export async function issueIdentityVerdict(params: {
@@ -109,7 +110,7 @@ export async function issueIdentityVerdict(params: {
     verdict === 'aprobada'
       ? 'Identidad aprobada por el administrador tras la revisión del archivo legal. Tu sello de verificación está activo.'
       : verdict === 'rechazada'
-        ? 'No pudimos validar que eres quien dices ser. Tu cuenta y credenciales serán eliminadas.'
+        ? 'No pudimos validar tu identidad con los documentos enviados. Puedes volver a subir tu INE con ambas caras legibles desde tu perfil.'
         : 'Cuenta baneada por decisión del administrador. Las credenciales se retienen un año por cualquier asunto legal posterior.';
   try {
     await docUpdate<IneRecord>('ine_records', record.id, {
@@ -122,9 +123,11 @@ export async function issueIdentityVerdict(params: {
       identityStatus: verdict,
       identityNote: note,
       identityVerdictAt: now,
+      ...(verdict === 'baneada' ? { status: 'suspendido' } : {}),
     });
-    await docSet('notifications', 'nt_' + now + '_' + record.userUid, {
-      id: 'nt_' + now + '_' + record.userUid,
+    const nid = 'nt_' + now + '_' + Math.random().toString(36).slice(2, 6) + '_' + record.userUid;
+    await docSet('notifications', nid, {
+      id: nid,
       userUid: record.userUid,
       kind: 'identidad',
       title: verdict === 'aprobada' ? 'Identidad verificada' : verdict === 'rechazada' ? 'No pudimos validar tu identidad' : 'Cuenta suspendida',

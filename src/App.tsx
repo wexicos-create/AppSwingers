@@ -137,6 +137,7 @@ const ago = (ts: number) => {
   return Math.floor(s / 86400) + ' d';
 };
 const vipCode = () => 'VIP ' + Array.from({ length: 3 }, () => String(Math.floor(1000 + Math.random() * 9000))).join(' ');
+const notifId = (uid: string) => 'nt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + uid;
 const isVip = (u: UserDoc | null) => !!u?.premiumUntil && u.premiumUntil > Date.now();
 const vipLabel = (u: UserDoc | null) => (isVip(u) ? (u?.premium === 'ultra' ? 'Ultra VIP' : 'VIP Plus') : 'Free');
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -386,14 +387,15 @@ function IneCapture({ uid, email, alias, onToast, onDone }: {
       ineFront: front, ineBack: back, selfie,
     });
     const saved = await saveRemoteIneRecord(rec);
+    if (!saved) {
+      setBusy(false);
+      onToast('No fue posible subir el expediente. Intenta de nuevo.');
+      return;
+    }
     await docUpdate('users', uid, { identityStatus: 'en revisión' });
     setBusy(false);
-    if (saved) {
-      onToast('INE enviado. Administración validará tu identidad.');
-      onDone();
-    } else {
-      onToast('No fue posible subir el expediente. Intenta de nuevo.');
-    }
+    onToast('INE enviado. Administración validará tu identidad.');
+    onDone();
   };
 
   const Thumb = ({ src, onClear }: { src: string | null; onClear: () => void }) => src ? (
@@ -797,6 +799,14 @@ export default function App() {
 
   const createSubscriptionOrder = async (plan: 'plus' | 'ultra') => {
     if (!user || !myDoc) return;
+    if (myDoc.identityStatus !== 'aprobada') {
+      notify('Para comprar necesitas tu INE aprobado. Súbelo desde tu perfil.');
+      return;
+    }
+    if (orders.some((o) => o.kind === 'suscripcion' && o.itemRef === plan && (o.status === 'pendiente' || o.status === 'verificado'))) {
+      notify('Ya tienes una orden en curso para este plan. Complétala o espera a que expire.');
+      return;
+    }
     const price = pricing[plan];
     const order = newSpeiOrder({
       kind: 'suscripcion', itemRef: plan, label: price.labelEs, amount: price.total,
@@ -814,6 +824,17 @@ export default function App() {
 
   const createEventOrder = async (ev: EventDoc) => {
     if (!user || !myDoc) return;
+    if (myDoc.identityStatus !== 'aprobada') {
+      notify('Para reservar entradas pagadas necesitas tu INE aprobado. Súbelo desde tu perfil.');
+      return;
+    }
+    if ((ev.sold ?? 0) >= ev.cap) { notify('Cupo lleno. No quedan lugares para este evento.'); return; }
+    const mine = await docQuery<PassDoc>('event_passes', 'userUid', user.uid);
+    if (mine.some((p) => p.eventId === ev.id && p.status === 'activo')) { notify('Ya tienes un pase activo para este evento.'); return; }
+    if (orders.some((o) => o.kind === 'evento' && o.itemRef === ev.id && (o.status === 'pendiente' || o.status === 'verificado'))) {
+      notify('Ya tienes una orden en curso para este evento. Complétala o espera a que expire.');
+      return;
+    }
     const total = Math.round(ev.price * (1 + IVA) * 100) / 100;
     const order = newSpeiOrder({
       kind: 'evento', itemRef: ev.id, label: 'Entrada: ' + ev.title, amount: total,
@@ -833,6 +854,9 @@ export default function App() {
 
   const claimFreePass = async (ev: EventDoc) => {
     if (!user || !myDoc) return;
+    if ((ev.sold ?? 0) >= ev.cap) { notify('Cupo lleno. No quedan lugares para este evento.'); return; }
+    const mine = await docQuery<PassDoc>('event_passes', 'userUid', user.uid);
+    if (mine.some((p) => p.eventId === ev.id && p.status === 'activo')) { notify('Ya tienes un pase activo para este evento.'); return; }
     const pass: PassDoc = {
       id: 'pass_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
       code: vipCode(), eventId: ev.id, eventTitle: ev.title, eventDate: ev.date,
@@ -842,8 +866,9 @@ export default function App() {
     const ok = await docSet('event_passes', pass.id, pass);
     if (ok) {
       await docUpdate('events', ev.id, { sold: Math.min(ev.cap, (ev.sold ?? 0) + 1) });
-      await docSet('notifications', 'nt_' + Date.now() + '_' + user.uid, {
-        id: 'nt_' + Date.now() + '_' + user.uid, userUid: user.uid, kind: 'pase',
+      const nid = notifId(user.uid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: user.uid, kind: 'pase',
         title: 'Entrada confirmada', body: 'Tu pase para "' + ev.title + '" ya está activo. Preséntalo en la entrada.',
         ts: Date.now(), read: false,
       } as AppNotification);
@@ -886,6 +911,38 @@ export default function App() {
       <div className="shell">
         <div className="screen" style={{ display: 'grid', placeItems: 'center' }}>
           <Loader2 size={36} className="spin" color="var(--lila)" />
+        </div>
+      </div>
+    );
+  }
+
+  // Bloqueo efectivo de cuentas suspendidas o baneadas: el veredicto del
+  // administrador corta el acceso completo a la aplicación.
+  if (view === 'app' && myDoc && !isAdmin && (myDoc.status === 'suspendido' || myDoc.identityStatus === 'baneada')) {
+    const banned = myDoc.identityStatus === 'baneada';
+    return (
+      <div className="shell">
+        <div className="screen">
+          <div className="aura" />
+          <div className="topbar">
+            <span className="wordmark">App<b>Swinguer</b></span>
+            <span className="tag bad"><Ban size={12} /> {banned ? 'Baneada' : 'Suspendida'}</span>
+          </div>
+          <div className="body" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div className="card" style={{ textAlign: 'center' }}>
+              <Ban size={34} color="var(--bad)" />
+              <div className="h1" style={{ fontSize: 26, marginTop: 12 }}>{banned ? 'Cuenta baneada' : 'Cuenta suspendida'}</div>
+              <p className="muted small" style={{ margin: '10px 0 0' }}>
+                {banned
+                  ? 'Tu cuenta fue baneada por decisión de administración. Tus credenciales se retienen un año conforme a la política de la plataforma.'
+                  : 'Tu cuenta está suspendida. Si crees que se trata de un error, comunícate con administración por un canal oficial.'}
+              </p>
+              {myDoc.identityNote && <p className="tiny" style={{ marginTop: 8 }}>{myDoc.identityNote}</p>}
+            </div>
+            <button className="btn btn-bad full" style={{ marginTop: 16 }} onClick={() => void signOut(auth)}>
+              <LogOut size={18} /> Cerrar sesión
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1082,6 +1139,7 @@ export default function App() {
           {eventSheet && user && myDoc && (
             <EventSheet
               ev={eventSheet}
+              hasPass={passes.some((p) => p.eventId === eventSheet.id && p.status === 'activo')}
               onClose={() => setEventSheet(null)}
               onReserve={(ev) => (ev.price > 0 ? void createEventOrder(ev) : void claimFreePass(ev))}
             />
@@ -1402,10 +1460,11 @@ function EventsTab({ events, passes, onOpenEvent, onToast }: {
   );
 }
 
-function EventSheet({ ev, onClose, onReserve }: {
-  ev: EventDoc; onClose: () => void; onReserve: (ev: EventDoc) => void;
+function EventSheet({ ev, hasPass, onClose, onReserve }: {
+  ev: EventDoc; hasPass: boolean; onClose: () => void; onReserve: (ev: EventDoc) => void;
 }) {
   const total = Math.round(ev.price * (1 + IVA) * 100) / 100;
+  const left = Math.max(0, ev.cap - (ev.sold ?? 0));
   return (
     <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
       <div className="grab" />
@@ -1437,10 +1496,21 @@ function EventSheet({ ev, onClose, onReserve }: {
           </div>
         </div>
       )}
-      <button className="btn btn-neon full" style={{ marginTop: 16 }} onClick={() => onReserve(ev)}>
-        <Banknote size={18} /> {ev.price > 0 ? 'Pagar entrada por SPEI' : 'Reservar lugar gratis'}
-      </button>
-      <p className="tiny" style={{ textAlign: 'center', marginTop: 8 }}>Cancelación con reembolso hasta 48 h antes del evento.</p>
+      {hasPass ? (
+        <div className="card row" style={{ marginTop: 16, gap: 10, padding: 14 }}>
+          <Ticket size={18} color="var(--ok)" />
+          <span className="small">Ya cuentas con un pase activo para este evento. Consulta tu pase en la pestaña Eventos.</span>
+        </div>
+      ) : left <= 0 ? (
+        <button className="btn btn-dark full" style={{ marginTop: 16 }} disabled>
+          <AlertTriangle size={18} /> Cupo lleno
+        </button>
+      ) : (
+        <button className="btn btn-neon full" style={{ marginTop: 16 }} onClick={() => onReserve(ev)}>
+          <Banknote size={18} /> {ev.price > 0 ? 'Pagar entrada por SPEI' : 'Reservar lugar gratis'}
+        </button>
+      )}
+      <p className="tiny" style={{ textAlign: 'center', marginTop: 8 }}>Presenta tu pase VIP y tu identificación en el acceso.</p>
     </motion.div>
   );
 }
@@ -1508,16 +1578,19 @@ function PayTab({ myDoc, orders, pricing, bank, onBuy, onOpenOrder, onToast }: {
         </div>
       ) : (
         <div className="stack" style={{ gap: 8 }}>
-          {orders.map((o) => (
-            <button key={o.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpenOrder(o)}>
-              <span className="thumb" style={{ display: 'grid', placeItems: 'center' }}><Banknote size={20} color="var(--lila)" /></span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span className="caps" style={{ display: 'block', fontSize: 15 }}>{o.label}</span>
-                <span className="tiny" style={{ display: 'block' }}>{o.reference} · {money(o.amount)}</span>
-              </span>
-              <StatusTagOrder status={o.status} />
-            </button>
-          ))}
+          {orders.map((o) => {
+            const expiredPending = o.status === 'pendiente' && o.expiresAt < Date.now();
+            return (
+              <button key={o.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpenOrder(o)}>
+                <span className="thumb" style={{ display: 'grid', placeItems: 'center' }}><Banknote size={20} color="var(--lila)" /></span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span className="caps" style={{ display: 'block', fontSize: 15 }}>{o.label}</span>
+                  <span className="tiny" style={{ display: 'block' }}>{o.reference} · {money(o.amount)}</span>
+                </span>
+                <StatusTagOrder status={expiredPending ? 'expirado' : o.status} />
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -1835,6 +1908,15 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
   const approveOrder = async (o: SpeiOrder) => {
     setBusy(true);
     const now = Date.now();
+    // Idempotencia: un pago de evento jamás genera dos pases ni suma cupo doble.
+    if (o.kind === 'evento' && o.userUid) {
+      const dupe = await docQuery<PassDoc>('event_passes', 'orderRef', o.reference);
+      if (dupe.length > 0) {
+        setBusy(false);
+        onToast('Este pago ya tenía un pase emitido. Sin cambios.');
+        return;
+      }
+    }
     await appendRemoteTimelineAndStatus(o.id, 'aprobado', 'Pago aprobado por el administrador. Beneficio activado.');
     if (o.kind === 'suscripcion' && o.userUid) {
       const days = o.itemRef === 'ultra' ? 30 : 15;
@@ -1844,8 +1926,9 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
         premium: o.itemRef === 'ultra' ? 'ultra' : 'plus',
         premiumUntil: base + days * 24 * 60 * 60 * 1000,
       });
-      await docSet('notifications', 'nt_' + now + '_' + o.userUid, {
-        id: 'nt_' + now + '_' + o.userUid, userUid: o.userUid, kind: 'sistema',
+      const nid = notifId(o.userUid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: o.userUid, kind: 'sistema',
         title: 'Pago aprobado', body: 'Tu pago de "' + o.label + '" fue confirmado. Suscripción activa.',
         ts: now, read: false,
       } as AppNotification);
@@ -1863,8 +1946,9 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
       };
       await docSet('event_passes', pass.id, pass);
       if (ev) await docUpdate('events', ev.id, { sold: Math.min(ev.cap, (ev.sold ?? 0) + 1) });
-      await docSet('notifications', 'nt_' + now + '_' + o.userUid, {
-        id: 'nt_' + now + '_' + o.userUid, userUid: o.userUid, kind: 'pase',
+      const nid2 = notifId(o.userUid);
+      await docSet('notifications', nid2, {
+        id: nid2, userUid: o.userUid, kind: 'pase',
         title: 'Entrada confirmada', body: 'Tu pago fue aprobado. Tu pase VIP para "' + pass.eventTitle + '" ya está activo.',
         ts: now, read: false,
       } as AppNotification);
@@ -1880,8 +1964,9 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
     await appendRemoteTimelineAndStatus(o.id, 'rechazado', 'El administrador rechazó el pago: no se encontró la transferencia con la referencia.');
     if (o.userUid) {
       const now = Date.now();
-      await docSet('notifications', 'nt_' + now + '_' + o.userUid, {
-        id: 'nt_' + now + '_' + o.userUid, userUid: o.userUid, kind: 'sistema',
+      const nid = notifId(o.userUid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: o.userUid, kind: 'sistema',
         title: 'Pago no encontrado', body: 'No localizamos tu transferencia para "' + o.label + '". Verifica el concepto y genera una nueva orden.',
         ts: now, read: false,
       } as AppNotification);
@@ -1963,7 +2048,7 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
               <p className="muted small" style={{ margin: '0 0 12px' }}>
                 Las credenciales de cuentas baneadas se retienen un año y después se depuran de forma permanente.
               </p>
-              <button className="btn btn-dark btn-sm" onClick={() => void purge()}><Trash2 size={16} /> Depurar expedientes vencidos</button>
+              <button className="btn btn-dark btn-sm" disabled={busy} onClick={() => void purge()}><Trash2 size={16} /> Depurar expedientes vencidos</button>
             </div>
           </>
         )}
@@ -1993,9 +2078,9 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
                     </div>
                     {v === 'pendiente' && (
                       <div className="grid2" style={{ marginTop: 12 }}>
-                        <button className="btn btn-neon btn-sm" onClick={() => void verdict(r, 'aprobada')}><UserCheck size={16} /> Aprobar</button>
-                        <button className="btn btn-bad btn-sm" onClick={() => void verdict(r, 'rechazada')}><UserX size={16} /> Rechazar</button>
-                        <button className="btn btn-bad btn-sm full" style={{ gridColumn: '1 / -1' }} onClick={() => void verdict(r, 'baneada')}><Ban size={16} /> Banear y retener un año</button>
+                        <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void verdict(r, 'aprobada')}><UserCheck size={16} /> Aprobar</button>
+                        <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void verdict(r, 'rechazada')}><UserX size={16} /> Rechazar</button>
+                        <button className="btn btn-bad btn-sm full" style={{ gridColumn: '1 / -1' }} disabled={busy} onClick={() => void verdict(r, 'baneada')}><Ban size={16} /> Banear y retener un año</button>
                       </div>
                     )}
                   </div>
@@ -2030,8 +2115,8 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
                     </div>
                     {(o.status === 'pendiente' || o.status === 'verificado') && (
                       <div className="grid2" style={{ marginTop: 12 }}>
-                        <button className="btn btn-neon btn-sm" onClick={() => void approveOrder(o)}><BadgeCheck size={16} /> Aprobar pago</button>
-                        <button className="btn btn-bad btn-sm" onClick={() => void rejectOrder(o)}><X size={16} /> Rechazar</button>
+                        <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void approveOrder(o)}><BadgeCheck size={16} /> Aprobar pago</button>
+                        <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void rejectOrder(o)}><X size={16} /> Rechazar</button>
                       </div>
                     )}
                   </div>
@@ -2100,7 +2185,7 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
                 </div>
                 <input className="field" inputMode="numeric" placeholder="Precio de entrada (MXN, 0 = gratis)" value={evForm.price || ''} onChange={(e) => setEvForm({ ...evForm, price: Number(e.target.value.replace(/\D/g, '').slice(0, 6)) })} />
                 <textarea className="field" placeholder="Requisitos (uno por línea)" value={evForm.reqs} onChange={(e) => setEvForm({ ...evForm, reqs: e.target.value.slice(0, 400) })} />
-                <button className="btn btn-neon full" onClick={() => void publishEvent()}><Plus size={18} /> Publicar evento</button>
+                <button className="btn btn-neon full" disabled={busy} onClick={() => void publishEvent()}><Plus size={18} /> Publicar evento</button>
               </div>
             </div>
             <div className="stack" style={{ gap: 10, marginTop: 16 }}>
@@ -2143,4 +2228,5 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
     </motion.div>
   );
 }
+
 
