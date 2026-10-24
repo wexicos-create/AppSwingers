@@ -175,3 +175,4 @@ export async function markNotificationsRead(uid: string, ids: string[]): Promise
   }
 }
 
+

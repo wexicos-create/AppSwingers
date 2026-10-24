@@ -262,3 +262,37 @@ export function auditProcesses(s: ProcessAuditInput): ProcessCheck[] {
   return checks;
 }
 
+
+
+// ---------- Lenguaje abusivo en tableros de preguntas y respuestas ----------
+// Detector específico para los apartados de dudas, consejos y recomendaciones
+// (hombres / mujeres / parejas): insultos, agresiones y faltas de respeto se
+// sancionan de forma automática y progresiva.
+
+const ABUSE_PATTERNS: RegExp[] = [
+  /pendej[oa]s?\b/i, /put[oa]s?\b/i, /putit[oa]s?\b/i, /gilipoll[oa]s?\b/i,
+  /idiota?s?\b/i, /imbe[cs]il(es)?\b/i, /est[úu]pid[oa]s?\b/i, /cabr[oó]n(es)?\b/i,
+  /putto/i, /zorr[oa]s?\b/i, /guarr[oa]s?\b/i, /malparid[oa]s?\b/i,
+  /hij[oa]s? de puta/i, /vete al carajo/i, /vete a la mierda/i, /chinga (tu )?madre/i,
+  /me la (suda|pelan)\b/i, /lameculos?\b/i, / subnormal(es)?\b/i, /retrasad[oa]s?\b/i,
+  /basura human/i, /no vales nada/i, /no mereces/i, /c[áa]llate (la )?boca/i,
+  /t[áa]pate (la )?boca/i, /fuera de aqu[íi]/i, /no eres bienvenid[oa]/i,
+  /vete de aqu[íi]/i, /nadie te quiere/i, /eres una? mierda/i, /eres un[ao]? (in[úu]til|tont[oa]|loc[oa])/i,
+];
+
+export interface AbuseVerdict {
+  abusive: boolean;
+  severe: boolean;
+  matched: string[];
+}
+
+/** Detecta insultos o agresiones directas en publicaciones de la comunidad. */
+export function detectAbusiveLanguage(text: string): AbuseVerdict {
+  const raw = (text ?? '').toLowerCase();
+  const matched: string[] = [];
+  for (const p of ABUSE_PATTERNS) {
+    if (p.test(raw)) matched.push(p.source);
+  }
+  const severe = /matarte|te voy a (matar|golpear|buscar)|te voy a romper|amenaza|agresi[óo]n f[íi]sica/i.test(raw);
+  return { abusive: matched.length > 0 || severe, severe, matched };
+}

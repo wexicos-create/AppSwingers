@@ -219,7 +219,7 @@ export interface PaymentItem {
 
 export type SubscriptionTier = 'free' | 'plus' | 'ultra' | 'silver' | 'gold';
 
-export type SpeiOrderKind = 'suscripcion' | 'evento' | 'creadora' | 'propuesta_colaboracion' | 'premium' | 'pase_estado' | 'donacion' | 'contenido' | 'membresia_creadora';
+export type SpeiOrderKind = 'suscripcion' | 'evento' | 'creadora' | 'propuesta_colaboracion' | 'premium' | 'pase_estado' | 'donacion' | 'contenido' | 'membresia_creadora' | 'publicacion_evento';
 export type SpeiOrderStatus = 'pendiente' | 'verificado' | 'aprobado' | 'rechazado' | 'expirado';
 
 // SPEI transfer order: reference is the unique payment ID used in the bank concept.
@@ -390,4 +390,5 @@ export interface ProfileRating {
   comment: string;
   ts: number;
 }
+
 

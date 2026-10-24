@@ -14,7 +14,7 @@ import {
   Camera, ImagePlus, Users, CalendarDays, CreditCard, BadgeCheck, Ban, Plus, Sparkles,
   Banknote, Ticket, Send, Loader2, AlertTriangle, Trash2, Clock, Crown,
   RefreshCw, Eye, MessageCircle, Upload, UserCheck, UserX, FileCheck2, Lock,
-  EyeOff, Pencil, Gift, Coins, Video,
+  EyeOff, Pencil, Gift, Coins, Video, HelpCircle, ShieldAlert, KeyRound, ImageIcon, MessageSquare,
 } from 'lucide-react';
 import {
   auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup,
@@ -32,7 +32,7 @@ import {
   issueIdentityVerdict, ineRecordVerdict, fetchNotificationsForUser, markNotificationsRead,
   purgeExpiredRetainedRecords,
 } from './ine';
-import { analyzeReport, scanProfile, auditProcesses, ModerationReport } from './moderation';
+import { analyzeReport, scanProfile, auditProcesses, detectAbusiveLanguage, ModerationReport } from './moderation';
 
 // ---------------------------- Constantes ------------------------------------
 
@@ -72,7 +72,7 @@ const ivaTotal = (base: number) => Math.round(base * (1 + IVA) * 100) / 100;
 
 // ---------------------------- Tipos -----------------------------------------
 
-type Tab = 'match' | 'propuestas' | 'eventos' | 'virtual' | 'perfil';
+type Tab = 'match' | 'propuestas' | 'eventos' | 'virtual' | 'comunidad' | 'perfil';
 
 interface UserDoc {
   uid: string;
@@ -97,6 +97,10 @@ interface UserDoc {
   badge?: 'oro' | 'verificada';
   createdAt: number;
   lastSeen: number;
+  deactivated?: boolean;          // cuenta desactivada por intentos de contraseña errónea
+  deactivatedReason?: string;
+  eventPubCredits?: number;      // eventos disponibles para publicar (pago aprobado)
+  watched?: boolean;              // perfil marcado para seguimiento automático de actitud
 }
 
 interface EventDoc {
@@ -241,6 +245,157 @@ interface UnlockDoc {
   createdAt: number;
 }
 
+// ------------------ Comunidad: dudas, consejos y recomendaciones --------------
+type QABoard = 'hombres' | 'mujeres' | 'parejas';
+
+interface QAPostDoc {
+  id: string;
+  board: QABoard;
+  userUid: string;
+  alias: string;
+  parentId: string | null; // null = pregunta nueva; id = respuesta a esa pregunta
+  body: string;
+  status: 'visible' | 'eliminado';
+  createdAt: number;
+}
+
+// Escalatoria de sanciones por faltas de respeto en la comunidad:
+// 1ª falta: 15 días sin participar · 2ª: 2 meses · 3ª: sección bloqueada y
+// perfil marcado para seguimiento automático · 4ª: baneo permanente.
+interface SanctionDoc {
+  id: string;
+  userUid: string;
+  strikes: number;
+  blockedUntil: number | null;      // suspensión temporal de participación
+  sectionBlocked: boolean;          // apartado bloqueado definitivamente
+  watched: boolean;                // perfil marcado para seguimiento automático
+  lastReason: string;
+  updatedAt: number;
+}
+
+// Huella de dispositivo: impide abrir cuentas nuevas desde un equipo con una
+// cuenta baneada (nadie registra varias cuentas desde el mismo dispositivo).
+interface DeviceDoc {
+  id: string;
+  uids: string[];
+  banned: boolean;
+  updatedAt: number;
+}
+
+// Chat directo con administración para cuentas desactivadas por intentos de
+// ingreso con contraseñas erróneas. El usuario escribe sin cuenta activa y el
+// bot de validación compara la INE enviada contra la INE registrada.
+interface RecMsg {
+  id: string;
+  from: 'user' | 'admin' | 'bot';
+  text: string;
+  image?: string;
+  video?: string;
+  ts: number;
+}
+
+interface RecoveryChatDoc {
+  id: string;
+  email: string;
+  uid: string | null;
+  alias: string;
+  messages: RecMsg[];
+  status: 'abierto' | 'cerrado';
+  createdAt: number;
+  lastTs: number;
+}
+
+// Chat grupal de propuestas (tríos, gangbang): varios postulantes en un solo
+// chat titulado con el nombre de la propuesta.
+interface GroupChatDoc {
+  id: string;
+  title: string;
+  proposalId: string;
+  memberUids: string[];
+  createdBy: string;
+  createdAt: number;
+  lastTs: number;
+  lastMessage: string;
+}
+
+// Diseños de publicidad de eventos (banner + historia para redes) que el
+// administrador debe subir para confirmar pagos con la opción "Incluir diseño".
+interface EventDesignDoc {
+  id: string;      // id de la orden SPEI
+  banner: string | null;
+  story: string | null;
+  data: { tema: string; invitados: string; fecha: string; hora: string } | null;
+  updatedAt: number;
+}
+
+interface EventPubPack {
+  id: string;
+  name: string;
+  detail: string;
+  price: number;
+  credits: number;
+}
+
+// Paquetes de publicación de eventos (solo otorgan derecho a publicar).
+const EVENT_PUB_PACKS: EventPubPack[] = [
+  { id: 'evp_15_20', name: '1 evento · 15 a 20 personas', detail: 'Derecho a publicar 1 evento', price: 800, credits: 1 },
+  { id: 'evp_20_40', name: '1 evento · 20 a 40 personas', detail: 'Derecho a publicar 1 evento', price: 1500, credits: 1 },
+  { id: 'evp_2x30_50', name: '2 eventos · 30 a 50 personas', detail: 'Derecho a publicar 2 eventos', price: 3000, credits: 2 },
+];
+const EVENT_DESIGN_PRICE = 300;
+const LOGIN_MAX_FAILS = 5;
+
+/** Tablero de comunidad que corresponde a cada tipo de perfil. */
+const boardForKind = (kind: string): QABoard =>
+  kind === 'Caballero' ? 'hombres' : kind === 'Dama' ? 'mujeres' : 'parejas';
+
+/** Huella simple de dispositivo (persistente en localStorage). */
+function deviceFingerprint(): string {
+  let fp = '';
+  try { fp = localStorage.getItem('asw_device_fp') || ''; } catch { fp = ''; }
+  if (!fp) {
+    const raw = (navigator.userAgent || 'ua') + '|' + (screen.width || 0) + 'x' + (screen.height || 0) + '|' + (Intl.DateTimeFormat().resolvedOptions().timeZone || '') + '|' + Math.random().toString(36).slice(2, 10);
+    let h = 5381;
+    for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) >>> 0;
+    fp = 'dv_' + h.toString(36) + raw.slice(-4);
+    try { localStorage.setItem('asw_device_fp', fp); } catch { /* ignore */ }
+  }
+  return fp;
+}
+
+/** Hash perceptual 16x16 en escala de grises (comparación de imágenes). */
+function perceptualBits(dataUrl: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = 16; c.height = 16;
+        const ctx = c.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(img, 0, 0, 16, 16);
+        const d = ctx.getImageData(0, 0, 16, 16).data;
+        const grays: number[] = [];
+        for (let i = 0; i < d.length; i += 4) grays.push((d[i] + d[i + 1] + d[i + 2]) / 3);
+        const avg = grays.reduce((s, g) => s + g, 0) / grays.length;
+        resolve(grays.map((g) => (g > avg ? '1' : '0')).join(''));
+      } catch { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
+/** Similitud 0..1 entre dos imágenes (distancia Hamming del hash perceptual). */
+async function imageSimilarity(a: string, b: string): Promise<number> {
+  const [ba, bb] = await Promise.all([perceptualBits(a), perceptualBits(b)]);
+  if (!ba || !bb || ba.length !== bb.length) return 0;
+  let same = 0;
+  for (let i = 0; i < ba.length; i++) if (ba[i] === bb[i]) same++;
+  return same / ba.length;
+}
+
+
 // ---------------------------- Utilerías -------------------------------------
 
 const money = (n: number) => '$' + n.toFixed(2) + ' MXN';
@@ -260,8 +415,8 @@ const ago = (ts: number) => {
 };
 const vipCode = () => 'VIP ' + Array.from({ length: 3 }, () => String(Math.floor(1000 + Math.random() * 9000))).join(' ');
 const notifId = (uid: string) => 'nt_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + uid;
-const isVip = (u: UserDoc | null) => !!u?.premiumUntil && u.premiumUntil > Date.now();
-const vipLabel = (u: UserDoc | null) => (isVip(u) ? (u?.premium === 'ultra' ? 'Ultra VIP' : 'VIP Plus') : 'Free');
+const isVip = (u: UserDoc | null) => (!!u?.premiumUntil && u.premiumUntil > Date.now()) || u?.badge === 'oro';
+const vipLabel = (u: UserDoc | null) => (u?.badge === 'oro' ? 'Admin' : isVip(u) ? (u?.premium === 'ultra' ? 'Ultra VIP' : 'VIP Plus') : 'Free');
 const startOfToday = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); };
 
 async function copyText(text: string): Promise<boolean> {
@@ -537,6 +692,18 @@ function AuthScreen({ onToast }: { onToast: (s: string) => void }) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
+
+  const failsKey = () => 'asw_login_fails_' + email.trim().toLowerCase();
+  const readFails = () => {
+    try { return Number(localStorage.getItem(failsKey()) || '0'); } catch { return 0; }
+  };
+  const bumpFails = () => {
+    const n = readFails() + 1;
+    try { localStorage.setItem(failsKey(), String(n)); } catch { /* ignore */ }
+    return n;
+  };
 
   const friendly = (code: string, raw: string) => {
     if (code === 'auth/email-already-in-use') return 'Ese correo ya está registrado. Inicia sesión.';
@@ -552,17 +719,57 @@ function AuthScreen({ onToast }: { onToast: (s: string) => void }) {
     setErr(null);
     if (!email.trim() || !pass) { setErr('Completa todos los campos.'); return; }
     if (mode === 'registro' && pass !== confirm) { setErr('Las contraseñas no coinciden.'); return; }
+    // Guardia de seguridad: se bloquea el ingreso insistente de contraseñas
+    // erróneas y se desactiva la cuenta hasta hablar con administración.
+    if (mode === 'login' && locked) return;
+    if (mode === 'login' && readFails() >= LOGIN_MAX_FAILS) { setLocked(true); return; }
     setBusy(true);
     try {
       if (mode === 'registro') {
+        // Nadie registra varias cuentas desde un mismo dispositivo baneado.
+        const dev = await docGet<DeviceDoc>('devices', deviceFingerprint());
+        if (dev?.banned) {
+          setErr('No es posible registrar una cuenta nueva desde este dispositivo: existe una cuenta baneada asociada al equipo.');
+          return;
+        }
         await createUserWithEmailAndPassword(auth, email.trim(), pass);
         onToast('Cuenta creada. Completa tu perfil para entrar.');
       } else {
         await signInWithEmailAndPassword(auth, email.trim(), pass);
+        try { localStorage.removeItem(failsKey()); } catch { /* ignore */ }
         onToast('Sesión iniciada.');
       }
     } catch (e: any) {
-      setErr(friendly(e?.code ?? '', e?.message ?? ''));
+      const code = e?.code ?? '';
+      if (mode === 'login' && (
+        code === 'auth/wrong-password' || code === 'auth/user-not-found' ||
+        code === 'auth/invalid-credential' || code === 'auth/invalid-login-credentials'
+      )) {
+        const fails = bumpFails();
+        if (fails >= LOGIN_MAX_FAILS) {
+          // Desactiva la cuenta del lado de la plataforma y exige hablar con administración.
+          try {
+            const users = await docAll<UserDoc>('users');
+            const acc = users.find((u) => (u.email || '').toLowerCase() === email.trim().toLowerCase());
+            if (acc) {
+              await docUpdate<UserDoc>('users', acc.uid, {
+                deactivated: true,
+                deactivatedReason: 'Ingresó varias veces una contraseña errónea.',
+              } as Partial<UserDoc>);
+              const nid = notifId(acc.uid);
+              await docSet('notifications', nid, {
+                id: nid, userUid: acc.uid, kind: 'soporte',
+                title: 'Cuenta desactivada',
+                body: 'Motivo: ingresó varias veces una contraseña errónea. Contacta a un asesor para la activación de tu cuenta: buscamos darte seguridad y proteger a cada usuario. Gracias por tu comprensión.',
+                ts: Date.now(), read: false,
+              } as AppNotification);
+            }
+          } catch { /* ignore */ }
+          setLocked(true);
+          return;
+        }
+      }
+      setErr(friendly(code, e?.message ?? ''));
     } finally {
       setBusy(false);
     }
@@ -579,29 +786,67 @@ function AuthScreen({ onToast }: { onToast: (s: string) => void }) {
         <div className="h1" style={{ fontSize: 38 }}>{mode === 'login' ? 'Vuelve al' : 'Crea tu'}</div>
         <div className="h1" style={{ fontSize: 38, marginBottom: 8 }}>{mode === 'login' ? 'club' : 'cuenta'}</div>
         <p className="sub">Conexiones exclusivas para parejas liberales y solteros verificados. Solo adultos, solo reales.</p>
-        <div className="stack" style={{ gap: 10 }}>
-          <input className="field" placeholder="Correo" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="field" placeholder="Contraseña" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={pass} onChange={(e) => setPass(e.target.value)} />
-          {mode === 'registro' && (
-            <input className="field" placeholder="Confirmar contraseña" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-          )}
-          {err && (
-            <div className="row" style={{ gap: 8, color: 'var(--bad)', fontSize: 15 }}>
-              <AlertTriangle size={16} /> {err}
+
+        {locked ? (
+          <div className="card" style={{ textAlign: 'center' }}>
+            <KeyRound size={32} color="var(--bad)" />
+            <div className="h1" style={{ fontSize: 24, marginTop: 10 }}>Cuenta desactivada</div>
+            <p className="muted small" style={{ margin: '10px 0 0' }}>
+              Motivo: ingresó varias veces una contraseña errónea. Contacta a un asesor para la activación de tu
+              cuenta: buscamos darte seguridad y proteger a cada usuario. Gracias por tu comprensión.
+            </p>
+            <div className="stack" style={{ gap: 8, marginTop: 14 }}>
+              <button className="btn btn-neon full" onClick={() => setContactOpen(true)}>
+                <MessageCircle size={18} /> Contactar administración
+              </button>
+              <button
+                className="btn btn-dark full"
+                onClick={() => {
+                  try { localStorage.removeItem(failsKey()); } catch { /* ignore */ }
+                  setLocked(false);
+                  setErr(null);
+                }}
+              >
+                <RefreshCw size={16} /> Ya me activaron: intentar de nuevo
+              </button>
             </div>
-          )}
-          <button className="btn btn-neon full" onClick={submit} disabled={busy}>
-            {busy ? <Loader2 size={18} className="spin" /> : mode === 'login' ? <Lock size={18} /> : <Plus size={18} />}
-            {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}
-          </button>
-          <button className="btn btn-ghost full" onClick={() => { setMode(mode === 'login' ? 'registro' : 'login'); setErr(null); }}>
-            {mode === 'login' ? 'No tengo cuenta. Registrarme' : 'Ya tengo cuenta. Iniciar sesión'}
-          </button>
-        </div>
+          </div>
+        ) : (
+          <div className="stack" style={{ gap: 10 }}>
+            <input className="field" placeholder="Correo" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <input className="field" placeholder="Contraseña" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={pass} onChange={(e) => setPass(e.target.value)} />
+            {mode === 'registro' && (
+              <input className="field" placeholder="Confirmar contraseña" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            )}
+            {err && (
+              <div className="row" style={{ gap: 8, color: 'var(--bad)', fontSize: 15 }}>
+                <AlertTriangle size={16} /> {err}
+              </div>
+            )}
+            <button className="btn btn-neon full" onClick={submit} disabled={busy}>
+              {busy ? <Loader2 size={18} className="spin" /> : mode === 'login' ? <Lock size={18} /> : <Plus size={18} />}
+              {busy ? 'Un momento…' : mode === 'login' ? 'Entrar' : 'Crear cuenta'}
+            </button>
+            <button className="btn btn-ghost full" onClick={() => { setMode(mode === 'login' ? 'registro' : 'login'); setErr(null); }}>
+              {mode === 'login' ? 'No tengo cuenta. Registrarme' : 'Ya tengo cuenta. Iniciar sesión'}
+            </button>
+          </div>
+        )}
         <p className="tiny" style={{ textAlign: 'center', marginTop: 18 }}>
           Al continuar confirmas ser mayor de 18 años y aceptas nuestras normas de consentimiento y discreción.
         </p>
       </div>
+      <AnimatePresence>
+        {contactOpen && (
+          <RecoveryChatView
+            email={email}
+            uid={null}
+            alias="Usuario"
+            onClose={() => setContactOpen(false)}
+            onToast={onToast}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -882,7 +1127,7 @@ export default function App() {
 
   const [orderSheet, setOrderSheet] = useState<SpeiOrder | null>(null);
   const [eventSheet, setEventSheet] = useState<EventDoc | null>(null);
-  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar' | 'propuesta' | 'donacion' | 'contenido' | 'oficio'>(null);
+  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar' | 'propuesta' | 'donacion' | 'contenido' | 'oficio' | 'publicar_evento' | 'crear_evento'>(null);
   const [chatWith, setChatWith] = useState<UserDoc | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [matchPopup, setMatchPopup] = useState<UserDoc | null>(null);
@@ -896,6 +1141,15 @@ export default function App() {
   const [rateModal, setRateModal] = useState<{ peer: UserDoc; chatId: string } | null>(null);
   const [dismissedRatings, setDismissedRatings] = useState<string[]>([]);
   const [oficioBusy, setOficioBusy] = useState(false);
+
+  // Comunidad (dudas, consejos y recomendaciones), chats grupales y publicaciones.
+  const [qaPosts, setQaPosts] = useState<QAPostDoc[]>([]);
+  const [mySanction, setMySanction] = useState<SanctionDoc | null>(null);
+  const [groupChats, setGroupChats] = useState<GroupChatDoc[]>([]);
+  const [groupChat, setGroupChat] = useState<GroupChatDoc | null>(null);
+  const [groupMsgs, setGroupMsgs] = useState<ChatMsg[]>([]);
+  const [groupDraft, setGroupDraft] = useState('');
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
 
   const isAdmin = useMemo(() => !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()), [user]);
   const myDoc = useMemo(() => allUsers.find((u) => u.uid === user?.uid) ?? null, [allUsers, user]);
@@ -925,7 +1179,7 @@ export default function App() {
   const refreshCore = useCallback(async () => {
     if (!user) return;
     const uid = user.uid;
-    const [users, swipes, ordersList, notifsList, evts, passList, matchesList, props, creas, posts, subs, forumList, ratingsList, unlocksList] = await Promise.all([
+    const [users, swipes, ordersList, notifsList, evts, passList, matchesList, props, creas, posts, subs, forumList, ratingsList, unlocksList, qaList, groupsList, sanctionDoc] = await Promise.all([
       docAll<UserDoc>('users'),
       docQuery<SwipeDoc>('swipes', 'from', uid),
       fetchRemoteSpeiOrdersForUser(uid),
@@ -940,6 +1194,9 @@ export default function App() {
       docAll<ForumDoc>('forum'),
       docAll<RatingDoc>('ratings'),
       docQuery<UnlockDoc>('content_unlocks', 'userUid', uid),
+      docAll<QAPostDoc>('qa_posts'),
+      docAll<GroupChatDoc>('group_chats'),
+      docGet<SanctionDoc>('sanctions', 'sn_' + uid),
     ]);
     setAllUsers(users);
     setMySwipes(swipes);
@@ -955,6 +1212,9 @@ export default function App() {
     setForum(forumList.sort((a, b) => b.createdAt - a.createdAt));
     setRatings(ratingsList);
     setMyUnlocks(unlocksList);
+    setQaPosts(qaList.filter((q) => q.status === 'visible').sort((a, b) => b.createdAt - a.createdAt));
+    setGroupChats(groupsList.filter((g) => (g.memberUids ?? []).includes(uid)).sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0)));
+    setMySanction(sanctionDoc ?? null);
     const remoteBank = await fetchRemoteSpeiConfig();
     if (remoteBank) setBankCfg(remoteBank);
   }, [user]);
@@ -972,6 +1232,27 @@ export default function App() {
     (async () => {
       const existing = await docGet<UserDoc>('users', user.uid);
       if (cancelled) return;
+      // Registro del dispositivo: nadie abre cuentas nuevas desde un equipo con una cuenta baneada.
+      const devId = deviceFingerprint();
+      const dev = await docGet<DeviceDoc>('devices', devId);
+      if (dev?.banned && !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+        await docSet('users', user.uid, {
+          ...(existing ?? {
+            uid: user.uid, email: user.email, alias: 'Usuario', kind: 'Pareja', age: 30, bio: '',
+            avatar: null, photos: [], interests: [], seeking: [], agesPref: [], km: 50, region: 'MX',
+            premium: 'free', premiumUntil: null, status: 'activo', onboardingDone: true,
+            createdAt: Date.now(), lastSeen: Date.now(),
+          }),
+          identityStatus: 'baneada',
+        } as any, true);
+        setView('app');
+        await refreshCore();
+        return;
+      }
+      await docSet('devices', devId, {
+        id: devId, uids: [...new Set([...(dev?.uids ?? []), user.uid])],
+        banned: dev?.banned ?? false, updatedAt: Date.now(),
+      } as any, true);
       if (ADMIN_EMAILS.includes(user.email.toLowerCase())) {
         if (!existing || !existing.onboardingDone) {
           await docSet<UserDoc>('users', user.uid, {
@@ -1302,6 +1583,242 @@ export default function App() {
     }
   };
 
+  // ----------------- Comunidad: dudas, consejos y recomendaciones ------------
+  // Publica una pregunta o respuesta en el tablero correspondiente. El motor de
+  // moderación revisa el texto al instante: insultos o agresiones se eliminan
+  // y generan la sanción escalonada (15 días, 2 meses, sección bloqueada con
+  // seguimiento automático y, a la cuarta falta, baneo permanente).
+  const qaBlockedNow = useMemo(() => {
+    if (!mySanction) return { blocked: false, reason: '' };
+    const now = Date.now();
+    if (mySanction.strikes >= 4 || mySanction.sectionBlocked) {
+      return { blocked: true, reason: 'Tu participación en la comunidad quedó bloqueada de forma definitiva por faltas repetidas a las reglas de respeto.' };
+    }
+    if (mySanction.blockedUntil && mySanction.blockedUntil > now) {
+      const until = new Date(mySanction.blockedUntil).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+      return { blocked: true, reason: 'Tu participación en la comunidad está suspendida hasta el ' + until + ' por faltas a las reglas de respeto.' };
+    }
+    return { blocked: false, reason: '' };
+  }, [mySanction]);
+
+  const sanctionUser = async (uid: string, alias: string, reason: string): Promise<number> => {
+    const id = 'sn_' + uid;
+    const current = (await docGet<SanctionDoc>('sanctions', id)) ?? {
+      id, userUid: uid, strikes: 0, blockedUntil: null, sectionBlocked: false, watched: false, lastReason: '', updatedAt: 0,
+    };
+    const strikes = (current.strikes ?? 0) + 1;
+    let blockedUntil = current.blockedUntil ?? null;
+    let sectionBlocked = current.sectionBlocked ?? false;
+    let watched = current.watched ?? false;
+    let title = '';
+    let body = '';
+    if (strikes === 1) {
+      blockedUntil = Date.now() + 15 * 24 * 60 * 60 * 1000;
+      title = 'Comunidad: comentario eliminado';
+      body = 'Tu comentario fue eliminado por incumplir las reglas de respeto, educación y comprensión. ' + reason + ' Quedas suspendido de participar en la comunidad por 15 días.';
+    } else if (strikes === 2) {
+      blockedUntil = Date.now() + 60 * 24 * 60 * 60 * 1000;
+      title = 'Comunidad: segunda falta';
+      body = 'Incumpliste de nuevo las reglas de respeto. ' + reason + ' Quedas suspendido de participar en la comunidad por 2 meses.';
+    } else if (strikes === 3) {
+      sectionBlocked = true;
+      watched = true;
+      title = 'Comunidad: tercera falta';
+      body = 'Tu acceso a la comunidad quedó bloqueado y tu perfil fue marcado para seguimiento automático de actitud, mensajes y uso de la plataforma. ' + reason;
+    } else {
+      title = 'Cuenta baneada';
+      body = 'Cuarta falta a las reglas de respeto y uso de la plataforma: tu cuenta fue baneada de forma permanente y no es posible registrar cuentas nuevas desde tu dispositivo.';
+    }
+    await docSet('sanctions', id, {
+      id, userUid: uid, strikes, blockedUntil, sectionBlocked, watched,
+      lastReason: reason, updatedAt: Date.now(),
+    } as SanctionDoc);
+    // Tercera falta: perfil marcado para seguimiento automático.
+    if (strikes >= 3) {
+      await docUpdate<UserDoc>('users', uid, { watched: true } as Partial<UserDoc>);
+    }
+    // Cuarta falta: baneo permanente de la cuenta y bloqueo del dispositivo.
+    if (strikes >= 4) {
+      await docUpdate<UserDoc>('users', uid, { identityStatus: 'baneada', watched: true } as Partial<UserDoc>);
+      const devId = deviceFingerprint();
+      const dev = await docGet<DeviceDoc>('devices', devId);
+      await docSet('devices', devId, {
+        id: devId, uids: [...new Set([...(dev?.uids ?? []), uid])], banned: true, updatedAt: Date.now(),
+      } as DeviceDoc);
+    }
+    const nid = notifId(uid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: uid, kind: 'sistema', title, body, ts: Date.now(), read: false,
+    } as AppNotification);
+    if (uid === user?.uid) {
+      const fresh = (await docGet<SanctionDoc>('sanctions', id)) ?? null;
+      setMySanction(fresh);
+    }
+    return strikes;
+  };
+
+  const qaSend = async (board: QABoard, body: string, parentId: string | null): Promise<boolean> => {
+    if (!user || !myDoc) return false;
+    if (!body.trim()) { notify('Escribe tu pregunta o consejo antes de publicar.'); return false; }
+    if (qaBlockedNow.blocked) { notify(qaBlockedNow.reason); return false; }
+    // Moderación instantánea: insultos o agresiones nunca se publican.
+    const abuse = detectAbusiveLanguage(body);
+    const report = analyzeReport(body);
+    if (abuse.abusive || report.recommended === 'Suspensión sugerida' || report.recommended === 'Baneo sugerido') {
+      const reason = abuse.severe
+        ? 'Se detectó una agresión grave.'
+        : 'Se detectaron insultos o faltas de respeto.';
+      const strikes = await sanctionUser(user.uid, myDoc.alias, reason);
+      if (strikes >= 4) {
+        notify('Tu cuenta fue baneada de forma permanente por repetidas faltas a las reglas de la comunidad.');
+        await signOut(auth);
+        return false;
+      }
+      notify('Tu comentario fue eliminado al instante por incumplir las reglas de respeto, educación y comprensión. Sanción aplicada.');
+      return false;
+    }
+    const id = 'qa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const post: QAPostDoc = {
+      id, board, userUid: user.uid, alias: myDoc.alias,
+      parentId, body: body.trim(), status: 'visible', createdAt: Date.now(),
+    };
+    const ok = await docSet('qa_posts', id, post as any);
+    if (ok) {
+      setQaPosts((prev) => [post, ...prev]);
+      notify(parentId ? 'Respuesta publicada.' : 'Pregunta publicada. Gracias por compartir con respeto.');
+      return true;
+    }
+    notify('No fue posible publicar. Intenta de nuevo.');
+    return false;
+  };
+
+  // ------------------------ Chats grupales de propuestas ---------------------
+  const openGroupChat = (g: GroupChatDoc) => {
+    setChatWith(null);
+    setGroupChat(g);
+  };
+
+  useEffect(() => {
+    if (!groupChat || !user) return;
+    let stop = false;
+    const pull = async () => {
+      const doc = await docGet<{ messages?: ChatMsg[] }>('messages', groupChat.id);
+      if (!stop) setGroupMsgs(Array.isArray(doc?.messages) ? doc!.messages! : []);
+    };
+    void pull();
+    const t = setInterval(() => void pull(), 6000);
+    return () => { stop = true; clearInterval(t); };
+  }, [groupChat, user]);
+
+  const sendGroupMsg = async () => {
+    if (!groupChat || !user || !myDoc || !groupDraft.trim()) return;
+    const text = groupDraft.trim();
+    setGroupDraft('');
+    const doc = await docGet<{ messages?: ChatMsg[] }>('messages', groupChat.id);
+    const msgs = Array.isArray(doc?.messages) ? [...doc!.messages!] : [];
+    msgs.push({ id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6), uid: user.uid, t: text, ts: Date.now() });
+    await docSet('messages', groupChat.id, { id: groupChat.id, users: groupChat.memberUids, messages: msgs });
+    await docUpdate<GroupChatDoc>('group_chats', groupChat.id, { lastMessage: text, lastTs: Date.now() } as Partial<GroupChatDoc>);
+    setGroupMsgs(msgs);
+    setGroupChats((prev) => prev.map((g) => (g.id === groupChat.id ? { ...g, lastMessage: text, lastTs: Date.now() } : g)));
+  };
+
+  const createGroupChatFromProposal = async (p: ProposalDoc, uids: string[]) => {
+    if (!user || !myDoc) return;
+    const members = [...new Set([user.uid, ...uids])];
+    const id = 'gc_' + p.id + '_' + user.uid;
+    const existing = await docGet<GroupChatDoc>('group_chats', id);
+    if (existing) { openGroupChat(existing); return; }
+    const g: GroupChatDoc = {
+      id, title: p.title, proposalId: p.id, memberUids: members,
+      createdBy: user.uid, createdAt: Date.now(), lastTs: Date.now(), lastMessage: 'Chat de la propuesta creado.',
+    };
+    await docSet('group_chats', id, g as any);
+    await docSet('messages', id, { id, users: members, messages: [] });
+    // Notifica a los invitados.
+    for (const uid of members) {
+      if (uid === user.uid) continue;
+      const peer = allUsers.find((u) => u.uid === uid);
+      const nid = notifId(uid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: uid, kind: 'sistema',
+        title: 'Chat de propuesta',
+        body: myDoc.alias + ' te invitó al chat grupal de la propuesta "' + p.title + '". Lo encontrarás en Mensajes.',
+        ts: Date.now(), read: false,
+      } as AppNotification);
+      void peer;
+    }
+    setGroupChats((prev) => [g, ...prev]);
+    openGroupChat(g);
+    notify('Chat grupal creado. Aparece en Mensajes con el título de la propuesta.');
+  };
+
+  const openDirectChat = (uid: string) => {
+    const peer = allUsers.find((u) => u.uid === uid);
+    if (peer) { setGroupChat(null); setChatWith(peer); }
+  };
+
+  // ---------------- Publicación de eventos (paquetes con pago SPEI) -----------
+  const createEventPubOrder = async (pack: EventPubPack, withDesign: boolean, designData: { tema: string; invitados: string; fecha: string; hora: string } | null) => {
+    if (!user || !myDoc) return;
+    const base = pack.price + (withDesign ? EVENT_DESIGN_PRICE : 0);
+    const order = newSpeiOrder({
+      kind: 'publicacion_evento', itemRef: pack.id,
+      label: 'Publicación de evento: ' + pack.name + (withDesign ? ' + diseño' : ''),
+      amount: ivaTotal(base),
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    order.meta = JSON.stringify({ packId: pack.id, credits: pack.credits, design: withDesign, designData });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setOrderSheet(order);
+      setSheet(null);
+      notify('Orden SPEI creada. Al aprobarse el pago tendrás tu publicación disponible.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  const publishUserEvent = async (f: { title: string; theme: string; date: string; time: string; zone: string; cap: number; price: number; reqs: string }) => {
+    if (!user || !myDoc) return false;
+    const credits = myDoc.eventPubCredits ?? 0;
+    if (credits <= 0) { notify('No tienes publicaciones disponibles. Adquiere un paquete en Publicar evento.'); return false; }
+    if (!f.title.trim() || !f.date.trim() || !f.time.trim() || !f.zone.trim()) { notify('Completa título, fecha, hora y zona (la dirección exacta se comparte solo con asistentes).'); return false; }
+    const id = 'uev_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const doc: EventDoc = {
+      id, title: f.title.trim(), theme: f.theme.trim() || 'Encuentro liberal',
+      date: f.date.trim(), time: f.time.trim(), zone: f.zone.trim(),
+      organizer: myDoc.alias, price: Math.max(0, Math.round(f.price) || 0),
+      cap: Math.max(4, f.cap), sold: 0, published: true,
+      hue: Math.floor(Math.random() * 360),
+      reqs: f.reqs.split('\n').map((r) => r.trim()).filter(Boolean).slice(0, 6),
+      createdAt: Date.now(),
+    } as EventDoc;
+    const ok = await docSet('events', id, doc as any);
+    if (!ok) { notify('No fue posible publicar el evento.'); return false; }
+    await docUpdate<UserDoc>('users', user.uid, { eventPubCredits: credits - 1 } as Partial<UserDoc>);
+    setEvents((prev) => [doc, ...prev]);
+    await refreshCore();
+    notify('Evento publicado. La dirección exacta se comparte solo con asistentes confirmados el día del evento.');
+    return true;
+  };
+
+  // ------------------------- Notificaciones: gestionar ------------------------
+  const deleteNotif = async (id: string) => {
+    await docDelete('notifications', id);
+    setNotifs((prev) => prev.filter((n) => n.id !== id));
+  };
+
+  const markAllNotifsRead = async () => {
+    const unreadIds = notifs.filter((n) => !n.read).map((n) => n.id);
+    if (unreadIds.length === 0) return;
+    await markNotificationsRead(user?.uid ?? '', unreadIds);
+    setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+    notify('Notificaciones marcadas como leídas.');
+  };
+
+
   const createProposal = async (f: { cat: string; title: string; body: string; rules: string }) => {
     if (!user || !myDoc) return false;
     const id = 'pr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -1534,6 +2051,50 @@ export default function App() {
     );
   }
 
+  // Pantalla de cuenta desactivada (contraseñas erróneas insistente): el
+  // usuario habla con administración en un chat directo con bot de validación.
+  if ((view === 'app' || view === 'verificacion') && myDoc && user && !isAdmin && myDoc.deactivated) {
+    return (
+      <div className="shell">
+        <div className="screen">
+          <div className="aura" />
+          <div className="topbar">
+            <span className="wordmark">App<b>Swinguer</b></span>
+            <span className="tag bad"><KeyRound size={12} /> Desactivada</span>
+          </div>
+          <div className="body" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div className="card" style={{ textAlign: 'center' }}>
+              <KeyRound size={34} color="var(--bad)" />
+              <div className="h1" style={{ fontSize: 26, marginTop: 12 }}>Cuenta desactivada</div>
+              <p className="muted small" style={{ margin: '10px 0 0' }}>
+                Motivo: {myDoc.deactivatedReason || 'ingresó varias veces una contraseña errónea'}. Contacta a un
+                asesor para la activación de tu cuenta: buscamos darte seguridad y proteger a cada usuario. Gracias
+                por tu comprensión.
+              </p>
+              <button className="btn btn-neon full" style={{ marginTop: 14 }} onClick={() => setRecoveryOpen(true)}>
+                <MessageCircle size={18} /> Contactar administración
+              </button>
+              <button className="btn btn-bad full" style={{ marginTop: 8 }} onClick={() => void signOut(auth)}>
+                <LogOut size={18} /> Cerrar sesión
+              </button>
+            </div>
+          </div>
+        </div>
+        <AnimatePresence>
+          {recoveryOpen && (
+            <RecoveryChatView
+              email={user.email}
+              uid={user.uid}
+              alias={myDoc.alias}
+              onClose={() => setRecoveryOpen(false)}
+              onToast={notify}
+            />
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
+
   // Bloqueo efectivo de cuentas suspendidas o baneadas: el veredicto del
   // administrador corta el acceso completo a la aplicación.
   if ((view === 'app' || view === 'verificacion') && myDoc && !isAdmin && (myDoc.status === 'suspendido' || myDoc.identityStatus === 'baneada')) {
@@ -1660,15 +2221,20 @@ export default function App() {
                   myUid={user.uid}
                   onOpenChat={(peer) => setChatWith(peer)}
                   ratingAgg={ratingAgg}
+                  groupChats={groupChats}
+                  onOpenGroupChat={openGroupChat}
                 />
               )}
               {tab === 'propuestas' && (
                 <PropuestasTab
                   myUid={user.uid}
                   proposals={proposals}
+                  allUsers={allUsers}
                   onApply={applyToProposal}
                   onToast={notify}
                   onOpenNew={() => setSheet('propuesta')}
+                  onOpenDirect={openDirectChat}
+                  onOpenGroup={createGroupChatFromProposal}
                 />
               )}
               {tab === 'eventos' && (
@@ -1677,6 +2243,9 @@ export default function App() {
                   passes={passes}
                   onOpenEvent={(ev) => setEventSheet(ev)}
                   onToast={notify}
+                  myCredits={myDoc.eventPubCredits ?? 0}
+                  onOpenPublish={() => setSheet('publicar_evento')}
+                  onOpenCreate={() => setSheet('crear_evento')}
                 />
               )}
               {tab === 'virtual' && (
@@ -1700,6 +2269,16 @@ export default function App() {
                     setExplicitView({ image: p.image, caption: p.caption, kind: p.kind ?? 'foto' });
                     setExplicitConfirm(true);
                   }}
+                  fullAccess={isAdmin}
+                />
+              )}
+              {tab === 'comunidad' && user && myDoc && (
+                <ComunidadTab
+                  myDoc={myDoc}
+                  posts={qaPosts}
+                  sanction={mySanction}
+                  onSend={qaSend}
+                  onToast={notify}
                 />
               )}
               {tab === 'perfil' && (
@@ -1745,6 +2324,7 @@ export default function App() {
                 ['propuestas', <Sparkles size={22} />, 'Propuestas'],
                 ['eventos', <CalendarDays size={22} />, 'Eventos'],
                 ['virtual', <Star size={22} />, 'Virtual'],
+                ['comunidad', <HelpCircle size={22} />, 'Comunidad'],
                 ['perfil', <Users size={22} />, 'Perfil'],
               ] as [Tab, React.ReactNode, string][]).map(([id, icon, label]) => (
                 <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -1918,6 +2498,43 @@ export default function App() {
               </div>
             </motion.div>
           )}
+
+          {groupChat && user && allUsers.length >= 0 && (
+            <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
+              <div className="topbar">
+                <button className="iconbtn" aria-label="Salir" onClick={() => setGroupChat(null)}><ChevronLeft size={20} /></button>
+                <span className="caps" style={{ fontSize: 16, flex: 1, textAlign: 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{groupChat.title}</span>
+                <span className="tag"><Users size={12} /> {groupChat.memberUids.length}</span>
+              </div>
+              <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {groupMsgs.length === 0 && (
+                  <div className="card" style={{ textAlign: 'center', marginTop: 20 }}>
+                    <Sparkles size={26} color="var(--lila)" />
+                    <p className="muted small" style={{ margin: '8px 0 0' }}>Chat de la propuesta "{groupChat.title}". Coordinen con respeto y reglas claras.</p>
+                  </div>
+                )}
+                {groupMsgs.map((m) => {
+                  const peer = allUsers.find((u) => u.uid === m.uid);
+                  return (
+                    <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.uid === user.uid ? 'flex-end' : 'flex-start' }}>
+                      {m.uid !== user.uid && <span className="tiny" style={{ marginBottom: 2, color: 'var(--lila)' }}>{peer?.alias ?? 'Usuario'}</span>}
+                      <div className={'bubble ' + (m.uid === user.uid ? 'me' : 'them')}>{m.t}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="composer">
+                <input
+                  className="field" placeholder="Mensaje al grupo…" value={groupDraft}
+                  onChange={(e) => setGroupDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') void sendGroupMsg(); }}
+                />
+                <button className="iconbtn" style={{ background: 'var(--lila)', color: '#12051f' }} aria-label="Enviar" onClick={() => void sendGroupMsg()}>
+                  <Send size={18} />
+                </button>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* ---------------------- Pago SPEI (desde Perfil) ------------- */}
@@ -2049,14 +2666,33 @@ export default function App() {
           {sheet === 'avisos' && (
             <motion.div key="sheet-avisos" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
               <div className="grab" />
-              <div className="caps" style={{ fontSize: 22 }}>Avisos</div>
+              <div className="row between">
+                <div className="caps" style={{ fontSize: 22 }}>Avisos</div>
+                {notifs.length > 0 && (
+                  <div className="row" style={{ gap: 6 }}>
+                    {unread > 0 && (
+                      <button className="btn btn-dark btn-sm" onClick={() => void markAllNotifsRead()}>
+                        <Check size={15} /> Marcar todas como leídas
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
               <div className="stack" style={{ gap: 8, marginTop: 12 }}>
                 {notifs.length === 0 && <p className="muted small">Sin avisos por ahora.</p>}
                 {notifs.map((n) => (
                   <div key={n.id} className="card" style={{ padding: 14, background: n.read ? 'var(--s2)' : 'var(--s3)', boxShadow: n.read ? 'inset 0 0 0 1px var(--line)' : 'inset 0 0 0 1px var(--lila), var(--glow)' }}>
                     <div className="row between">
-                      <span className="caps" style={{ fontSize: 15 }}>{n.title}</span>
-                      <span className="tiny">{ago(n.ts)}</span>
+                      <span className="caps" style={{ fontSize: 15 }}>
+                        {!n.read && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: '#ff3b5c', marginRight: 6, boxShadow: '0 0 8px rgba(255,59,92,.8)' }} />}
+                        {n.title}
+                      </span>
+                      <span className="row" style={{ gap: 6 }}>
+                        <span className="tiny">{ago(n.ts)}</span>
+                        <button className="iconbtn" aria-label="Borrar aviso" style={{ width: 30, height: 30 }} onClick={() => void deleteNotif(n.id)}>
+                          <X size={14} />
+                        </button>
+                      </span>
                     </div>
                     <span className="small" style={{ display: 'block', marginTop: 4 }}>{n.body}</span>
                   </div>
@@ -2067,6 +2703,26 @@ export default function App() {
           {sheet === 'propuesta' && (
             <motion.div key="sheet-propuesta" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
               <ProposalSheet onClose={() => setSheet(null)} onSubmit={createProposal} onToast={notify} />
+            </motion.div>
+          )}
+          {sheet === 'publicar_evento' && (
+            <motion.div key="sheet-pubevento" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <EventPubSheet
+                credits={myDoc.eventPubCredits ?? 0}
+                onClose={() => setSheet(null)}
+                onBuy={createEventPubOrder}
+                onToast={notify}
+                onCreate={() => setSheet('crear_evento')}
+              />
+            </motion.div>
+          )}
+          {sheet === 'crear_evento' && (
+            <motion.div key="sheet-crearevento" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <UserEventSheet
+                onClose={() => setSheet(null)}
+                onPublish={publishUserEvent}
+                onToast={notify}
+              />
             </motion.div>
           )}
           {sheet === 'donacion' && donationTarget && user && myDoc && (
@@ -2151,12 +2807,14 @@ export default function App() {
 // PESTAÑA MATCH
 // ============================================================================
 
-function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOpenChat, ratingAgg }: {
+function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOpenChat, ratingAgg, groupChats, onOpenGroupChat }: {
   deck: UserDoc[]; vip: boolean; likesToday: number;
   onAct: (target: UserDoc, action: 'like' | 'superlike' | 'pass') => Promise<void>;
   matches: MatchEntry[]; allUsers: UserDoc[]; myUid: string;
   onOpenChat: (peer: UserDoc) => void;
   ratingAgg: Map<string, { avg: number; count: number }>;
+  groupChats: GroupChatDoc[];
+  onOpenGroupChat: (g: GroupChatDoc) => void;
 }) {
   const [seg, setSeg] = useState<'descubre' | 'mensajes'>('descubre');
   const [removed, setRemoved] = useState<string[]>([]);
@@ -2187,7 +2845,28 @@ function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOp
           <button className="on">Mensajes</button>
         </div>
         <p className="sub">Los mensajes se abren solo con interés mutuo.</p>
-        {chatRows.length === 0 && (
+        {groupChats.length > 0 && (
+          <>
+            <div className="label" style={{ margin: '16px 0 8px' }}>Chats de propuestas</div>
+            <div className="stack" style={{ gap: 8 }}>
+              {groupChats.map((g) => (
+                <button key={g.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpenGroupChat(g)}>
+                  <span className="caps" style={{ width: 46, height: 46, borderRadius: 14, background: 'hsl(285 45% 22%)', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                    <Users size={20} color="var(--lila)" />
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span className="caps" style={{ display: 'block', fontSize: 16 }}>{g.title}</span>
+                    <span className="tiny" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {g.memberUids.length} participantes · {g.lastMessage || 'Chat grupal'}
+                    </span>
+                  </span>
+                  <span className="tiny">{ago(g.lastTs ?? g.createdAt)}</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+        {chatRows.length === 0 && groupChats.length === 0 && (
           <div className="card" style={{ textAlign: 'center', marginTop: 20 }}>
             <MessageCircle size={28} color="var(--lila)" />
             <p className="muted" style={{ margin: '10px 0 0' }}>
@@ -2324,14 +3003,30 @@ function DeckCard({ p, onFly, top, behind, rating }: {
 // PESTAÑA PROPUESTAS
 // ============================================================================
 
-function PropuestasTab({ myUid, proposals, onApply, onToast, onOpenNew }: {
-  myUid: string; proposals: ProposalDoc[];
+function PropuestasTab({ myUid, proposals, allUsers, onApply, onToast, onOpenNew, onOpenDirect, onOpenGroup }: {
+  myUid: string; proposals: ProposalDoc[]; allUsers: UserDoc[];
   onApply: (p: ProposalDoc) => Promise<void>;
   onToast: (s: string) => void;
   onOpenNew: () => void;
+  onOpenDirect: (uid: string) => void;
+  onOpenGroup: (p: ProposalDoc, uids: string[]) => Promise<void>;
 }) {
+  const [showProfile, setShowProfile] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Record<string, string[]>>({});
+
   const pub = proposals.filter((p) => p.status === 'publicada').sort((a, b) => b.createdAt - a.createdAt);
   const mias = proposals.filter((p) => p.authorUid === myUid && p.status !== 'publicada').sort((a, b) => b.createdAt - a.createdAt);
+  const minePub = pub.filter((p) => p.authorUid === myUid);
+  const myApplies = pub.filter((p) => (p.applies ?? []).includes(myUid));
+  const aliasOf = (uid: string) => allUsers.find((u) => u.uid === uid)?.alias ?? 'Usuario';
+
+  const toggleSelect = (proposalId: string, uid: string) => {
+    setSelected((prev) => {
+      const cur = prev[proposalId] ?? [];
+      return { ...prev, [proposalId]: cur.includes(uid) ? cur.filter((x) => x !== uid) : [...cur, uid] };
+    });
+  };
 
   return (
     <>
@@ -2340,8 +3035,37 @@ function PropuestasTab({ myUid, proposals, onApply, onToast, onOpenNew }: {
           <div className="h1">Propuestas</div>
           <p className="sub" style={{ marginBottom: 0 }}>Planes con reglas claras.</p>
         </div>
-        <button className="btn btn-neon btn-sm" onClick={onOpenNew}><Plus size={16} /> Publicar</button>
+        <div className="row" style={{ gap: 6 }}>
+          <button className="btn btn-dark btn-sm" onClick={() => setShowProfile((v) => !v)}><Users size={16} /> Perfil</button>
+          <button className="btn btn-neon btn-sm" onClick={onOpenNew}><Plus size={16} /> Publicar</button>
+        </div>
       </div>
+
+      {showProfile && (
+        <div className="card" style={{ padding: 14, marginTop: 12 }}>
+          <div className="label">Mi perfil de propuestas</div>
+          <div className="grid2" style={{ gap: 8, marginTop: 8 }}>
+            <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+              <div className="caps" style={{ fontSize: 20 }}>{minePub.length}</div>
+              <div className="tiny">Propuestas publicadas</div>
+            </div>
+            <div className="card" style={{ padding: 12, textAlign: 'center' }}>
+              <div className="caps" style={{ fontSize: 20 }}>{myApplies.length}</div>
+              <div className="tiny">Postulaciones enviadas</div>
+            </div>
+          </div>
+          {minePub.length > 0 && (
+            <div className="stack" style={{ gap: 6, marginTop: 10 }}>
+              {minePub.map((p) => (
+                <div key={p.id} className="row between">
+                  <span className="small">{p.title}</span>
+                  <span className="tag">{(p.applies ?? []).length} postulación(es)</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {mias.length > 0 && (
         <div className="stack" style={{ gap: 8, marginTop: 14 }}>
@@ -2371,6 +3095,9 @@ function PropuestasTab({ myUid, proposals, onApply, onToast, onOpenNew }: {
         {pub.map((p) => {
           const applied = (p.applies ?? []).includes(myUid);
           const mine = p.authorUid === myUid;
+          const isOpen = expanded === p.id;
+          const sel = selected[p.id] ?? [];
+          const isGroup = /tr[íi]o|gangbang|grupal|grupo/i.test(p.cat + ' ' + p.title);
           return (
             <div key={p.id} className="card" style={{ padding: 14 }}>
               <div className="row between">
@@ -2388,15 +3115,61 @@ function PropuestasTab({ myUid, proposals, onApply, onToast, onOpenNew }: {
                 </>
               )}
               <div className="row between" style={{ marginTop: 12 }}>
-                <span className="tiny">De {p.authorAlias} · {(p.applies ?? []).length} aplicación(es)</span>
-                {mine ? (
-                  <span className="tag ok">Tuya</span>
-                ) : applied ? (
-                  <span className="tag ok"><BadgeCheck size={12} /> Aplicaste</span>
-                ) : (
-                  <button className="btn btn-neon btn-sm" onClick={() => void onApply(p)}>Aplicar</button>
-                )}
+                <span className="tiny">De {p.authorAlias}</span>
+                <button
+                  className="btn btn-dark btn-sm"
+                  onClick={() => setExpanded(isOpen ? null : p.id)}
+                >
+                  <Users size={14} /> {(p.applies ?? []).length} postulación(es)
+                </button>
               </div>
+              {!mine && (
+                <div style={{ marginTop: 10 }}>
+                  {applied ? (
+                    <span className="tag ok"><BadgeCheck size={12} /> Postulado</span>
+                  ) : (
+                    <button className="btn btn-neon btn-sm" onClick={() => void onApply(p)}>Postularme</button>
+                  )}
+                </div>
+              )}
+              {isOpen && (
+                <div className="card" style={{ padding: 12, marginTop: 10, background: 'var(--s3)' }}>
+                  <div className="label" style={{ marginBottom: 6 }}>Quienes se postularon</div>
+                  {(p.applies ?? []).length === 0 && <p className="tiny muted">Aún sin postulaciones.</p>}
+                  <div className="stack" style={{ gap: 6 }}>
+                    {(p.applies ?? []).map((uid) => (
+                      <div key={uid} className="row between">
+                        <span className="small">{aliasOf(uid)}</span>
+                        {mine && (
+                          <span className="row" style={{ gap: 6 }}>
+                            {isGroup && (
+                              <button
+                                className={'btn btn-sm ' + (sel.includes(uid) ? 'btn-neon' : 'btn-dark')}
+                                onClick={() => toggleSelect(p.id, uid)}
+                              >
+                                {sel.includes(uid) ? <Check size={13} /> : <Plus size={13} />} Seleccionar
+                              </button>
+                            )}
+                            <button className="btn btn-dark btn-sm" onClick={() => onOpenDirect(uid)}>
+                              <MessageCircle size={13} /> Mensaje
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {mine && isGroup && (
+                    <button
+                      className="btn btn-neon full"
+                      style={{ marginTop: 10 }}
+                      disabled={sel.length === 0}
+                      onClick={() => void onOpenGroup(p, sel)}
+                    >
+                      <Users size={16} /> Chat grupal ({sel.length} seleccionado(s))
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
@@ -2404,6 +3177,7 @@ function PropuestasTab({ myUid, proposals, onApply, onToast, onOpenNew }: {
     </>
   );
 }
+
 
 function ProposalSheet({ onClose, onSubmit, onToast }: {
   onClose: () => void;
@@ -2626,6 +3400,528 @@ function OficioSheet({ creator, busy, onClose, onSign }: {
 }
 
 // ============================================================================
+// PESTAÑA COMUNIDAD (DUDAS, CONSEJOS Y RECOMENDACIONES)
+// Tres tableros: hombres, mujeres y parejas. Reglas: respeto, educación y
+// comprensión. El motor de moderación elimina insultos al instante y aplica
+// la sanción escalonada (15 días, 2 meses, bloqueo con seguimiento, baneo).
+// ============================================================================
+
+function ComunidadTab({ myDoc, posts, sanction, onSend, onToast }: {
+  myDoc: UserDoc; posts: QAPostDoc[]; sanction: SanctionDoc | null;
+  onSend: (board: QABoard, body: string, parentId: string | null) => Promise<boolean>;
+  onToast: (s: string) => void;
+}) {
+  const [board, setBoard] = useState<QABoard>(boardForKind(myDoc.kind));
+  const [draft, setDraft] = useState('');
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const questions = posts.filter((p) => p.board === board && !p.parentId);
+  const repliesOf = (parentId: string) => posts.filter((p) => p.parentId === parentId);
+
+  const send = async () => {
+    if (busy) return;
+    if (replyTo) {
+      setBusy(true);
+      const ok = await onSend(board, replyDraft, replyTo);
+      setBusy(false);
+      if (ok) { setReplyDraft(''); setReplyTo(null); }
+      return;
+    }
+    if (!draft.trim()) { onToast('Escribe tu duda, consejo o recomendación.'); return; }
+    setBusy(true);
+    const ok = await onSend(board, draft, null);
+    setBusy(false);
+    if (ok) setDraft('');
+  };
+
+  return (
+    <>
+      <div className="h1">Comunidad</div>
+      <p className="sub">Apartado de dudas, consejos y recomendaciones.</p>
+
+      <div className="seg" style={{ marginBottom: 12 }}>
+        <button className={board === 'hombres' ? 'on' : ''} onClick={() => setBoard('hombres')}>Hombres</button>
+        <button className={board === 'mujeres' ? 'on' : ''} onClick={() => setBoard('mujeres')}>Mujeres</button>
+        <button className={board === 'parejas' ? 'on' : ''} onClick={() => setBoard('parejas')}>Parejas</button>
+      </div>
+
+      <div className="card" style={{ padding: 14 }}>
+        <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+          <ShieldCheck size={18} color="var(--lila)" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div>
+            <span className="caps" style={{ fontSize: 15 }}>
+              Tablero de {board === 'hombres' ? 'hombres' : board === 'mujeres' ? 'mujeres' : 'parejas'}
+            </span>
+            <p className="tiny" style={{ margin: '4px 0 0' }}>
+              Reglas del apartado: respeto, educación y comprensión (empatía). Quien comente malas cosas o
+              insultos y agresiones se elimina al instante: primera falta, 15 días sin participar; segunda,
+              2 meses; tercera, bloqueo del apartado y perfil marcado para seguimiento automático; cuarta,
+              baneo permanente sin posibilidad de registrar cuentas desde el mismo dispositivo.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {sanctionBlockedNow(sanction, Date.now()) && (
+        <div className="card" style={{ padding: 14, marginTop: 12, boxShadow: 'inset 0 0 0 1.5px var(--bad)' }}>
+          <div className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+            <Ban size={18} color="var(--bad)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <span className="small">{sanctionBlockedNow(sanction, Date.now())}</span>
+          </div>
+        </div>
+      )}
+
+      {!sanctionBlockedNow(sanction, Date.now()) && (
+        <div className="card" style={{ padding: 14, marginTop: 12 }}>
+          <div className="label" style={{ marginBottom: 6 }}>
+            {replyTo ? 'Responder a la pregunta' : 'Nueva pregunta, consejo o recomendación'}
+          </div>
+          {replyTo && (
+            <div className="row between" style={{ marginBottom: 8 }}>
+              <span className="tiny">Respondiendo a una publicación de {posts.find((p) => p.id === replyTo)?.alias ?? 'usuario'}</span>
+              <button className="btn btn-dark btn-sm" onClick={() => { setReplyTo(null); setReplyDraft(''); }}><X size={13} /> Cancelar</button>
+            </div>
+          )}
+          <textarea
+            className="field"
+            placeholder={replyTo ? 'Escribe tu respuesta con respeto y empatía…' : 'Comparte tu duda o ayuda a otros con tu experiencia…'}
+            value={replyTo ? replyDraft : draft}
+            maxLength={600}
+            onChange={(e) => (replyTo ? setReplyDraft(e.target.value) : setDraft(e.target.value))}
+          />
+          <button className="btn btn-neon full" style={{ marginTop: 10 }} disabled={busy} onClick={() => void send()}>
+            {busy ? <Loader2 size={18} className="spin" /> : <Send size={18} />} Publicar
+          </button>
+        </div>
+      )}
+
+      {questions.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', marginTop: 16 }}>
+          <MessageCircle size={30} color="var(--lila)" />
+          <p className="muted" style={{ margin: '10px 0 0' }}>
+            Aún no hay publicaciones en este tablero. Comparte la primera duda, consejo o recomendación.
+          </p>
+        </div>
+      )}
+
+      <div className="stack" style={{ gap: 10, marginTop: 12 }}>
+        {questions.map((q) => (
+          <div key={q.id} className="card" style={{ padding: 14 }}>
+            <div className="row between">
+              <span className="caps" style={{ fontSize: 15 }}>{q.alias}</span>
+              <span className="tiny">{ago(q.createdAt)}</span>
+            </div>
+            <p className="small" style={{ margin: '8px 0 0', whiteSpace: 'pre-line' }}>{q.body}</p>
+            <div className="row between" style={{ marginTop: 10 }}>
+              <button className="btn btn-dark btn-sm" onClick={() => { setReplyTo(q.id); setReplyDraft(''); }}>
+                <MessageCircle size={14} /> Responder ({repliesOf(q.id).length})
+              </button>
+            </div>
+            {repliesOf(q.id).length > 0 && (
+              <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+                {repliesOf(q.id).map((r) => (
+                  <div key={r.id} className="card" style={{ padding: 12, background: 'var(--s3)' }}>
+                    <div className="row between">
+                      <span className="caps small" style={{ color: 'var(--lila)' }}>{r.alias}</span>
+                      <span className="tiny">{ago(r.createdAt)}</span>
+                    </div>
+                    <p className="small" style={{ margin: '6px 0 0', whiteSpace: 'pre-line' }}>{r.body}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Motivo de bloqueo vigente de un usuario en la comunidad ('' si puede participar). */
+function sanctionBlockedNow(s: SanctionDoc | null, now: number): string {
+  if (!s) return '';
+  if (s.strikes >= 4 || s.sectionBlocked) {
+    return 'Tu participación en la comunidad quedó bloqueada de forma definitiva por faltas repetidas a las reglas de respeto.';
+  }
+  if (s.blockedUntil && s.blockedUntil > now) {
+    const until = new Date(s.blockedUntil).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+    return 'Tu participación en la comunidad está suspendida hasta el ' + until + ' por faltas a las reglas de respeto.';
+  }
+  return '';
+}
+
+// ============================================================================
+// PUBLICACIÓN DE EVENTOS: paquetes con pago SPEI + diseño opcional
+// ============================================================================
+
+function EventPubSheet({ credits, onClose, onBuy, onToast, onCreate }: {
+  credits: number;
+  onClose: () => void;
+  onBuy: (pack: EventPubPack, withDesign: boolean, designData: { tema: string; invitados: string; fecha: string; hora: string } | null) => Promise<void>;
+  onToast: (s: string) => void;
+  onCreate: () => void;
+}) {
+  const [pack, setPack] = useState<EventPubPack | null>(null);
+  const [withDesign, setWithDesign] = useState(false);
+  const [designData, setDesignData] = useState({ tema: '', invitados: '', fecha: '', hora: '' });
+  const [designReady, setDesignReady] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const total = pack ? pack.price + (withDesign ? EVENT_DESIGN_PRICE : 0) : 0;
+
+  return (
+    <>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Publicar evento</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>
+        El pago otorga únicamente el derecho a publicar eventos en el apartado Eventos.
+      </p>
+
+      {credits > 0 && (
+        <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+          <div className="row between">
+            <span className="small">Tienes {credits} publicación(es) disponible(s).</span>
+            <button className="btn btn-neon btn-sm" onClick={onCreate}><Plus size={15} /> Publicar ahora</button>
+          </div>
+        </div>
+      )}
+
+      <div className="label">Paquetes</div>
+      <div className="stack" style={{ gap: 10, marginTop: 8 }}>
+        {EVENT_PUB_PACKS.map((pk) => (
+          <button
+            key={pk.id}
+            className="card"
+            style={{
+              textAlign: 'left', padding: 14, width: '100%',
+              boxShadow: pack?.id === pk.id ? 'inset 0 0 0 1.5px var(--lila), var(--glow)' : 'inset 0 0 0 1px var(--line)',
+            }}
+            onClick={() => setPack(pk)}
+          >
+            <div className="row between">
+              <div>
+                <div className="caps" style={{ fontSize: 16 }}>{pk.name}</div>
+                <div className="tiny">{pk.detail}</div>
+              </div>
+              <PriceIva base={pk.price} size={20} />
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <div className="card" style={{ padding: 14, marginTop: 12 }}>
+        <div className="row between">
+          <div>
+            <div className="caps" style={{ fontSize: 16 }}>Incluir diseño</div>
+            <p className="tiny" style={{ margin: '2px 0 0' }}>
+              Banner del anuncio + historia para redes. Administración prepara tus diseños tras aprobar el pago.
+            </p>
+          </div>
+          <button className={'btn btn-sm ' + (withDesign ? 'btn-neon' : 'btn-dark')} onClick={() => { setWithDesign((v) => !v); setDesignReady(false); }}>
+            {withDesign ? <Check size={15} /> : <Plus size={15} />} {EVENT_DESIGN_PRICE === 300 ? '$300 + IVA' : ''}
+          </button>
+        </div>
+        {withDesign && !designReady && (
+          <div className="card" style={{ padding: 12, marginTop: 10, background: 'var(--s3)' }}>
+            <div className="label" style={{ marginBottom: 6 }}>Datos que llevará el diseño</div>
+            <div className="stack" style={{ gap: 8 }}>
+              <input className="field" placeholder="Temática o tipo de evento" value={designData.tema} onChange={(e) => setDesignData({ ...designData, tema: e.target.value.slice(0, 60) })} />
+              <input className="field" placeholder="Cantidad de invitados" value={designData.invitados} onChange={(e) => setDesignData({ ...designData, invitados: e.target.value.slice(0, 30) })} />
+              <div className="grid2">
+                <input className="field" placeholder="Fecha" value={designData.fecha} onChange={(e) => setDesignData({ ...designData, fecha: e.target.value.slice(0, 24) })} />
+                <input className="field" placeholder="Hora" value={designData.hora} onChange={(e) => setDesignData({ ...designData, hora: e.target.value.slice(0, 12) })} />
+              </div>
+              <button
+                className="btn btn-dark full"
+                disabled={!designData.tema.trim() || !designData.invitados.trim() || !designData.fecha.trim() || !designData.hora.trim()}
+                onClick={() => setDesignReady(true)}
+              >
+                <Check size={15} /> Listo
+              </button>
+              <p className="tiny muted" style={{ margin: 0 }}>
+                La información queda anclada y se adjunta a administración para elaborar el diseño. La ubicación no se
+                pide aquí: se captura al publicar el evento y se comparte solo con asistentes el día del evento.
+              </p>
+            </div>
+          </div>
+        )}
+        {withDesign && designReady && (
+          <div className="row between" style={{ marginTop: 10 }}>
+            <span className="tiny">Datos del diseño guardados: {designData.tema} · {designData.invitados} · {designData.fecha} {designData.hora}</span>
+            <button className="btn btn-dark btn-sm" onClick={() => setDesignReady(false)}>Editar</button>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 14, marginTop: 12 }}>
+        <div className="row between">
+          <span className="caps">Total a pagar</span>
+          {pack ? <PriceIva base={total} align="right" size={24} /> : <span className="tiny">Selecciona un paquete</span>}
+        </div>
+        <button
+          className="btn btn-neon full"
+          style={{ marginTop: 10 }}
+          disabled={!pack || busy || (withDesign && !designReady)}
+          onClick={async () => {
+            if (!pack) return;
+            setBusy(true);
+            await onBuy(pack, withDesign, withDesign ? designData : null);
+            setBusy(false);
+          }}
+        >
+          {busy ? <Loader2 size={18} className="spin" /> : <Banknote size={18} />} Pagar por SPEI
+        </button>
+      </div>
+
+      <button className="btn btn-ghost full" style={{ marginTop: 8 }} onClick={onClose}>Cerrar</button>
+    </>
+  );
+}
+
+function UserEventSheet({ onClose, onPublish, onToast }: {
+  onClose: () => void;
+  onPublish: (f: { title: string; theme: string; date: string; time: string; zone: string; cap: number; price: number; reqs: string }) => Promise<boolean>;
+  onToast: (s: string) => void;
+}) {
+  const [form, setForm] = useState({ title: '', theme: '', date: '', time: '', zone: '', cap: 20, price: 0, reqs: '' });
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Publicar mi evento</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>
+        La ubicación exacta se comparte solo con asistentes confirmados el día del evento.
+      </p>
+      <div className="card">
+        <div className="stack" style={{ gap: 8 }}>
+          <input className="field" placeholder="Título del evento" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value.slice(0, 60) })} />
+          <input className="field" placeholder="Temática (ej. Noche de parejas)" value={form.theme} onChange={(e) => setForm({ ...form, theme: e.target.value.slice(0, 40) })} />
+          <div className="grid2">
+            <input className="field" placeholder="Fecha" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value.slice(0, 24) })} />
+            <input className="field" placeholder="Hora" value={form.time} onChange={(e) => setForm({ ...form, time: e.target.value.slice(0, 12) })} />
+          </div>
+          <input className="field" placeholder="Zona (ej. Polanco, CDMX)" value={form.zone} onChange={(e) => setForm({ ...form, zone: e.target.value.slice(0, 40) })} />
+          <div className="row between card" style={{ padding: '10px 14px' }}>
+            <span className="label">Cupo</span>
+            <span className="row">
+              <button className="iconbtn" style={{ width: 36, height: 36 }} onClick={() => setForm({ ...form, cap: Math.max(4, form.cap - 4) })}>−</button>
+              <span className="caps" style={{ width: 44, textAlign: 'center' }}>{form.cap}</span>
+              <button className="iconbtn" style={{ width: 36, height: 36 }} onClick={() => setForm({ ...form, cap: form.cap + 4 })}>+</button>
+            </span>
+          </div>
+          <input className="field" inputMode="numeric" placeholder="Precio de entrada (MXN, 0 = gratis)" value={form.price || ''} onChange={(e) => setForm({ ...form, price: Number(e.target.value.replace(/\D/g, '').slice(0, 6)) })} />
+          <textarea className="field" placeholder="Requisitos (uno por línea)" value={form.reqs} onChange={(e) => setForm({ ...form, reqs: e.target.value.slice(0, 400) })} />
+          <button
+            className="btn btn-neon full"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              const ok = await onPublish(form);
+              setBusy(false);
+              if (ok) onClose();
+            }}
+          >
+            {busy ? <Loader2 size={18} className="spin" /> : <Plus size={18} />} Publicar evento
+          </button>
+        </div>
+      </div>
+      <button className="btn btn-ghost full" style={{ marginTop: 8 }} onClick={onClose}>Cerrar</button>
+    </>
+  );
+}
+
+// ============================================================================
+// CHAT DE RECUPERACIÓN (cuentas desactivadas por contraseñas erróneas)
+// El usuario habla con administración sin cuenta activa. El Bot de Validación
+// de Identidad compara la INE enviada contra la INE registrada y pide un video
+// cuando coincide. Administración activa el perfil o cierra el chat.
+// ============================================================================
+
+function botMessageTag() {
+  return (
+    <span className="tag" style={{ color: '#7cc4ff', boxShadow: 'inset 0 0 0 1px rgba(124,196,255,.55), 0 0 12px rgba(61,148,255,.35)' }}>
+      <ShieldCheck size={12} /> Bot de Validación de Identidad
+    </span>
+  );
+}
+
+function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
+  email: string; uid: string | null; alias: string;
+  onClose: () => void;
+  onToast: (s: string) => void;
+}) {
+  const [chat, setChat] = useState<RecoveryChatDoc | null>(null);
+  const [draft, setDraft] = useState('');
+  const [attachment, setAttachment] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const chatId = 'rc_' + email.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 40);
+
+  useEffect(() => {
+    let stop = false;
+    const pull = async () => {
+      const doc = await docGet<RecoveryChatDoc>('recovery_chats', chatId);
+      if (!stop) setChat(doc ?? null);
+    };
+    void pull();
+    const t = setInterval(() => void pull(), 6000);
+    return () => { stop = true; clearInterval(t); };
+  }, [chatId]);
+
+  const openOrCreate = async () => {
+    const existing = await docGet<RecoveryChatDoc>('recovery_chats', chatId);
+    if (existing) {
+      if (uid && !existing.uid) await docUpdate<RecoveryChatDoc>('recovery_chats', chatId, { uid } as Partial<RecoveryChatDoc>);
+      return existing;
+    }
+    const first: RecoveryChatDoc = {
+      id: chatId, email: email.trim(), uid, alias,
+      messages: [{
+        id: 'msg_' + Date.now(),
+        from: 'bot',
+        text: 'Bienvenido al chat de recuperación con administración. Para validar tu identidad, envía una foto de la INE con la que registraste tu cuenta. El bot la comparará de forma automática con la identificación registrada.',
+        ts: Date.now(),
+      }],
+      status: 'abierto', createdAt: Date.now(), lastTs: Date.now(),
+    };
+    await docSet('recovery_chats', chatId, first as any);
+    return first;
+  };
+
+  const send = async () => {
+    if (busy) return;
+    if (!draft.trim() && !attachment) { onToast('Escribe un mensaje o adjunta una foto o video.'); return; }
+    setBusy(true);
+    const current = chat ?? (await openOrCreate());
+    if (current.status === 'cerrado') { onToast('Este chat fue cerrado por administración.'); setBusy(false); return; }
+    const msgs = [...(current.messages ?? [])];
+    msgs.push({
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      from: 'user', text: draft.trim(),
+      ...(attachment ? (attachment.startsWith('data:video') ? { video: attachment } : { image: attachment }) : {}),
+      ts: Date.now(),
+    });
+    // Bot de validación: compara la INE enviada contra la registrada en la cuenta.
+    if (attachment && attachment.startsWith('data:image') && (current.uid ?? uid)) {
+      const targetUid = current.uid ?? uid;
+      const records = await docQuery<any>('ine_records', 'userUid', targetUid);
+      const rec = records.sort((a, b) => b.createdAt - a.createdAt)[0];
+      if (rec?.ineFront) {
+        const sim = await imageSimilarity(attachment, rec.ineFront);
+        if (sim >= 0.75) {
+          msgs.push({
+            id: 'bot_' + Date.now(), from: 'bot',
+            text: 'La identificación COINCIDE con la identificación registrada en la cuenta que intenta acceder. Para continuar con la validación, envía ahora un video breve (mostrando tu rostro y sosteniendo tu identificación).',
+            ts: Date.now() + 1,
+          });
+        } else {
+          msgs.push({
+            id: 'bot_' + Date.now(), from: 'bot',
+            text: 'La identificación NO coincide con la que registró la cuenta que intentó acceder. Administración revisará tu caso; puedes adjuntar otra foto o video de aclaración.',
+            ts: Date.now() + 1,
+          });
+        }
+      } else {
+        msgs.push({
+          id: 'bot_' + Date.now(), from: 'bot',
+          text: 'No encontramos un expediente de INE asociado a esta cuenta. Administración revisará tu caso de forma manual.',
+          ts: Date.now() + 1,
+        });
+      }
+    }
+    await docSet('recovery_chats', chatId, { ...current, messages: msgs, lastTs: Date.now() } as any);
+    setChat({ ...current, messages: msgs, lastTs: Date.now() });
+    setDraft('');
+    setAttachment(null);
+    setBusy(false);
+  };
+
+  const grabFile = async (f: File) => {
+    try {
+      if (f.type.startsWith('video')) {
+        if (f.size > 8 * 1024 * 1024) { onToast('El video debe pesar menos de 8 MB.'); return; }
+        setAttachment(await readFileData(f));
+      } else {
+        setAttachment(await compressImage(f));
+      }
+    } catch { onToast('No fue posible procesar el archivo.'); }
+  };
+
+  return (
+    <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
+      <div className="topbar">
+        <button className="iconbtn" aria-label="Salir" onClick={onClose}><ChevronLeft size={20} /></button>
+        <span className="caps" style={{ fontSize: 16, flex: 1, textAlign: 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Chat con administración</span>
+        <span style={{ width: 44 }} />
+      </div>
+      <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {chat?.status === 'cerrado' && (
+          <div className="card" style={{ textAlign: 'center' }}>
+            <Ban size={26} color="var(--bad)" />
+            <p className="small" style={{ margin: '8px 0 0' }}>
+              Este chat fue cerrado por administración. Si necesitas reactivar tu cuenta, abre un chat nuevo.
+            </p>
+          </div>
+        )}
+        {(!chat || chat.messages.length === 0) && chat?.status !== 'cerrado' && (
+          <div className="card" style={{ textAlign: 'center' }}>
+            <ShieldAlert size={26} color="var(--lila)" />
+            <p className="small" style={{ margin: '8px 0 0' }}>
+              Cuenta desactivada. Motivo: ingresó varias veces una contraseña errónea. Contacta a un asesor para
+              la activación de tu cuenta: buscamos darte seguridad y proteger a cada usuario. Gracias por tu comprensión.
+            </p>
+            <button className="btn btn-neon full" style={{ marginTop: 12 }} disabled={busy} onClick={() => void openOrCreate().then((c) => setChat(c))}>
+              <MessageCircle size={18} /> Iniciar chat con administración
+            </button>
+          </div>
+        )}
+        {(chat?.messages ?? []).map((m) => (
+          <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.from === 'user' ? 'flex-end' : 'flex-start' }}>
+            {m.from === 'bot' && <span style={{ marginBottom: 2 }}>{botMessageTag()}</span>}
+            {m.from === 'admin' && <span className="tiny" style={{ marginBottom: 2, color: '#ffd166' }}>Administración</span>}
+            {m.from === 'bot' ? (
+              <div className="bubble them" style={{ boxShadow: 'inset 0 0 0 1.5px rgba(124,196,255,.7), 0 0 14px rgba(61,148,255,.35)', color: '#cfe8ff' }}>{m.text}</div>
+            ) : (
+              <div className={'bubble ' + (m.from === 'user' ? 'me' : 'them')}>
+                {m.text}
+                {m.image && <img src={m.image} alt="Adjunto" style={{ maxWidth: '100%', borderRadius: 10, marginTop: 6 }} />}
+                {m.video && <video src={m.video} controls style={{ maxWidth: '100%', borderRadius: 10, marginTop: 6 }} />}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      {chat && chat.status !== 'cerrado' && (
+        <div className="composer" style={{ flexDirection: 'column', gap: 6 }}>
+          {attachment && (
+            <div className="row between card" style={{ padding: 8, width: '100%' }}>
+              <span className="tiny">Archivo adjunto listo para enviar</span>
+              <button className="iconbtn" style={{ width: 28, height: 28 }} onClick={() => setAttachment(null)}><X size={13} /></button>
+            </div>
+          )}
+          <div className="row" style={{ gap: 6, width: '100%' }}>
+            <FileButton accept="image/*,video/*" onFiles={(f) => void grabFile(f)} className="iconbtn" style={{ width: 44, height: 44, flexShrink: 0 }}>
+              <ImagePlus size={18} />
+            </FileButton>
+            <input
+              className="field" placeholder="Mensaje para administración…" value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
+            />
+            <button className="iconbtn" style={{ background: 'var(--lila)', color: '#12051f' }} aria-label="Enviar" onClick={() => void send()}>
+              {busy ? <Loader2 size={18} className="spin" /> : <Send size={18} />}
+            </button>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+// ============================================================================
 // PESTAÑA VIRTUAL (CREADORAS)
 // ============================================================================
 
@@ -2637,7 +3933,7 @@ const readFileData = (f: File): Promise<string> =>
     r.readAsDataURL(f);
   });
 
-function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onToast, onSubscribe, onBuyContent, onDonate, onRegister, onUpload, onMembership, onOpenOficio, onRequestFactura, onOpenExplicit }: {
+function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onToast, onSubscribe, onBuyContent, onDonate, onRegister, onUpload, onMembership, onOpenOficio, onRequestFactura, onOpenExplicit, fullAccess }: {
   myDoc: UserDoc;
   creators: CreatorDoc[];
   posts: CreatorPostDoc[];
@@ -2654,6 +3950,7 @@ function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onTo
   onOpenOficio: () => void;
   onRequestFactura: (c: CreatorDoc) => void;
   onOpenExplicit: (post: CreatorPostDoc) => void;
+  fullAccess?: boolean;
 }) {
   const [seg, setSeg] = useState<'creadoras' | 'subir'>('creadoras');
   const [busy, setBusy] = useState(false);
@@ -2975,6 +4272,7 @@ function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onTo
                   <span className="caps" style={{ fontSize: 17 }}>{c.name}</span>
                   <CreatorBadge />
                   {sub && <span className="tag ok"><BadgeCheck size={12} /> Suscrito</span>}
+                  {fullAccess && <span className="tag warn"><ShieldCheck size={12} /> Acceso admin</span>}
                 </div>
                 <div className="tiny">@{c.handle}</div>
                 {cRating && <div style={{ marginTop: 2 }}><Stars avg={cRating.avg} count={cRating.count} /></div>}
@@ -3001,6 +4299,7 @@ function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onTo
                   const pTier = tierOf(p);
                   const unlocked =
                     pTier === 'gratis' ||
+                    !!fullAccess ||
                     myUnlocks.some((u) => u.postId === p.id) ||
                     (pTier === 'premium' && !!sub);
                   const locked = pTier !== 'gratis' && !unlocked;
@@ -3050,14 +4349,35 @@ function VirtualTab({ myDoc, creators, posts, mySubs, myUnlocks, ratingAgg, onTo
 // PESTAÑA EVENTOS
 // ============================================================================
 
-function EventsTab({ events, passes, onOpenEvent, onToast }: {
+function EventsTab({ events, passes, onOpenEvent, onToast, myCredits, onOpenPublish, onOpenCreate }: {
   events: EventDoc[]; passes: PassDoc[];
   onOpenEvent: (ev: EventDoc) => void; onToast: (s: string) => void;
+  myCredits: number; onOpenPublish: () => void; onOpenCreate: () => void;
 }) {
   return (
     <>
-      <div className="h1">Eventos</div>
-      <p className="sub">Fiestas y encuentros publicados por administración.</p>
+      <div className="row between">
+        <div>
+          <div className="h1">Eventos</div>
+          <p className="sub" style={{ marginBottom: 0 }}>Fiestas y encuentros verificados.</p>
+        </div>
+      </div>
+
+      <div className="card" style={{ padding: 14, marginTop: 12 }}>
+        <div className="row between">
+          <div>
+            <span className="caps" style={{ fontSize: 16 }}>Publicar evento</span>
+            <p className="tiny" style={{ margin: '2px 0 0' }}>
+              {myCredits > 0
+                ? 'Tienes ' + myCredits + ' publicación(es) disponible(s).'
+                : 'Adquiere un paquete de publicación (1 evento desde $800).'}
+            </p>
+          </div>
+          <button className="btn btn-neon btn-sm" onClick={myCredits > 0 ? onOpenCreate : onOpenPublish}>
+            <Plus size={16} /> {myCredits > 0 ? 'Publicar' : 'Ver paquetes'}
+          </button>
+        </div>
+      </div>
 
       {passes.length > 0 && (
         <>
@@ -3378,6 +4698,18 @@ function ProfileTab(props: {
         <div className="row" style={{ gap: 14 }}>
           <div style={{ position: 'relative' }}>
             <Avatar doc={myDoc} size={64} />
+            <FileButton
+              accept="image/*"
+              onFiles={(f) => props.onPhoto(f, 'avatar')}
+              className="iconbtn"
+              style={{
+                position: 'absolute', bottom: -6, right: -6, width: 30, height: 30,
+                background: 'var(--lila)', color: '#12051f', borderRadius: 99,
+                display: 'grid', placeItems: 'center', boxShadow: 'var(--glow)',
+              }}
+            >
+              <Pencil size={14} />
+            </FileButton>
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="row wrap" style={{ gap: 6 }}>
@@ -3391,7 +4723,7 @@ function ProfileTab(props: {
             </div>
           </div>
         </div>
-        {myDoc.bio && <p style={{ fontSize: 17, margin: '14px 0 0' }}>{myDoc.bio}</p>}
+        {myDoc.bio && <p style={{ fontSize: 17, margin: '14px 0 0', whiteSpace: 'pre-line' }}>{myDoc.bio}</p>}
         {(myDoc.interests ?? []).length > 0 && (
           <div className="chips" style={{ marginTop: 12 }}>
             {myDoc.interests.map((t) => <span key={t} className="chip">{t}</span>)}
@@ -3537,7 +4869,7 @@ function ReportSheet({ peer, myDoc, onClose, onToast }: {
 // PANEL ADMIN (alto nivel)
 // ============================================================================
 
-type AdminSection = 'resumen' | 'ine' | 'ia' | 'moderacion' | 'foro' | 'pagos' | 'usuarios' | 'eventos' | 'banco';
+type AdminSection = 'resumen' | 'ine' | 'ia' | 'moderacion' | 'foro' | 'pagos' | 'usuarios' | 'eventos' | 'banco' | 'recuperacion';
 
 function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: {
   onClose: () => void;
@@ -3560,9 +4892,15 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
   const [cfg, setCfg] = useState<SpeiBankConfig>(getSpeiConfig());
   const [imgView, setImgView] = useState<string | null>(null);
   const [evForm, setEvForm] = useState({ title: '', theme: '', date: '', time: '', zone: '', organizer: '', cap: 40, price: 0, reqs: '' });
+  const [recoveryChats, setRecoveryChats] = useState<RecoveryChatDoc[]>([]);
+  const [recoveryDraft, setRecoveryDraft] = useState<RecoveryChatDoc | null>(null);
+  const [recMsgDraft, setRecMsgDraft] = useState('');
+  const [qaAdminPosts, setQaAdminPosts] = useState<QAPostDoc[]>([]);
+  const [eventDesigns, setEventDesigns] = useState<EventDesignDoc[]>([]);
+  const [recAttach, setRecAttach] = useState<string | null>(null);
 
   const loadAdminData = useCallback(async () => {
-    const [records, allOrders, remoteCfg, tk, pr, cr, cp, fq] = await Promise.all([
+    const [records, allOrders, remoteCfg, tk, pr, cr, cp, fq, rcs, qa, eds] = await Promise.all([
       fetchAllRemoteIneRecords(),
       fetchAllRemoteSpeiOrders(),
       fetchRemoteSpeiConfig(),
@@ -3571,6 +4909,9 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
       docAll<CreatorDoc>('creators'),
       docAll<CreatorPostDoc>('creator_posts'),
       docAll<ForumDoc>('forum'),
+      docAll<RecoveryChatDoc>('recovery_chats'),
+      docAll<QAPostDoc>('qa_posts'),
+      docAll<EventDesignDoc>('event_designs'),
     ]);
     setIneRecords(records.sort((a, b) => b.createdAt - a.createdAt));
     setOrders(allOrders);
@@ -3580,6 +4921,9 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
     setCreators(cr);
     setCreatorPosts(cp.sort((a, b) => b.createdAt - a.createdAt));
     setForumQuestions(fq.sort((a, b) => b.createdAt - a.createdAt));
+    setRecoveryChats(rcs.sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0)));
+    setQaAdminPosts(qa.sort((a, b) => b.createdAt - a.createdAt));
+    setEventDesigns(eds);
   }, []);
 
   useEffect(() => { void loadAdminData(); }, [loadAdminData]);
@@ -3740,6 +5084,33 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
         } as AppNotification);
       }
     }
+    // Publicación de eventos: si la orden incluye diseño, el pago NO se confirma
+    // hasta que administración suba el banner y la historia para redes.
+    if (o.kind === 'publicacion_evento') {
+      let meta: any = {};
+      try { meta = o.meta ? JSON.parse(o.meta) : {}; } catch { meta = {}; }
+      if (meta.design) {
+        const design = await docGet<EventDesignDoc>('event_designs', o.id);
+        if (!design?.banner || !design?.story) {
+          setBusy(false);
+          onToast('Esta orden incluye diseño: sube el banner y la historia para redes antes de confirmar el pago.');
+          return;
+        }
+      }
+      if (o.userUid) {
+        const buyer = await docGet<UserDoc>('users', o.userUid);
+        await docUpdate<UserDoc>('users', o.userUid, {
+          eventPubCredits: (buyer?.eventPubCredits ?? 0) + (meta.credits ?? 1),
+        } as Partial<UserDoc>);
+        const nid8 = notifId(o.userUid);
+        await docSet('notifications', nid8, {
+          id: nid8, userUid: o.userUid, kind: 'sistema',
+          title: 'Publicación de evento aprobada',
+          body: 'Tu pago fue confirmado. Tienes ' + (meta.credits ?? 1) + ' publicación(es) de evento disponible(s) en la pestaña Eventos.' + (meta.design ? ' Tus diseños (banner e historia) están listos.' : ''),
+          ts: now, read: false,
+        } as AppNotification);
+      }
+    }
     setBusy(false);
     await loadAdminData();
     await onRefresh();
@@ -3761,6 +5132,109 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
     setBusy(false);
     await loadAdminData();
     onToast('Pago rechazado y notificado.');
+  };
+
+  const saveEventDesign = async (orderId: string, field: 'banner' | 'story', file: File) => {
+    setBusy(true);
+    try {
+      const data = await compressImage(file);
+      const existing = await docGet<EventDesignDoc>('event_designs', orderId);
+      await docSet<EventDesignDoc>('event_designs', orderId, {
+        id: orderId,
+        ...(existing ?? {}),
+        [field]: data,
+        updatedAt: Date.now(),
+      } as EventDesignDoc, true);
+      await loadAdminData();
+      onToast(field === 'banner' ? 'Banner guardado.' : 'Historia para redes guardada.');
+    } catch {
+      onToast('No fue posible procesar la imagen. Intenta con otra.');
+    }
+    setBusy(false);
+  };
+
+  // ---- Recuperación de cuentas (chats con usuarios desactivados) ----
+  const deleteQaPost = async (p: QAPostDoc) => {
+    setBusy(true);
+    await docUpdate<QAPostDoc>('qa_posts', p.id, { status: 'eliminado' } as Partial<QAPostDoc>);
+    await loadAdminData();
+    setBusy(false);
+    onToast('Publicación eliminada del apartado de comunidad.');
+  };
+
+  const refreshRecoveryDraft = async (chatId: string) => {
+    const fresh = await docGet<RecoveryChatDoc>('recovery_chats', chatId);
+    if (fresh) setRecoveryDraft(fresh);
+  };
+
+  const activateProfile = async (rc: RecoveryChatDoc) => {
+    setBusy(true);
+    if (rc.uid) {
+      await docUpdate<UserDoc>('users', rc.uid, { deactivated: false, deactivatedReason: null } as Partial<UserDoc>);
+      const nid = notifId(rc.uid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: rc.uid, kind: 'sistema',
+        title: 'Cuenta activada',
+        body: 'Tu cuenta fue activada por administración. Ya puedes iniciar sesión con tu contraseña habitual. Te recomendamos usar una contraseña segura.',
+        ts: Date.now(), read: false,
+      } as AppNotification);
+    }
+    await docUpdate<RecoveryChatDoc>('recovery_chats', rc.id, { status: 'cerrado' } as Partial<RecoveryChatDoc>);
+    await loadAdminData();
+    setRecoveryDraft(null);
+    setBusy(false);
+    onToast('Perfil activado. La cuenta puede iniciar sesión de nuevo.');
+  };
+
+  const closeRecoveryChat = async (rc: RecoveryChatDoc) => {
+    setBusy(true);
+    await docUpdate<RecoveryChatDoc>('recovery_chats', rc.id, { status: 'cerrado' } as Partial<RecoveryChatDoc>);
+    await loadAdminData();
+    setRecoveryDraft(null);
+    setBusy(false);
+    onToast('Chat cerrado. La cuenta permanece desactivada.');
+  };
+
+  const grabRecAttachment = async (f: File) => {
+    try {
+      if (f.type.startsWith('video')) {
+        if (f.size > 8 * 1024 * 1024) { onToast('El video debe pesar menos de 8 MB.'); return; }
+        setRecAttach(await readFileData(f));
+      } else {
+        setRecAttach(await compressImage(f));
+      }
+    } catch { onToast('No fue posible procesar el archivo.'); }
+  };
+
+  const sendRecMsg = async () => {
+    if (!recoveryDraft || busy) return;
+    if (!recMsgDraft.trim() && !recAttach) { onToast('Escribe un mensaje o adjunta una imagen o video.'); return; }
+    setBusy(true);
+    const msgs = [...(recoveryDraft.messages ?? [])];
+    msgs.push({
+      id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+      from: 'admin',
+      text: recMsgDraft.trim(),
+      ...(recAttach ? (recAttach.startsWith('data:video') ? { video: recAttach } : { image: recAttach }) : {}),
+      ts: Date.now(),
+    });
+    await docSet<RecoveryChatDoc>('recovery_chats', recoveryDraft.id, {
+      ...recoveryDraft, messages: msgs, lastTs: Date.now(),
+    });
+    if (recoveryDraft.uid) {
+      // Notificación informativa; el usuario sin sesión la verá al reactivarse.
+      const nid = notifId(recoveryDraft.uid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: recoveryDraft.uid, kind: 'sistema',
+        title: 'Mensaje de administración',
+        body: 'Administración te respondió en el chat de recuperación de cuenta.',
+        ts: Date.now(), read: false,
+      } as AppNotification);
+    }
+    setRecMsgDraft('');
+    setRecAttach(null);
+    await refreshRecoveryDraft(recoveryDraft.id);
+    setBusy(false);
   };
 
   const toggleUser = async (u: UserDoc) => {
@@ -3944,7 +5418,7 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
           ))}
         </div>
         <div className="seg" style={{ marginBottom: 16 }}>
-          {([['pagos', 'Pagos'], ['usuarios', 'Usuarios'], ['eventos', 'Eventos'], ['banco', 'Banco']] as [AdminSection, string][]).map(([id, label]) => (
+          {([['pagos', 'Pagos'], ['usuarios', 'Usuarios'], ['eventos', 'Eventos'], ['banco', 'Banco'], ['recuperacion', 'Recuperación']] as [AdminSection, string][]).map(([id, label]) => (
             <button key={id} className={section === id ? 'on' : ''} onClick={() => setSection(id)}>{label}</button>
           ))}
         </div>
@@ -4024,6 +5498,9 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
               {orders.length === 0 && <div className="card"><p className="muted small">Sin órdenes todavía.</p></div>}
               {orders.map((o) => {
                 const bot = runBotValidation(o);
+                let pubMeta: any = {};
+                try { pubMeta = o.meta ? JSON.parse(o.meta) : {}; } catch { pubMeta = {}; }
+                const design = eventDesigns.find((d) => d.id === o.id);
                 return (
                   <div key={o.id} className="card">
                     <div className="row between">
@@ -4039,6 +5516,36 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
                         </div>
                       ))}
                     </div>
+                    {o.kind === 'publicacion_evento' && pubMeta.design && (
+                      <div className="stack" style={{ gap: 8, marginTop: 12, padding: 10, border: '1px solid var(--line)', borderRadius: 12 }}>
+                        <div className="row" style={{ gap: 6 }}>
+                          <ImageIcon size={15} color="var(--neon)" />
+                          <span className="small strong">Diseño incluido en la orden</span>
+                        </div>
+                        {pubMeta.designData && (
+                          <div className="tiny" style={{ background: 'rgba(233,64,130,0.10)', padding: 8, borderRadius: 10, lineHeight: 1.5 }}>
+                            <span className="strong">Datos para el diseño:</span> temática «{pubMeta.designData.tema || '—'}» · invitados: {pubMeta.designData.invitados || '—'} · fecha: {pubMeta.designData.fecha || '—'} · hora: {pubMeta.designData.hora || '—'}
+                          </div>
+                        )}
+                        <div className="grid2" style={{ gap: 8 }}>
+                          {(['banner', 'story'] as const).map((field) => (
+                            <div key={field} className="stack" style={{ gap: 6, padding: 8, border: '1px solid var(--line)', borderRadius: 10 }}>
+                              <span className="tiny strong">{field === 'banner' ? 'Banner del anuncio' : 'Historia para redes'}</span>
+                              {design?.[field] ? (
+                                <img src={design[field] as string} alt={field} style={{ width: '100%', height: 64, objectFit: 'cover', borderRadius: 8 }} />
+                              ) : (
+                                <div className="tiny muted" style={{ height: 64, display: 'grid', placeItems: 'center', border: '1px dashed var(--line)', borderRadius: 8 }}>Sin imagen</div>
+                              )}
+                              <FileButton className="btn btn-dark btn-sm full" accept="image/*" onFiles={(f) => void saveEventDesign(o.id, field, f)}>
+                                <Upload size={15} /> Subir imagen
+                              </FileButton>
+                              <span className={'tiny ' + (design?.[field] ? 'ok' : 'bad')}>{design?.[field] ? 'Listo' : 'Falta'}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="tiny muted" style={{ marginTop: 2 }}>Sin el banner y la historia para redes el pago no se confirma.</p>
+                      </div>
+                    )}
                     {(o.status === 'pendiente' || o.status === 'verificado') && (
                       <div className="grid2" style={{ marginTop: 12 }}>
                         <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void approveOrder(o)}><BadgeCheck size={16} /> Aprobar pago</button>
@@ -4071,6 +5578,9 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
                         <IdentityTag status={u.identityStatus} />
                         <span className={'tag ' + (u.status === 'activo' ? 'ok' : 'bad')}>{u.status}</span>
                         {isVip(u) && <span className="tag warn">{vipLabel(u)}</span>}
+                        {u.watched && <span className="tag" style={{ color: '#ffb3c7', boxShadow: 'inset 0 0 0 1px rgba(255,110,160,.55)' }}><Eye size={11} /> En seguimiento</span>}
+                        {!!u.eventPubCredits && <span className="tag">{u.eventPubCredits} publicación(es) de evento</span>}
+                        {u.deactivated && <span className="tag bad">Desactivada</span>}
                       </div>
                     </div>
                     {!ADMIN_EMAILS.includes((u.email || '').toLowerCase()) && (
@@ -4303,6 +5813,26 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
                 </div>
               ))}
             </div>
+
+            <div className="row between" style={{ margin: '16px 0 4px' }}>
+              <span className="label">Comunidad: dudas, consejos y recomendaciones</span>
+              <span className="tiny">{qaAdminPosts.filter((p) => p.status === 'visible').length} publicación(es)</span>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              {qaAdminPosts.filter((p) => p.status === 'visible').length === 0 && <div className="card"><p className="muted small">Sin publicaciones en los apartados de comunidad.</p></div>}
+              {qaAdminPosts.filter((p) => p.status === 'visible').map((p) => (
+                <div key={p.id} className="card" style={{ padding: 14 }}>
+                  <div className="row between">
+                    <span className="tag">{boardForKind(p.board)}</span>
+                    <span className="tiny">De {p.alias} · hace {ago(p.createdAt)}</span>
+                  </div>
+                  <p className="small" style={{ margin: '8px 0 0' }}>{p.body}</p>
+                  <button className="btn btn-bad btn-sm" style={{ marginTop: 10 }} disabled={busy} onClick={() => void deleteQaPost(p)}>
+                    <Trash2 size={15} /> Eliminar publicación
+                  </button>
+                </div>
+              ))}
+            </div>
           </>
         )}
 
@@ -4359,6 +5889,69 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
             </div>
           </>
         )}
+
+        {section === 'recuperacion' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Recuperación de cuentas</div>
+            <p className="sub">Chats con usuarios de cuentas desactivadas. El bot valida la INE de forma automática.</p>
+            <div className="stack" style={{ gap: 12 }}>
+              {recoveryChats.length === 0 && <div className="card"><p className="muted small">Sin chats de recuperación abiertos.</p></div>}
+              {!recoveryDraft && recoveryChats.map((rc) => (
+                <div key={rc.id} className="card">
+                  <div className="row between">
+                    <div>
+                      <div className="caps" style={{ fontSize: 16 }}>{rc.alias || 'Sin alias'}</div>
+                      <div className="tiny">{rc.email}{rc.uid ? ' · ' + rc.uid : ''}</div>
+                      <div className="tiny muted">Último mensaje: hace {ago(rc.lastTs)} · {rc.messages?.length ?? 0} mensajes · {rc.status}</div>
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <button className="btn btn-dark btn-sm" onClick={() => setRecoveryDraft(rc)}><MessageSquare size={16} /> Abrir</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {recoveryDraft && (
+                <div className="card">
+                  <div className="row between" style={{ marginBottom: 8 }}>
+                    <div>
+                      <div className="caps" style={{ fontSize: 16 }}>{recoveryDraft.alias || recoveryDraft.email}</div>
+                      <div className="tiny">{recoveryDraft.email}{recoveryDraft.uid ? ' · ' + recoveryDraft.uid : ''}</div>
+                    </div>
+                    <div className="row" style={{ gap: 6 }}>
+                      <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void activateProfile(recoveryDraft)}><UserCheck size={16} /> Activar perfil</button>
+                      <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void closeRecoveryChat(recoveryDraft)}><Ban size={16} /> Cerrar chat</button>
+                      <button className="iconbtn" aria-label="Volver" onClick={() => setRecoveryDraft(null)}><X size={16} /></button>
+                    </div>
+                  </div>
+                  <div className="stack" style={{ gap: 8, maxHeight: 320, overflowY: 'auto', padding: 4 }}>
+                    {(recoveryDraft.messages ?? []).map((m) => (
+                      <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: m.from === 'user' ? 'flex-end' : 'flex-start' }}>
+                        {m.from === 'bot' && <span style={{ marginBottom: 2 }}>{botMessageTag()}</span>}
+                        {m.from === 'admin' && <span className="tiny" style={{ marginBottom: 2, color: '#ffd166' }}>Administración</span>}
+                        {m.from === 'bot' ? (
+                          <div className="bubble them" style={{ boxShadow: 'inset 0 0 0 1.5px rgba(124,196,255,.7), 0 0 14px rgba(61,148,255,.35)', color: '#cfe8ff' }}>{m.text}</div>
+                        ) : (
+                          <div className={'bubble ' + (m.from === 'user' ? 'me' : 'them')}>
+                            {m.text}
+                            {m.image && <img src={m.image} alt="Adjunto" style={{ maxWidth: '100%', borderRadius: 10, marginTop: 6 }} onClick={() => setImgView(m.image ?? null)} />}
+                            {m.video && <video src={m.video} controls style={{ maxWidth: '100%', borderRadius: 10, marginTop: 6 }} />}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="row" style={{ gap: 6, marginTop: 10 }}>
+                    <FileButton accept="image/*,video/*" className="iconbtn" style={{ width: 40, height: 40, flexShrink: 0 }} onFiles={(f) => void grabRecAttachment(f)}>
+                      <ImagePlus size={16} />
+                    </FileButton>
+                    <input className="field" placeholder="Mensaje al usuario…" value={recMsgDraft} onChange={(e) => setRecMsgDraft(e.target.value)} />
+                    <button className="iconbtn" style={{ background: 'var(--lila)', color: '#12051f' }} aria-label="Enviar" disabled={busy} onClick={() => void sendRecMsg()}><Send size={16} /></button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Visor de imagen del expediente */}
@@ -4372,6 +5965,7 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
     </motion.div>
   );
 }
+
 
 
 
