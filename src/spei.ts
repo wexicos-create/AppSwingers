@@ -1,4 +1,4 @@
-import { lsSet, lsGet, lsUpdate, lsAll, lsWhere } from './localstore';
+import { docSet, docGet, docUpdate, docAll, docQuery } from './store';
 import { AppRegion, SpeiOrder, SpeiOrderKind, SpeiOrderStatus } from './types';
 
 export interface SpeiBankConfig {
@@ -122,13 +122,13 @@ export function upsertLocalSpeiOrder(order: SpeiOrder): SpeiOrder[] {
 
 // ---------- Local order registry (database-free persistence) ----------
 export async function createRemoteSpeiOrder(order: SpeiOrder): Promise<boolean> {
-  return lsSet('spei_orders', order.id, order);
+  return docSet('spei_orders', order.id, order);
 }
 
 export async function fetchRemoteSpeiOrdersForUser(uid: string | null): Promise<SpeiOrder[]> {
   if (!uid) return [];
   try {
-    return lsWhere<SpeiOrder>('spei_orders', 'userUid', uid);
+    return docQuery<SpeiOrder>('spei_orders', 'userUid', uid);
   } catch {
     return [];
   }
@@ -136,7 +136,7 @@ export async function fetchRemoteSpeiOrdersForUser(uid: string | null): Promise<
 
 export async function fetchAllRemoteSpeiOrders(): Promise<SpeiOrder[]> {
   try {
-    return lsAll<SpeiOrder>('spei_orders');
+    return docAll<SpeiOrder>('spei_orders');
   } catch {
     return [];
   }
@@ -144,11 +144,11 @@ export async function fetchAllRemoteSpeiOrders(): Promise<SpeiOrder[]> {
 
 export async function appendRemoteTimelineAndStatus(id: string, status: SpeiOrderStatus, note: string): Promise<boolean> {
   try {
-    const order = lsGet<SpeiOrder & { timeline: Array<{ ts: number; text: string }> }>('spei_orders', id);
+    const order = docGet<SpeiOrder & { timeline: Array<{ ts: number; text: string }> }>('spei_orders', id);
     if (!order) return false;
     const timeline = Array.isArray(order.timeline) ? [...order.timeline] : [];
     timeline.push({ ts: Date.now(), text: note });
-    return lsUpdate('spei_orders', id, { status, timeline });
+    return docUpdate('spei_orders', id, { status, timeline });
   } catch {
     return false;
   }
@@ -177,4 +177,5 @@ export function runBotValidation(order: SpeiOrder): SpeiBotResult {
   ];
   return { checks, passed: refOk && conceptOk && amountOk && !expired, expired };
 }
+
 

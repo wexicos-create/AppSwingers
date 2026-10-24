@@ -17,7 +17,7 @@ import {
   recordMatch,
   fetchUserMatches,
   testConnection
-} from './localdb';
+} from './supabase';
 import { 
   Profile, 
   SwipeAction, 

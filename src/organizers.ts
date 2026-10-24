@@ -1,4 +1,4 @@
-import { lsSet, lsUpdate, lsGet, lsAll, lsWhere, lsDelete } from './localstore';
+import { docSet, docUpdate, docGet, docAll, docQuery, docDelete } from './store';
 import { AppRegion, AppNotification, IdentityVerdict } from './types';
 
 // ---------- Organizer roles and types ----------
@@ -194,14 +194,14 @@ export function mergeById<T extends { id: string }>(a: T[], b: T[]): T[] {
 // ---------- Local registry sync (database-free persistence) ----------
 export async function saveRemoteOrganizerApplication(app: OrganizerApplication): Promise<boolean> {
   try {
-    return lsSet('organizer_applications', app.id, app);
+    return docSet('organizer_applications', app.id, app);
   } catch { return false; }
 }
 
 export async function fetchRemoteOrganizerApplication(uid: string): Promise<OrganizerApplication | null> {
   if (!uid) return null;
   try {
-    const items = lsWhere<OrganizerApplication>('organizer_applications', 'userUid', uid);
+    const items = docQuery<OrganizerApplication>('organizer_applications', 'userUid', uid);
     if (items.length === 0) return null;
     return items.sort((a, b) => b.createdAt - a.createdAt)[0];
   } catch { return null; }
@@ -209,20 +209,20 @@ export async function fetchRemoteOrganizerApplication(uid: string): Promise<Orga
 
 export async function fetchAllRemoteOrganizerApplications(): Promise<OrganizerApplication[]> {
   try {
-    return lsAll<OrganizerApplication>('organizer_applications');
+    return docAll<OrganizerApplication>('organizer_applications');
   } catch { return []; }
 }
 
 export async function saveRemoteWalletTransaction(tx: WalletTransaction): Promise<boolean> {
   try {
-    return lsSet('wallet_transactions', tx.id, tx);
+    return docSet('wallet_transactions', tx.id, tx);
   } catch { return false; }
 }
 
 export async function fetchRemoteWalletForUser(uid: string): Promise<WalletTransaction[]> {
   if (!uid) return [];
   try {
-    return lsWhere<WalletTransaction>('wallet_transactions', 'userUid', uid);
+    return docQuery<WalletTransaction>('wallet_transactions', 'userUid', uid);
   } catch { return []; }
 }
 
@@ -231,38 +231,38 @@ export async function fetchRemoteWalletForUser(uid: string): Promise<WalletTrans
 export async function fetchRemoteWalletForCreator(handle: string): Promise<WalletTransaction[]> {
   if (!handle) return [];
   try {
-    return lsWhere<WalletTransaction>('wallet_transactions', 'creatorHandle', handle).sort((a, b) => b.ts - a.ts);
+    return docQuery<WalletTransaction>('wallet_transactions', 'creatorHandle', handle).sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }
 
 export async function fetchAllRemoteWalletTransactions(): Promise<WalletTransaction[]> {
   try {
-    return lsAll<WalletTransaction>('wallet_transactions');
+    return docAll<WalletTransaction>('wallet_transactions');
   } catch { return []; }
 }
 
 export async function createRemoteWithdrawal(wd: WithdrawalRequest): Promise<boolean> {
   try {
-    return lsSet('withdrawal_requests', wd.id, wd);
+    return docSet('withdrawal_requests', wd.id, wd);
   } catch { return false; }
 }
 
 export async function fetchRemoteWithdrawalsForUser(uid: string): Promise<WithdrawalRequest[]> {
   if (!uid) return [];
   try {
-    return lsWhere<WithdrawalRequest>('withdrawal_requests', 'userUid', uid);
+    return docQuery<WithdrawalRequest>('withdrawal_requests', 'userUid', uid);
   } catch { return []; }
 }
 
 export async function fetchAllRemoteWithdrawals(): Promise<WithdrawalRequest[]> {
   try {
-    return lsAll<WithdrawalRequest>('withdrawal_requests');
+    return docAll<WithdrawalRequest>('withdrawal_requests');
   } catch { return []; }
 }
 
 export async function updateRemoteWithdrawal(wd: WithdrawalRequest): Promise<boolean> {
   try {
-    return lsUpdate('withdrawal_requests', wd.id, wd);
+    return docUpdate('withdrawal_requests', wd.id, wd);
   } catch { return false; }
 }
 
@@ -332,13 +332,13 @@ export function newIneRecord(params: {
 
 export async function saveRemoteIneRecord(record: IneRecord): Promise<boolean> {
   try {
-    return lsSet('ine_records', record.id, record);
+    return docSet('ine_records', record.id, record);
   } catch { return false; }
 }
 
 export async function fetchAllRemoteIneRecords(): Promise<IneRecord[]> {
   try {
-    return lsAll<IneRecord>('ine_records');
+    return docAll<IneRecord>('ine_records');
   } catch { return []; }
 }
 
@@ -374,14 +374,14 @@ export async function issueIdentityVerdict(params: {
         ? (isEs ? 'No pudimos validar que eres quien dices ser. Tu cuenta y credenciales serán eliminadas.' : 'We could not validate you are who you claim to be. Your account and credentials will be deleted.')
         : (isEs ? 'Cuenta baneada por decisión del administrador. Las credenciales se retienen un año por cualquier tema legal posterior.' : 'Account banned by administrator decision. Credentials are retained for one year for any later legal matter.');
   try {
-    lsUpdate<IneRecord>('ine_records', record.id, {
+    docUpdate<IneRecord>('ine_records', record.id, {
       verdict,
       verdictAt: now,
       verdictNote: note,
       retainedUntil: verdict === 'baneada' ? now + INE_BAN_RETENTION_MS : null,
     } as Partial<IneRecord>);
-    lsUpdate('users', record.userUid, { identityStatus: verdict, identityNote: note, identityVerdictAt: now });
-    lsSet('notifications', 'nt_' + now + '_' + record.userUid, {
+    docUpdate('users', record.userUid, { identityStatus: verdict, identityNote: note, identityVerdictAt: now });
+    docSet('notifications', 'nt_' + now + '_' + record.userUid, {
       id: 'nt_' + now + '_' + record.userUid,
       userUid: record.userUid,
       kind: 'identidad',
@@ -401,12 +401,12 @@ export async function issueIdentityVerdict(params: {
  */
 export async function purgeExpiredRetainedRecords(): Promise<number> {
   try {
-    const records = lsAll<IneRecord>('ine_records');
+    const records = docAll<IneRecord>('ine_records');
     const now = Date.now();
     const expired = records
       .filter(r => ineRecordVerdict(r) === 'baneada' && typeof r.retainedUntil === 'number' && r.retainedUntil < now);
     for (const r of expired) {
-      lsDelete('ine_records', r.id);
+      docDelete('ine_records', r.id);
     }
     return expired.length;
   } catch { return 0; }
@@ -416,15 +416,16 @@ export async function purgeExpiredRetainedRecords(): Promise<number> {
 
 export async function fetchIdentityStatus(uid: string): Promise<IdentityVerdict | null> {
   try {
-    const user = lsGet<{ identityStatus?: IdentityVerdict }>('users', uid);
+    const user = docGet<{ identityStatus?: IdentityVerdict }>('users', uid);
     return user?.identityStatus || null;
   } catch { return null; }
 }
 
 export async function fetchNotificationsForUser(uid: string): Promise<AppNotification[]> {
   try {
-    return lsWhere<AppNotification>('notifications', 'userUid', uid)
+    return docQuery<AppNotification>('notifications', 'userUid', uid)
       .sort((a, b) => b.ts - a.ts);
   } catch { return []; }
 }
+
 

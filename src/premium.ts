@@ -1,4 +1,4 @@
-import { lsSet, lsGet, lsAll } from './localstore';
+import { docSet, docGet, docAll } from './store';
 import { AppRegion, ClubEvent, Profile, StatePass } from './types';
 
 // ---------- Premium state search (travelers & tourists day pass) ----------
@@ -110,7 +110,7 @@ export function getStatePassPrice(region: AppRegion): StatePassPrice {
 export async function fetchStatePass(uid: string | null): Promise<StatePass | null> {
   if (!uid) return null;
   try {
-    const pass = lsGet<StatePass>('state_passes', uid);
+    const pass = docGet<StatePass>('state_passes', uid);
     // An expired pass is equivalent to no pass; the UI shows the paywall again.
     return pass && pass.expiresAt > Date.now() ? pass : null;
   } catch { return null; }
@@ -118,13 +118,13 @@ export async function fetchStatePass(uid: string | null): Promise<StatePass | nu
 
 export async function activateStatePass(pass: StatePass): Promise<boolean> {
   try {
-    return lsSet('state_passes', pass.userUid, pass);
+    return docSet('state_passes', pass.userUid, pass);
   } catch { return false; }
 }
 
 export async function fetchAllStatePasses(): Promise<StatePass[]> {
   try {
-    return lsAll<StatePass>('state_passes').sort((a, b) => b.createdAt - a.createdAt);
+    return docAll<StatePass>('state_passes').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
@@ -177,4 +177,5 @@ export function profilesInState(profiles: Profile[], stateCode: string): Profile
 export function eventsInState(events: ClubEvent[], stateCode: string): ClubEvent[] {
   return events.filter(e => eventState(e) === stateCode);
 }
+
 

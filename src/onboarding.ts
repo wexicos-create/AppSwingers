@@ -1,4 +1,4 @@
-import { lsGet, lsUpdate } from './localstore';
+import { docGet, docUpdate } from './store';
 import { ProfileKind } from './types';
 
 // ---------- Onboarding profile (local funnel state) ----------
@@ -20,7 +20,7 @@ export interface StoredOnboardingProfile {
 export async function saveOnboardingProfile(uid: string, profile: StoredOnboardingProfile): Promise<boolean> {
   if (!uid) return false;
   try {
-    return lsUpdate('users', uid, { onboardingProfile: profile });
+    return docUpdate('users', uid, { onboardingProfile: profile });
   } catch {
     return false;
   }
@@ -29,9 +29,10 @@ export async function saveOnboardingProfile(uid: string, profile: StoredOnboardi
 export async function fetchOnboardingProfile(uid: string): Promise<StoredOnboardingProfile | null> {
   if (!uid) return null;
   try {
-    const user = lsGet<{ onboardingProfile?: StoredOnboardingProfile }>('users', uid);
+    const user = docGet<{ onboardingProfile?: StoredOnboardingProfile }>('users', uid);
     return user?.onboardingProfile || null;
   } catch {
     return null;
   }
 }
+

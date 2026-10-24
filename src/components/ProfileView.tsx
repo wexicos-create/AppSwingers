@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, fetchUserMatches } from '../localdb';
+import { User, fetchUserMatches } from '../supabase';
 import { Profile, SubscriptionTier, AppRegion, BadgeKind, MatchItem } from '../types';
 import { compressImage } from '../organizers';
 import { inspectPublicPhoto, NO_NUDE_PUBLIC_MSG, NO_NUDE_PUBLIC_MSG_EN } from '../content-guard';

@@ -1,5 +1,5 @@
-import { lsSet, lsUpdate, lsAll, lsWhere, lsDelete } from './localstore';
-import { auth } from './localdb';
+import { docSet, docUpdate, docAll, docQuery, docDelete } from './store';
+import { auth } from './supabase';
 import { AppRegion, DonationRecord, EventAccessPass, EventPayoutRequest, EventRating, SupportTicket } from './types';
 import { computeEarningSplit } from './organizers';
 
@@ -126,32 +126,32 @@ export function isEventPast(dateStr: string): boolean {
 // ---------- Event access passes (local registry) ----------
 export async function saveRemoteEventPass(pass: EventAccessPass): Promise<boolean> {
   try {
-    return lsSet('event_passes', pass.id, pass);
+    return docSet('event_passes', pass.id, pass);
   } catch { return false; }
 }
 
 export async function fetchEventPassesForUser(userUid: string): Promise<EventAccessPass[]> {
   if (!userUid) return [];
   try {
-    return lsWhere<EventAccessPass>('event_passes', 'userUid', userUid).sort((a, b) => b.createdAt - a.createdAt);
+    return docQuery<EventAccessPass>('event_passes', 'userUid', userUid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchEventPassesForEvent(eventId: string): Promise<EventAccessPass[]> {
   try {
-    return lsWhere<EventAccessPass>('event_passes', 'eventId', eventId).sort((a, b) => b.createdAt - a.createdAt);
+    return docQuery<EventAccessPass>('event_passes', 'eventId', eventId).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllEventPasses(): Promise<EventAccessPass[]> {
   try {
-    return lsAll<EventAccessPass>('event_passes');
+    return docAll<EventAccessPass>('event_passes');
   } catch { return []; }
 }
 
 export async function updateRemoteEventPass(passId: string, partial: Partial<EventAccessPass>): Promise<boolean> {
   try {
-    return lsUpdate('event_passes', passId, partial);
+    return docUpdate('event_passes', passId, partial);
   } catch { return false; }
 }
 
@@ -159,12 +159,12 @@ export async function updateRemoteEventPass(passId: string, partial: Partial<Eve
 // completely, so the code registry never accumulates forever.
 export async function purgeExpiredEventPasses(): Promise<number> {
   try {
-    const passes = lsAll<EventAccessPass>('event_passes');
+    const passes = docAll<EventAccessPass>('event_passes');
     const cutoff = Date.now() - EVENT_PASS_RETENTION_MS;
     let purged = 0;
     for (const p of passes) {
       if (p.createdAt < cutoff) {
-        lsDelete('event_passes', p.id);
+        docDelete('event_passes', p.id);
         purged++;
       }
     }
@@ -251,72 +251,72 @@ export function newEventPayoutRequest(params: {
 
 export async function createRemotePayout(payout: EventPayoutRequest): Promise<boolean> {
   try {
-    return lsSet('event_payouts', payout.id, payout);
+    return docSet('event_payouts', payout.id, payout);
   } catch { return false; }
 }
 
 export async function fetchPayoutsForOrganizer(uid: string | null): Promise<EventPayoutRequest[]> {
   if (!uid) return [];
   try {
-    return lsWhere<EventPayoutRequest>('event_payouts', 'organizerUid', uid).sort((a, b) => b.createdAt - a.createdAt);
+    return docQuery<EventPayoutRequest>('event_payouts', 'organizerUid', uid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllPayouts(): Promise<EventPayoutRequest[]> {
   try {
-    return lsAll<EventPayoutRequest>('event_payouts').sort((a, b) => b.createdAt - a.createdAt);
+    return docAll<EventPayoutRequest>('event_payouts').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function updateRemotePayout(payoutId: string, partial: Partial<EventPayoutRequest>): Promise<boolean> {
   try {
-    return lsUpdate('event_payouts', payoutId, partial);
+    return docUpdate('event_payouts', payoutId, partial);
   } catch { return false; }
 }
 
 // ---------- Donations ----------
 export async function createRemoteDonation(donation: DonationRecord): Promise<boolean> {
   try {
-    return lsSet('donations', donation.id, donation);
+    return docSet('donations', donation.id, donation);
   } catch { return false; }
 }
 
 export async function updateRemoteDonation(donationId: string, partial: Partial<DonationRecord>): Promise<boolean> {
   try {
-    return lsUpdate('donations', donationId, partial);
+    return docUpdate('donations', donationId, partial);
   } catch { return false; }
 }
 
 export async function fetchDonationsForDonor(uid: string | null): Promise<DonationRecord[]> {
   if (!uid) return [];
   try {
-    return lsWhere<DonationRecord>('donations', 'donorUid', uid).sort((a, b) => b.createdAt - a.createdAt);
+    return docQuery<DonationRecord>('donations', 'donorUid', uid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllDonations(): Promise<DonationRecord[]> {
   try {
-    return lsAll<DonationRecord>('donations').sort((a, b) => b.createdAt - a.createdAt);
+    return docAll<DonationRecord>('donations').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 // ---------- Ratings and reputation ----------
 export async function saveRemoteRating(rating: EventRating): Promise<boolean> {
   try {
-    return lsSet('event_ratings', rating.id, rating);
+    return docSet('event_ratings', rating.id, rating);
   } catch { return false; }
 }
 
 export async function fetchAllEventRatings(): Promise<EventRating[]> {
   try {
-    return lsAll<EventRating>('event_ratings');
+    return docAll<EventRating>('event_ratings');
   } catch { return []; }
 }
 
 export async function fetchRatingsByUser(uid: string): Promise<EventRating[]> {
   if (!uid) return [];
   try {
-    return lsWhere<EventRating>('event_ratings', 'userUid', uid);
+    return docQuery<EventRating>('event_ratings', 'userUid', uid);
   } catch { return []; }
 }
 
@@ -343,26 +343,26 @@ export function reputationByOrganizer(ratings: EventRating[]): Record<string, Or
 // ---------- Support tickets (agencies, promoters, associates, creators) ----------
 export async function createRemoteTicket(ticket: SupportTicket): Promise<boolean> {
   try {
-    return lsSet('support_tickets', ticket.id, ticket);
+    return docSet('support_tickets', ticket.id, ticket);
   } catch { return false; }
 }
 
 export async function fetchTicketsForUser(uid: string | null): Promise<SupportTicket[]> {
   if (!uid) return [];
   try {
-    return lsWhere<SupportTicket>('support_tickets', 'userUid', uid).sort((a, b) => b.createdAt - a.createdAt);
+    return docQuery<SupportTicket>('support_tickets', 'userUid', uid).sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function fetchAllTickets(): Promise<SupportTicket[]> {
   try {
-    return lsAll<SupportTicket>('support_tickets').sort((a, b) => b.createdAt - a.createdAt);
+    return docAll<SupportTicket>('support_tickets').sort((a, b) => b.createdAt - a.createdAt);
   } catch { return []; }
 }
 
 export async function updateRemoteTicket(ticketId: string, partial: Partial<SupportTicket>): Promise<boolean> {
   try {
-    return lsUpdate('support_tickets', ticketId, partial);
+    return docUpdate('support_tickets', ticketId, partial);
   } catch { return false; }
 }
 
@@ -401,7 +401,7 @@ export async function pushRemoteNotification(params: {
   try {
     const now = Date.now();
     const id = 'nt_' + now + '_' + Math.random().toString(36).slice(2, 8);
-    return lsSet('notifications', id, {
+    return docSet('notifications', id, {
       id,
       userUid: params.userUid,
       senderUid: auth.currentUser?.uid || null,
@@ -494,4 +494,5 @@ export function downloadEventTicket(pass: EventAccessPass, isEs: boolean): void 
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   } catch { /* download unsupported */ }
 }
+
 
