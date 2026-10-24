@@ -21,12 +21,21 @@ function rowToDoc<T>(row: DocRow): T & { id: string } {
   return { ...(row.data ?? {}), id: row.id } as T & { id: string };
 }
 
-/** Devuelve todos los documentos de una colección. */
+/** Devuelve todos los documentos de una colección (paginado: sin el tope de 1000 filas). */
 export async function docAll<T>(collection: string): Promise<Array<T & { id: string }>> {
   try {
-    const { data, error } = await supabase.from(tableFor(collection)).select('id, data');
-    if (error || !data) return [];
-    return (data as DocRow[]).map(rowToDoc);
+    const out: DocRow[] = [];
+    const PAGE = 1000;
+    for (let page = 0; page < 100; page++) {
+      const { data, error } = await supabase
+        .from(tableFor(collection))
+        .select('id, data')
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (error || !data) return out.length ? out.map(rowToDoc) : [];
+      out.push(...(data as DocRow[]));
+      if ((data as DocRow[]).length < PAGE) break;
+    }
+    return out.map(rowToDoc);
   } catch {
     return [];
   }
@@ -105,3 +114,4 @@ export async function docArrayUnion<T>(collection: string, id: string, field: st
   if (!arr.some((item) => JSON.stringify(item) === JSON.stringify(value))) arr.push(value);
   return docUpdate(collection, id, { [field]: arr } as any);
 }
+

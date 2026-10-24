@@ -272,7 +272,7 @@ export function auditProcesses(s: ProcessAuditInput): ProcessCheck[] {
 const ABUSE_PATTERNS: RegExp[] = [
   /pendej[oa]s?\b/i, /put[oa]s?\b/i, /putit[oa]s?\b/i, /gilipoll[oa]s?\b/i,
   /idiota?s?\b/i, /imbe[cs]il(es)?\b/i, /est[úu]pid[oa]s?\b/i, /cabr[oó]n(es)?\b/i,
-  /putto/i, /zorr[oa]s?\b/i, /guarr[oa]s?\b/i, /malparid[oa]s?\b/i,
+  /zorr[oa]s?\b/i, /guarr[oa]s?\b/i, /malparid[oa]s?\b/i,
   /hij[oa]s? de puta/i, /vete al carajo/i, /vete a la mierda/i, /chinga (tu )?madre/i,
   /me la (suda|pelan)\b/i, /lameculos?\b/i, / subnormal(es)?\b/i, /retrasad[oa]s?\b/i,
   /basura human/i, /no vales nada/i, /no mereces/i, /c[áa]llate (la )?boca/i,
@@ -296,3 +296,4 @@ export function detectAbusiveLanguage(text: string): AbuseVerdict {
   const severe = /matarte|te voy a (matar|golpear|buscar)|te voy a romper|amenaza|agresi[óo]n f[íi]sica/i.test(raw);
   return { abusive: matched.length > 0 || severe, severe, matched };
 }
+

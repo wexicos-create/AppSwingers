@@ -14,7 +14,7 @@ import {
   Camera, ImagePlus, Users, CalendarDays, CreditCard, BadgeCheck, Ban, Plus, Sparkles,
   Banknote, Ticket, Send, Loader2, AlertTriangle, Trash2, Clock, Crown,
   RefreshCw, Eye, MessageCircle, Upload, UserCheck, UserX, FileCheck2, Lock,
-  EyeOff, Pencil, Gift, Coins, Video, HelpCircle, ShieldAlert, KeyRound, ImageIcon, MessageSquare,
+  EyeOff, Pencil, Gift, Coins, Video, HelpCircle, ShieldAlert, KeyRound, ImageIcon, MessageSquare, Mail,
 } from 'lucide-react';
 import {
   auth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signInWithPopup,
@@ -255,7 +255,7 @@ interface QAPostDoc {
   alias: string;
   parentId: string | null; // null = pregunta nueva; id = respuesta a esa pregunta
   body: string;
-  status: 'visible' | 'eliminado';
+  status: 'visible' | 'revision' | 'eliminado'; // revision = tema sensible esperando a administración
   createdAt: number;
 }
 
@@ -1381,6 +1381,13 @@ export default function App() {
   const abandonChat = async (peer: UserDoc) => {
     if (!user || !myDoc) return;
     const chatId = matchIdFor(user.uid, peer.uid);
+    // Guarda: un chat directo de propuesta (sin match) solo se cierra en la vista;
+    // jamás se crea un documento de match huérfano.
+    const match = await docGet<MatchEntry>('matches', chatId);
+    if (!match || !(match.users ?? []).includes(user.uid)) {
+      setChatWith(null);
+      return;
+    }
     await docUpdate('matches', chatId, {
       status: 'cerrado', closedAt: Date.now(), closedBy: user.uid,
     } as Partial<MatchEntry>);
@@ -1401,7 +1408,12 @@ export default function App() {
   const deleteChat = async (peer: UserDoc) => {
     if (!user) return;
     const chatId = matchIdFor(user.uid, peer.uid);
+    // Guarda: sin match no hay dónde registrar el ocultamiento; solo se cierra.
     const doc = await docGet<MatchEntry>('matches', chatId);
+    if (!doc || !(doc.users ?? []).includes(user.uid)) {
+      setChatWith(null);
+      return;
+    }
     const hidden = [...(doc?.hiddenFor ?? []), user.uid];
     await docUpdate('matches', chatId, { hiddenFor: hidden } as Partial<MatchEntry>);
     setChatWith(null);
@@ -1661,10 +1673,13 @@ export default function App() {
     if (!user || !myDoc) return false;
     if (!body.trim()) { notify('Escribe tu pregunta o consejo antes de publicar.'); return false; }
     if (qaBlockedNow.blocked) { notify(qaBlockedNow.reason); return false; }
-    // Moderación instantánea: insultos o agresiones nunca se publican.
+    // Moderación en dos niveles:
+    // 1) Insultos o agresiones directas: eliminación inmediata + sanción escalonada.
+    // 2) Temas sensibles (menores, trata, violencia, estafa, acoso…): preguntar
+    //    no es faltar al respeto. La publicación pasa a revisión de administración
+    //    en lugar de sancionar al autor (empatía y comprensión, sin falsos positivos).
     const abuse = detectAbusiveLanguage(body);
-    const report = analyzeReport(body);
-    if (abuse.abusive || report.recommended === 'Suspensión sugerida' || report.recommended === 'Baneo sugerido') {
+    if (abuse.abusive) {
       const reason = abuse.severe
         ? 'Se detectó una agresión grave.'
         : 'Se detectaron insultos o faltas de respeto.';
@@ -1677,15 +1692,20 @@ export default function App() {
       notify('Tu comentario fue eliminado al instante por incumplir las reglas de respeto, educación y comprensión. Sanción aplicada.');
       return false;
     }
+    const report = analyzeReport(body);
+    const needsReview =
+      report.recommended === 'Suspensión sugerida' || report.recommended === 'Baneo sugerido';
     const id = 'qa_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
     const post: QAPostDoc = {
       id, board, userUid: user.uid, alias: myDoc.alias,
-      parentId, body: body.trim(), status: 'visible', createdAt: Date.now(),
+      parentId, body: body.trim(), status: needsReview ? 'revision' : 'visible', createdAt: Date.now(),
     };
     const ok = await docSet('qa_posts', id, post as any);
     if (ok) {
-      setQaPosts((prev) => [post, ...prev]);
-      notify(parentId ? 'Respuesta publicada.' : 'Pregunta publicada. Gracias por compartir con respeto.');
+      if (!needsReview) setQaPosts((prev) => [post, ...prev]);
+      notify(needsReview
+        ? 'Tu publicación fue enviada a revisión por administración porque menciona un tema sensible. Agradecemos tu comprensión.'
+        : (parentId ? 'Respuesta publicada.' : 'Pregunta publicada. Gracias por compartir con respeto.'));
       return true;
     }
     notify('No fue posible publicar. Intenta de nuevo.');
@@ -1761,6 +1781,10 @@ export default function App() {
   // ---------------- Publicación de eventos (paquetes con pago SPEI) -----------
   const createEventPubOrder = async (pack: EventPubPack, withDesign: boolean, designData: { tema: string; invitados: string; fecha: string; hora: string } | null) => {
     if (!user || !myDoc) return;
+    if (myDoc.identityStatus !== 'aprobada') {
+      notify('Para comprar paquetes de publicación necesitas tu INE aprobado. Súbelo desde tu perfil.');
+      return;
+    }
     const base = pack.price + (withDesign ? EVENT_DESIGN_PRICE : 0);
     const order = newSpeiOrder({
       kind: 'publicacion_evento', itemRef: pack.id,
@@ -2471,8 +2495,12 @@ export default function App() {
               <div className="topbar">
                 <button className="iconbtn" aria-label="Salir" onClick={() => setChatWith(null)}><ChevronLeft size={20} /></button>
                 <span className="caps" style={{ fontSize: 16, flex: 1, textAlign: 'center', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{chatWith.alias}</span>
-                <button className="iconbtn" aria-label="Borrar chat" title="Borrar chat" onClick={() => void deleteChat(chatWith)}><Trash2 size={18} /></button>
-                <button className="iconbtn" aria-label="Abandonar chat" title="Abandonar chat" onClick={() => void abandonChat(chatWith)}><LogOut size={18} /></button>
+                {matches.some((m) => m.id === matchIdFor(user.uid, chatWith.uid)) && (
+                  <>
+                    <button className="iconbtn" aria-label="Borrar chat" title="Borrar chat" onClick={() => void deleteChat(chatWith)}><Trash2 size={18} /></button>
+                    <button className="iconbtn" aria-label="Abandonar chat" title="Abandonar chat" onClick={() => void abandonChat(chatWith)}><LogOut size={18} /></button>
+                  </>
+                )}
                 <button className="iconbtn" aria-label="Reportar" title="Reportar" onClick={() => setSheet('reportar')}><AlertTriangle size={18} /></button>
               </div>
               <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -2499,7 +2527,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {groupChat && user && allUsers.length >= 0 && (
+          {groupChat && user && (
             <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
               <div className="topbar">
                 <button className="iconbtn" aria-label="Salir" onClick={() => setGroupChat(null)}><ChevronLeft size={20} /></button>
@@ -3136,8 +3164,13 @@ function PropuestasTab({ myUid, proposals, allUsers, onApply, onToast, onOpenNew
                 <div className="card" style={{ padding: 12, marginTop: 10, background: 'var(--s3)' }}>
                   <div className="label" style={{ marginBottom: 6 }}>Quienes se postularon</div>
                   {(p.applies ?? []).length === 0 && <p className="tiny muted">Aún sin postulaciones.</p>}
+                  {!mine && (p.applies ?? []).length > 0 && (
+                    <p className="tiny muted" style={{ margin: 0 }}>
+                      Por privacidad, solo el autor de la propuesta ve la lista de personas postuladas.
+                    </p>
+                  )}
                   <div className="stack" style={{ gap: 6 }}>
-                    {(p.applies ?? []).map((uid) => (
+                    {mine && (p.applies ?? []).map((uid) => (
                       <div key={uid} className="row between">
                         <span className="small">{aliasOf(uid)}</span>
                         {mine && (
@@ -3620,7 +3653,7 @@ function EventPubSheet({ credits, onClose, onBuy, onToast, onCreate }: {
             </p>
           </div>
           <button className={'btn btn-sm ' + (withDesign ? 'btn-neon' : 'btn-dark')} onClick={() => { setWithDesign((v) => !v); setDesignReady(false); }}>
-            {withDesign ? <Check size={15} /> : <Plus size={15} />} {EVENT_DESIGN_PRICE === 300 ? '$300 + IVA' : ''}
+            {withDesign ? <Check size={15} /> : <Plus size={15} />} {'$' + EVENT_DESIGN_PRICE + ' + IVA'}
           </button>
         </div>
         {withDesign && !designReady && (
@@ -3757,10 +3790,18 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
   const [draft, setDraft] = useState('');
   const [attachment, setAttachment] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Correo efectivo: cuando la vista se abre desde la pantalla de acceso sin
+  // sesión, el usuario escribe aquí el correo de su cuenta para que el bot
+  // pueda localizar su expediente de INE y administración vea su identidad.
+  const [emailInput, setEmailInput] = useState('');
+  const effectiveEmail = (email.trim() || emailInput.trim()).toLowerCase();
+  const hasEmail = effectiveEmail.length > 5 && effectiveEmail.includes('@');
 
-  const chatId = 'rc_' + email.trim().toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 40);
+  // Formato idéntico al original (rc_ + correo saneado) para no romper chats ya creados.
+  const chatId = hasEmail ? 'rc_' + effectiveEmail.replace(/[^a-z0-9]/g, '_').slice(0, 40) : null;
 
   useEffect(() => {
+    if (!chatId) return;
     let stop = false;
     const pull = async () => {
       const doc = await docGet<RecoveryChatDoc>('recovery_chats', chatId);
@@ -3771,14 +3812,35 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
     return () => { stop = true; clearInterval(t); };
   }, [chatId]);
 
-  const openOrCreate = async () => {
+  // Localiza el uid de la cuenta a partir del correo cuando la vista no lo
+  // recibió (chat abierto desde la pantalla de acceso). El bot lo necesita
+  // para comparar la INE enviada contra el expediente registrado.
+  const resolveUid = async (current: RecoveryChatDoc | null): Promise<string | null> => {
+    const known = current?.uid ?? uid;
+    if (known) return known;
+    try {
+      const matches = await docQuery<UserDoc>('users', 'email', effectiveEmail.trim());
+      return matches[0]?.uid ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  const openOrCreate = async (): Promise<RecoveryChatDoc | null> => {
+    if (!chatId) return null;
     const existing = await docGet<RecoveryChatDoc>('recovery_chats', chatId);
     if (existing) {
-      if (uid && !existing.uid) await docUpdate<RecoveryChatDoc>('recovery_chats', chatId, { uid } as Partial<RecoveryChatDoc>);
+      const resolved = existing.uid ?? uid ?? (await resolveUid(existing));
+      if (resolved && !existing.uid) {
+        const upd = { ...existing, uid: resolved };
+        await docSet<RecoveryChatDoc>('recovery_chats', chatId, upd);
+        return upd;
+      }
       return existing;
     }
+    const resolved = uid ?? (await resolveUid(null));
     const first: RecoveryChatDoc = {
-      id: chatId, email: email.trim(), uid, alias,
+      id: chatId, email: effectiveEmail.trim(), uid: resolved, alias,
       messages: [{
         id: 'msg_' + Date.now(),
         from: 'bot',
@@ -3793,10 +3855,13 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
 
   const send = async () => {
     if (busy) return;
+    if (!hasEmail || !chatId) { onToast('Escribe el correo con el que registraste tu cuenta.'); return; }
     if (!draft.trim() && !attachment) { onToast('Escribe un mensaje o adjunta una foto o video.'); return; }
     setBusy(true);
     const current = chat ?? (await openOrCreate());
+    if (!current) { setBusy(false); return; }
     if (current.status === 'cerrado') { onToast('Este chat fue cerrado por administración.'); setBusy(false); return; }
+    let targetDoc = current;
     const msgs = [...(current.messages ?? [])];
     msgs.push({
       id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
@@ -3805,35 +3870,53 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
       ts: Date.now(),
     });
     // Bot de validación: compara la INE enviada contra la registrada en la cuenta.
-    if (attachment && attachment.startsWith('data:image') && (current.uid ?? uid)) {
-      const targetUid = current.uid ?? uid;
-      const records = await docQuery<any>('ine_records', 'userUid', targetUid);
-      const rec = records.sort((a, b) => b.createdAt - a.createdAt)[0];
-      if (rec?.ineFront) {
-        const sim = await imageSimilarity(attachment, rec.ineFront);
-        if (sim >= 0.75) {
-          msgs.push({
-            id: 'bot_' + Date.now(), from: 'bot',
-            text: 'La identificación COINCIDE con la identificación registrada en la cuenta que intenta acceder. Para continuar con la validación, envía ahora un video breve (mostrando tu rostro y sosteniendo tu identificación).',
-            ts: Date.now() + 1,
-          });
+    if (attachment && attachment.startsWith('data:image')) {
+      const targetUid = await resolveUid(current);
+      if (targetUid) {
+        if (!current.uid) targetDoc = { ...current, uid: targetUid };
+        const records = await docQuery<any>('ine_records', 'userUid', targetUid);
+        const rec = records.sort((a, b) => b.createdAt - a.createdAt)[0];
+        if (rec?.ineFront) {
+          const sim = await imageSimilarity(attachment, rec.ineFront);
+          if (sim >= 0.75) {
+            msgs.push({
+              id: 'bot_' + Date.now(), from: 'bot',
+              text: 'La identificación COINCIDE con la identificación registrada en la cuenta que intenta acceder. Para continuar con la validación, envía ahora un video breve (mostrando tu rostro y sosteniendo tu identificación).',
+              ts: Date.now() + 1,
+            });
+          } else {
+            msgs.push({
+              id: 'bot_' + Date.now(), from: 'bot',
+              text: 'La identificación NO coincide con la que registró la cuenta que intentó acceder. Administración revisará tu caso; puedes adjuntar otra foto o video de aclaración.',
+              ts: Date.now() + 1,
+            });
+          }
         } else {
           msgs.push({
             id: 'bot_' + Date.now(), from: 'bot',
-            text: 'La identificación NO coincide con la que registró la cuenta que intentó acceder. Administración revisará tu caso; puedes adjuntar otra foto o video de aclaración.',
+            text: 'No encontramos un expediente de INE asociado a esta cuenta. Administración revisará tu caso de forma manual.',
             ts: Date.now() + 1,
           });
         }
       } else {
         msgs.push({
           id: 'bot_' + Date.now(), from: 'bot',
-          text: 'No encontramos un expediente de INE asociado a esta cuenta. Administración revisará tu caso de forma manual.',
+          text: 'No localizamos una cuenta con ese correo. Verifica que sea el correo con el que registraste tu cuenta; administración también puede revisar tu caso de forma manual.',
           ts: Date.now() + 1,
         });
       }
     }
-    await docSet('recovery_chats', chatId, { ...current, messages: msgs, lastTs: Date.now() } as any);
-    setChat({ ...current, messages: msgs, lastTs: Date.now() });
+    // Video de verificación: el bot acusa recibo para que el usuario sepa que
+    // el material llegó y queda en manos de administración.
+    if (attachment && attachment.startsWith('data:video')) {
+      msgs.push({
+        id: 'bot_' + Date.now(), from: 'bot',
+        text: 'Video recibido. Administración lo revisará junto con tu identificación para activar tu perfil. Recibirás respuesta por este mismo chat.',
+        ts: Date.now() + 1,
+      });
+    }
+    await docSet('recovery_chats', chatId, { ...targetDoc, messages: msgs, lastTs: Date.now() } as any);
+    setChat({ ...targetDoc, messages: msgs, lastTs: Date.now() });
     setDraft('');
     setAttachment(null);
     setBusy(false);
@@ -3858,7 +3941,21 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
         <span style={{ width: 44 }} />
       </div>
       <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {chat?.status === 'cerrado' && (
+        {!hasEmail && (
+          <div className="card" style={{ textAlign: 'center' }}>
+            <Mail size={26} color="var(--lila)" />
+            <p className="small" style={{ margin: '8px 0 0' }}>
+              Para abrir el chat con administración escribe el correo con el que registraste tu cuenta.
+              Así el bot puede validar tu identificación y administración puede activar tu perfil.
+            </p>
+            <input
+              className="field" type="email" placeholder="Correo de tu cuenta" value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              style={{ marginTop: 12 }}
+            />
+          </div>
+        )}
+        {hasEmail && chat?.status === 'cerrado' && (
           <div className="card" style={{ textAlign: 'center' }}>
             <Ban size={26} color="var(--bad)" />
             <p className="small" style={{ margin: '8px 0 0' }}>
@@ -3866,7 +3963,7 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
             </p>
           </div>
         )}
-        {(!chat || chat.messages.length === 0) && chat?.status !== 'cerrado' && (
+        {hasEmail && (!chat || chat.messages.length === 0) && chat?.status !== 'cerrado' && (
           <div className="card" style={{ textAlign: 'center' }}>
             <ShieldAlert size={26} color="var(--lila)" />
             <p className="small" style={{ margin: '8px 0 0' }}>
@@ -3894,7 +3991,7 @@ function RecoveryChatView({ email, uid, alias, onClose, onToast }: {
           </div>
         ))}
       </div>
-      {chat && chat.status !== 'cerrado' && (
+      {hasEmail && chat && chat.status !== 'cerrado' && (
         <div className="composer" style={{ flexDirection: 'column', gap: 6 }}>
           {attachment && (
             <div className="row between card" style={{ padding: 8, width: '100%' }}>
@@ -4373,9 +4470,16 @@ function EventsTab({ events, passes, onOpenEvent, onToast, myCredits, onOpenPubl
                 : 'Adquiere un paquete de publicación (1 evento desde $800).'}
             </p>
           </div>
-          <button className="btn btn-neon btn-sm" onClick={myCredits > 0 ? onOpenCreate : onOpenPublish}>
-            <Plus size={16} /> {myCredits > 0 ? 'Publicar' : 'Ver paquetes'}
-          </button>
+          <span className="row" style={{ gap: 6 }}>
+            {myCredits > 0 && (
+              <button className="btn btn-dark btn-sm" onClick={onOpenPublish}>
+                <Banknote size={16} /> Paquetes
+              </button>
+            )}
+            <button className="btn btn-neon btn-sm" onClick={myCredits > 0 ? onOpenCreate : onOpenPublish}>
+              <Plus size={16} /> {myCredits > 0 ? 'Publicar' : 'Ver paquetes'}
+            </button>
+          </span>
         </div>
       </div>
 
@@ -4952,6 +5056,12 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
   };
 
   const approveOrder = async (o: SpeiOrder) => {
+    // Idempotencia global: un pago ya aprobado jamás se aplica dos veces
+    // (evita dobles créditos, dobles pases o dobles extensiones de membresía).
+    if (o.status === 'aprobado') {
+      onToast('Este pago ya fue aprobado anteriormente. Sin cambios.');
+      return;
+    }
     setBusy(true);
     const now = Date.now();
     // Idempotencia: un pago de evento jamás genera dos pases ni suma cupo doble.
@@ -5118,6 +5228,11 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
   };
 
   const rejectOrder = async (o: SpeiOrder) => {
+    // Un pago confirmado nunca se revierte por accidente desde el botón.
+    if (o.status === 'aprobado') {
+      onToast('Este pago ya fue aprobado. Para revertirlo contacta a soporte técnico.');
+      return;
+    }
     setBusy(true);
     await appendRemoteTimelineAndStatus(o.id, 'rechazado', 'El administrador rechazó el pago: no se encontró la transferencia con la referencia.');
     if (o.userUid) {
@@ -5157,9 +5272,29 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
   const deleteQaPost = async (p: QAPostDoc) => {
     setBusy(true);
     await docUpdate<QAPostDoc>('qa_posts', p.id, { status: 'eliminado' } as Partial<QAPostDoc>);
+    // Cascada: eliminar una pregunta también elimina sus respuestas.
+    const replies = qaAdminPosts.filter((x) => x.parentId === p.id);
+    for (const r of replies) {
+      await docUpdate<QAPostDoc>('qa_posts', r.id, { status: 'eliminado' } as Partial<QAPostDoc>);
+    }
     await loadAdminData();
     setBusy(false);
-    onToast('Publicación eliminada del apartado de comunidad.');
+    onToast('Publicación eliminada del apartado de comunidad.' + (replies.length > 0 ? ' Sus respuestas también se eliminaron.' : ''));
+  };
+
+  const approveQaPost = async (p: QAPostDoc) => {
+    setBusy(true);
+    await docUpdate<QAPostDoc>('qa_posts', p.id, { status: 'visible' } as Partial<QAPostDoc>);
+    const nid = notifId(p.userUid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: p.userUid, kind: 'sistema',
+      title: 'Publicación aprobada',
+      body: 'Tu publicación de comunidad revisada por administración ya está visible.',
+      ts: Date.now(), read: false,
+    } as AppNotification);
+    await loadAdminData();
+    setBusy(false);
+    onToast('Publicación aprobada y visible en la comunidad.');
   };
 
   const refreshRecoveryDraft = async (chatId: string) => {
@@ -5254,6 +5389,7 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
       organizer: f.organizer.trim() || 'Administración', price: Number(f.price) || 0,
       cap: Number(f.cap) || 40, sold: 0, published: true, hue: hueFrom(id + f.title),
       reqs: f.reqs.split('\n').map((s) => s.trim()).filter(Boolean),
+      createdAt: Date.now(),
     });
     setEvForm({ title: '', theme: '', date: '', time: '', zone: '', organizer: '', cap: 40, price: 0, reqs: '' });
     await onRefresh();
@@ -5815,6 +5951,27 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
             </div>
 
             <div className="row between" style={{ margin: '16px 0 4px' }}>
+              <span className="label">Comunidad: publicaciones en revisión (temas sensibles)</span>
+              <span className="tiny">{qaAdminPosts.filter((p) => p.status === 'revision').length} en revisión</span>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              {qaAdminPosts.filter((p) => p.status === 'revision').length === 0 && <div className="card"><p className="muted small">Sin publicaciones esperando revisión.</p></div>}
+              {qaAdminPosts.filter((p) => p.status === 'revision').map((p) => (
+                <div key={p.id} className="card" style={{ padding: 14, boxShadow: 'inset 0 0 0 1px var(--warn)' }}>
+                  <div className="row between">
+                    <span className="tag">{boardForKind(p.board)}</span>
+                    <span className="tiny">De {p.alias} · hace {ago(p.createdAt)}</span>
+                  </div>
+                  <p className="small" style={{ margin: '8px 0 0' }}>{p.body}</p>
+                  <div className="grid2" style={{ marginTop: 10 }}>
+                    <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void approveQaPost(p)}><BadgeCheck size={15} /> Publicar</button>
+                    <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void deleteQaPost(p)}><Trash2 size={15} /> Eliminar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="row between" style={{ margin: '16px 0 4px' }}>
               <span className="label">Comunidad: dudas, consejos y recomendaciones</span>
               <span className="tiny">{qaAdminPosts.filter((p) => p.status === 'visible').length} publicación(es)</span>
             </div>
@@ -5965,8 +6122,3 @@ function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: 
     </motion.div>
   );
 }
-
-
-
-
-
