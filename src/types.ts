@@ -53,7 +53,7 @@ export interface Profile {
   distance?: string;
   location?: string;
   country?: AppRegion;
-  state?: string; // state/province used by the premium state-search pass
+  state?: string; // state/province used for the premium state-search pass
   badge?: BadgeKind; // 'verificada' (creators/agencies/coordinators) | 'oro' (socios/admins)
   adminStamp?: boolean; // gold rectangular ADMIN seal next to the name
   likesYou?: boolean;
@@ -219,7 +219,7 @@ export interface PaymentItem {
 
 export type SubscriptionTier = 'free' | 'plus' | 'ultra' | 'silver' | 'gold';
 
-export type SpeiOrderKind = 'suscripcion' | 'evento' | 'propuesta_colaboracion' | 'premium' | 'pase_estado' | 'donacion';
+export type SpeiOrderKind = 'suscripcion' | 'evento' | 'creadora' | 'propuesta_colaboracion' | 'premium' | 'pase_estado' | 'donacion';
 export type SpeiOrderStatus = 'pendiente' | 'verificado' | 'aprobado' | 'rechazado' | 'expirado';
 
 // SPEI transfer order: reference is the unique payment ID used in the bank concept.

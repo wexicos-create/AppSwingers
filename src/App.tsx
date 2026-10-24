@@ -31,6 +31,7 @@ import {
   issueIdentityVerdict, ineRecordVerdict, fetchNotificationsForUser, markNotificationsRead,
   purgeExpiredRetainedRecords,
 } from './ine';
+import { analyzeReport, scanProfile, auditProcesses, ModerationReport } from './moderation';
 
 // ---------------------------- Constantes ------------------------------------
 
@@ -48,7 +49,7 @@ const IVA = 0.16;
 
 // ---------------------------- Tipos -----------------------------------------
 
-type Tab = 'match' | 'chats' | 'eventos' | 'pago' | 'perfil';
+type Tab = 'match' | 'propuestas' | 'eventos' | 'virtual' | 'perfil';
 
 interface UserDoc {
   uid: string;
@@ -118,6 +119,74 @@ interface MatchEntry {
 }
 
 interface SwipeDoc { id: string; from: string; to: string; action: string; ts: number }
+
+interface ProposalDoc {
+  id: string;
+  authorUid: string;
+  authorAlias: string;
+  cat: string;
+  title: string;
+  body: string;
+  rules: string;
+  status: 'revision' | 'publicada' | 'rechazada';
+  applies: string[];
+  createdAt: number;
+}
+
+interface CreatorDoc {
+  id: string;
+  userUid: string;
+  name: string;
+  handle: string;
+  bio: string;
+  price: number;
+  status: 'pendiente' | 'activa' | 'rechazada';
+  createdAt: number;
+}
+
+interface CreatorPostDoc {
+  id: string;
+  creatorId: string;
+  creatorName: string;
+  creatorHandle: string;
+  image: string;
+  caption: string;
+  premium: boolean;
+  price: number;
+  status: 'revision' | 'publicado' | 'rechazado';
+  createdAt: number;
+}
+
+interface CreatorSubDoc {
+  id: string;
+  userUid: string;
+  creatorId: string;
+  until: number;
+  createdAt: number;
+}
+
+interface ForumDoc {
+  id: string;
+  userUid: string;
+  userName: string;
+  question: string;
+  answer: string | null;
+  status: 'abierta' | 'respondida';
+  createdAt: number;
+  answeredAt: number | null;
+}
+
+interface TicketDoc {
+  id: string;
+  userUid: string;
+  userName: string;
+  userEmail: string;
+  requester: string;
+  subject: string;
+  message: string;
+  status: string;
+  createdAt: number;
+}
 
 // ---------------------------- Utilerías -------------------------------------
 
@@ -559,7 +628,7 @@ function Onboarding({ user, seed, onFinish, onToast }: {
         {steps[step] === 'ine' && (
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
             <h2 className="h1">Validación INE</h2>
-            <p className="sub">Tu identidad real, resguardada. Necesaria para el sello verificado y para pagar con SPEI.</p>
+            <p className="sub">Tu identidad real, resguardada. Obligatoria: sin INE aprobada no se accede a la plataforma.</p>
             <IneCapture
               uid={user.uid} email={user.email} alias={draft.alias ?? ''} onToast={onToast}
               onDone={() => { upd({ identityStatus: 'en revisión' }); setStep(3); }}
@@ -608,7 +677,7 @@ function Onboarding({ user, seed, onFinish, onToast }: {
 export default function App() {
   const [booting, setBooting] = useState(true);
   const [user, setUser] = useState<User | null>(null);
-  const [view, setView] = useState<'carga' | 'auth' | 'onboarding' | 'app'>('carga');
+  const [view, setView] = useState<'carga' | 'auth' | 'onboarding' | 'verificacion' | 'app'>('carga');
   const [tab, setTab] = useState<Tab>('match');
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -621,13 +690,21 @@ export default function App() {
   const [events, setEvents] = useState<EventDoc[]>([]);
   const [passes, setPasses] = useState<PassDoc[]>([]);
   const [bankCfg, setBankCfg] = useState<SpeiBankConfig>(getSpeiConfig());
+  const [proposals, setProposals] = useState<ProposalDoc[]>([]);
+  const [creators, setCreators] = useState<CreatorDoc[]>([]);
+  const [creatorPosts, setCreatorPosts] = useState<CreatorPostDoc[]>([]);
+  const [myCreatorSubs, setMyCreatorSubs] = useState<CreatorSubDoc[]>([]);
+  const [forum, setForum] = useState<ForumDoc[]>([]);
 
   const [orderSheet, setOrderSheet] = useState<SpeiOrder | null>(null);
   const [eventSheet, setEventSheet] = useState<EventDoc | null>(null);
-  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar'>(null);
+  const [sheet, setSheet] = useState<null | 'avisos' | 'ine' | 'editar' | 'reportar' | 'propuesta'>(null);
   const [chatWith, setChatWith] = useState<UserDoc | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [matchPopup, setMatchPopup] = useState<UserDoc | null>(null);
+  const [pagoOpen, setPagoOpen] = useState(false);
+  const [foroOpen, setForoOpen] = useState(false);
+  const [foroDraft, setForoDraft] = useState('');
 
   const isAdmin = useMemo(() => !!user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()), [user]);
   const myDoc = useMemo(() => allUsers.find((u) => u.uid === user?.uid) ?? null, [allUsers, user]);
@@ -656,7 +733,7 @@ export default function App() {
   const refreshCore = useCallback(async () => {
     if (!user) return;
     const uid = user.uid;
-    const [users, swipes, ordersList, notifsList, evts, passList, matchesList] = await Promise.all([
+    const [users, swipes, ordersList, notifsList, evts, passList, matchesList, props, creas, posts, subs, forumList] = await Promise.all([
       docAll<UserDoc>('users'),
       docQuery<SwipeDoc>('swipes', 'from', uid),
       fetchRemoteSpeiOrdersForUser(uid),
@@ -664,6 +741,11 @@ export default function App() {
       docAll<EventDoc>('events'),
       docQuery<PassDoc>('event_passes', 'userUid', uid),
       docAll<MatchEntry>('matches'),
+      docAll<ProposalDoc>('proposals'),
+      docAll<CreatorDoc>('creators'),
+      docAll<CreatorPostDoc>('creator_posts'),
+      docQuery<CreatorSubDoc>('creator_subscriptions', 'userUid', uid),
+      docAll<ForumDoc>('forum'),
     ]);
     setAllUsers(users);
     setMySwipes(swipes);
@@ -672,6 +754,11 @@ export default function App() {
     setEvents(evts.filter((e) => e.published).sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)));
     setPasses(passList.sort((a, b) => b.createdAt - a.createdAt));
     setMatches(matchesList.filter((m) => m.users?.includes(uid)));
+    setProposals(props.sort((a, b) => b.createdAt - a.createdAt));
+    setCreators(creas);
+    setCreatorPosts(posts.sort((a, b) => b.createdAt - a.createdAt));
+    setMyCreatorSubs(subs);
+    setForum(forumList.sort((a, b) => b.createdAt - a.createdAt));
     const remoteBank = await fetchRemoteSpeiConfig();
     if (remoteBank) setBankCfg(remoteBank);
   }, [user]);
@@ -708,6 +795,10 @@ export default function App() {
       }
       if (!existing || !existing.onboardingDone) {
         setView('onboarding');
+      } else if (existing.identityStatus !== 'aprobada') {
+        // Puerta de acceso: sin INE aprobada no se entra a la plataforma.
+        setView('verificacion');
+        await refreshCore();
       } else {
         await docUpdate('users', user.uid, { lastSeen: Date.now() });
         setView('app');
@@ -717,6 +808,19 @@ export default function App() {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Transiciones automáticas de la puerta de verificación: cuando el
+  // administrador aprueba la INE, el usuario entra; si se revoca, sale.
+  useEffect(() => {
+    if (!myDoc || isAdmin) return;
+    if (view === 'verificacion' && myDoc.identityStatus === 'aprobada') {
+      setView('app');
+      notify('Identidad verificada. Bienvenido a la comunidad.');
+    } else if (view === 'app' && myDoc.identityStatus !== 'aprobada') {
+      setView('verificacion');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myDoc?.identityStatus]);
 
   const finishOnboarding = async (doc: UserDoc) => {
     await docSet<UserDoc>('users', user!.uid, doc, true);
@@ -894,6 +998,110 @@ export default function App() {
     }
   };
 
+  // ------------------------- Propuestas ------------------------------------
+  const applyToProposal = async (p: ProposalDoc) => {
+    if (!user || !myDoc) return;
+    if ((p.applies ?? []).includes(user.uid)) { notify('Ya aplicaste a esta propuesta.'); return; }
+    const applies = [...(p.applies ?? []), user.uid];
+    const ok = await docUpdate<ProposalDoc>('proposals', p.id, { applies } as Partial<ProposalDoc>);
+    if (ok) {
+      const nid = notifId(p.authorUid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: p.authorUid, kind: 'sistema',
+        title: 'Nueva aplicación', body: myDoc.alias + ' aplicó a tu propuesta "' + p.title + '".',
+        ts: Date.now(), read: false,
+      } as AppNotification);
+      setProposals((prev) => prev.map((x) => (x.id === p.id ? { ...x, applies } : x)));
+      notify('Aplicación enviada. El autor te verá entre sus interesados.');
+    } else {
+      notify('No fue posible aplicar. Intenta de nuevo.');
+    }
+  };
+
+  const createProposal = async (f: { cat: string; title: string; body: string; rules: string }) => {
+    if (!user || !myDoc) return false;
+    const id = 'pr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const doc: ProposalDoc = {
+      id, authorUid: user.uid, authorAlias: myDoc.alias,
+      cat: f.cat, title: f.title, body: f.body, rules: f.rules,
+      status: 'revision', applies: [], createdAt: Date.now(),
+    };
+    const ok = await docSet('proposals', id, doc);
+    if (ok) { await refreshCore(); notify('Propuesta enviada a revisión. Administración la aprobará o rechazará.'); }
+    else notify('No fue posible enviar la propuesta. Intenta de nuevo.');
+    return ok;
+  };
+
+  // ------------------------- Creadoras --------------------------------------
+  const registerCreator = async (f: { name: string; handle: string; bio: string; price: number }) => {
+    if (!user || !myDoc) return false;
+    const id = 'cr_' + user.uid;
+    const doc: CreatorDoc = {
+      id, userUid: user.uid, name: f.name.trim(),
+      handle: (f.handle || '').replace(/^@/, '').trim(), bio: f.bio.trim(),
+      price: Math.max(0, Math.round(f.price) || 0), status: 'pendiente', createdAt: Date.now(),
+    };
+    const ok = await docSet('creators', id, doc, true);
+    if (ok) { await refreshCore(); notify('Recibimos tu registro de creadora. Te avisamos al aprobarlo.'); }
+    else notify('No fue posible enviar el registro. Intenta de nuevo.');
+    return ok;
+  };
+
+  const uploadCreatorPost = async (creator: CreatorDoc, image: string, caption: string, premium: boolean, price: number) => {
+    if (!user) return false;
+    const id = 'cp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const doc: CreatorPostDoc = {
+      id, creatorId: creator.id, creatorName: creator.name, creatorHandle: creator.handle,
+      image, caption: caption.trim(), premium, price: premium ? Math.max(0, Math.round(price) || 0) : 0,
+      status: 'revision', createdAt: Date.now(),
+    };
+    const ok = await docSet('creator_posts', id, doc);
+    if (ok) { await refreshCore(); notify('Contenido enviado a moderación. Aparecerá al aprobarse.'); }
+    else notify('No fue posible subir el contenido. Intenta de nuevo.');
+    return ok;
+  };
+
+  const createCreatorOrder = async (creator: CreatorDoc) => {
+    if (!user || !myDoc) return;
+    if (myCreatorSubs.some((s) => s.creatorId === creator.id && s.until > Date.now())) {
+      notify('Ya tienes una suscripción activa con esta creadora.');
+      return;
+    }
+    if (orders.some((o) => o.kind === 'creadora' && o.itemRef === creator.id && (o.status === 'pendiente' || o.status === 'verificado'))) {
+      notify('Ya tienes una orden en curso para esta suscripción.');
+      return;
+    }
+    // Economía de creadoras: precio de la creadora + 10% de servicio, más IVA.
+    const total = Math.round(creator.price * 1.1 * (1 + IVA) * 100) / 100;
+    const order = newSpeiOrder({
+      kind: 'creadora', itemRef: creator.id, label: 'Suscripción: ' + creator.handle, amount: total,
+      userName: myDoc.alias, userEmail: user.email, userUid: user.uid,
+    });
+    order.meta = JSON.stringify({ creatorId: creator.id, creatorHandle: creator.handle });
+    const ok = await createRemoteSpeiOrder(order);
+    if (ok) {
+      setOrders((prev) => [order, ...prev.filter((o) => o.id !== order.id)]);
+      setOrderSheet(order);
+      notify('Orden SPEI creada para tu suscripción de creadora.');
+    } else {
+      notify('No fue posible crear la orden. Intenta de nuevo.');
+    }
+  };
+
+  // ------------------------- Foro público ------------------------------------
+  const askQuestion = async (text: string) => {
+    if (!user || !myDoc) return false;
+    const id = 'fq_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    const doc: ForumDoc = {
+      id, userUid: user.uid, userName: myDoc.alias, question: text.trim(),
+      answer: null, status: 'abierta', createdAt: Date.now(), answeredAt: null,
+    };
+    const ok = await docSet('forum', id, doc);
+    if (ok) { await refreshCore(); notify('Pregunta publicada. Administración responderá pronto.'); }
+    else notify('No fue posible publicar tu pregunta. Intenta de nuevo.');
+    return ok;
+  };
+
   // ------------------------- Notificaciones -------------------------------
   const unread = notifs.filter((n) => !n.read).length;
   const openAvisos = async () => {
@@ -918,7 +1126,7 @@ export default function App() {
 
   // Bloqueo efectivo de cuentas suspendidas o baneadas: el veredicto del
   // administrador corta el acceso completo a la aplicación.
-  if (view === 'app' && myDoc && !isAdmin && (myDoc.status === 'suspendido' || myDoc.identityStatus === 'baneada')) {
+  if ((view === 'app' || view === 'verificacion') && myDoc && !isAdmin && (myDoc.status === 'suspendido' || myDoc.identityStatus === 'baneada')) {
     const banned = myDoc.identityStatus === 'baneada';
     return (
       <div className="shell">
@@ -939,6 +1147,61 @@ export default function App() {
               </p>
               {myDoc.identityNote && <p className="tiny" style={{ marginTop: 8 }}>{myDoc.identityNote}</p>}
             </div>
+            <button className="btn btn-bad full" style={{ marginTop: 16 }} onClick={() => void signOut(auth)}>
+              <LogOut size={18} /> Cerrar sesión
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Puerta de verificación: sin INE aprobada no se accede a la plataforma.
+  if (view === 'verificacion' && user) {
+    return (
+      <div className="shell">
+        <div className="screen">
+          <div className="aura" />
+          <div className="topbar">
+            <span className="wordmark">App<b>Swinguer</b></span>
+            <span className="tag warn"><ShieldCheck size={12} /> Verificación</span>
+          </div>
+          <div className="body" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="h1" style={{ fontSize: 26 }}>Validación de identidad</div>
+            <p className="sub">Sin tu INE aprobada no se accede a la plataforma. Es la única forma de mantener la comunidad real y segura.</p>
+            {myDoc && (
+              <>
+                <div className="card">
+                  <div className="row between">
+                    <span className="label">Estado actual</span>
+                    <IdentityTag status={myDoc.identityStatus} />
+                  </div>
+                  {myDoc.identityStatus === 'en revisión' && (
+                    <p className="muted small" style={{ margin: '10px 0 0' }}>
+                      Tu expediente está en revisión por administración. Esta pantalla se libera sola al aprobarse; no necesitas reiniciar la app.
+                    </p>
+                  )}
+                  {myDoc.identityStatus === 'rechazada' && (
+                    <p className="muted small" style={{ margin: '10px 0 0' }}>
+                      Tu expediente fue rechazado. Puedes volver a enviarlo con ambas caras legibles y tu selfie.
+                    </p>
+                  )}
+                  {(myDoc.identityStatus === 'sin iniciar' || !myDoc.identityStatus) && (
+                    <p className="muted small" style={{ margin: '10px 0 0' }}>
+                      Sube el frente y reverso de tu INE más un selfie sosteniéndola. Solo lo ve administración.
+                    </p>
+                  )}
+                </div>
+                <div style={{ marginTop: 14 }} />
+                <IneCapture
+                  uid={user.uid}
+                  email={user.email ?? ''}
+                  alias={myDoc.alias}
+                  onToast={notify}
+                  onDone={async () => { await refreshCore(); }}
+                />
+              </>
+            )}
             <button className="btn btn-bad full" style={{ marginTop: 16 }} onClick={() => void signOut(auth)}>
               <LogOut size={18} /> Cerrar sesión
             </button>
@@ -976,13 +1239,25 @@ export default function App() {
             </div>
 
             <div className="body">
-              {tab === 'match' && <MatchTab deck={deck} vip={vip} likesToday={likesToday} onAct={actOn} />}
-              {tab === 'chats' && (
-                <ChatsTab
+              {tab === 'match' && (
+                <MatchTab
+                  deck={deck}
+                  vip={vip}
+                  likesToday={likesToday}
+                  onAct={actOn}
                   matches={matches}
                   allUsers={allUsers}
                   myUid={user.uid}
-                  onOpen={(peer) => setChatWith(peer)}
+                  onOpenChat={(peer) => setChatWith(peer)}
+                />
+              )}
+              {tab === 'propuestas' && (
+                <PropuestasTab
+                  myUid={user.uid}
+                  proposals={proposals}
+                  onApply={applyToProposal}
+                  onToast={notify}
+                  onOpenNew={() => setSheet('propuesta')}
                 />
               )}
               {tab === 'eventos' && (
@@ -993,15 +1268,16 @@ export default function App() {
                   onToast={notify}
                 />
               )}
-              {tab === 'pago' && (
-                <PayTab
+              {tab === 'virtual' && (
+                <VirtualTab
                   myDoc={myDoc}
-                  orders={orders}
-                  pricing={pricing}
-                  bank={bankCfg}
-                  onBuy={createSubscriptionOrder}
-                  onOpenOrder={(o) => setOrderSheet(o)}
+                  creators={creators}
+                  posts={creatorPosts}
+                  mySubs={myCreatorSubs}
                   onToast={notify}
+                  onSubscribe={createCreatorOrder}
+                  onRegister={registerCreator}
+                  onUpload={uploadCreatorPost}
                 />
               )}
               {tab === 'perfil' && (
@@ -1011,7 +1287,8 @@ export default function App() {
                   passesCount={passes.filter((p) => p.status === 'activo').length}
                   onOpenIne={() => setSheet('ine')}
                   onOpenEdit={() => setSheet('editar')}
-                  onGoPago={() => setTab('pago')}
+                  onGoPago={() => setPagoOpen(true)}
+                  onOpenForo={() => setForoOpen(true)}
                   onOpenAvisos={openAvisos}
                   onOpenAdmin={() => setAdminOpen(true)}
                   onToast={notify}
@@ -1041,9 +1318,9 @@ export default function App() {
             <nav className="nav">
               {([
                 ['match', <Heart size={22} />, 'Match'],
-                ['chats', <MessageCircle size={22} />, 'Chats'],
+                ['propuestas', <Sparkles size={22} />, 'Propuestas'],
                 ['eventos', <CalendarDays size={22} />, 'Eventos'],
-                ['pago', <Banknote size={22} />, 'Pago'],
+                ['virtual', <Star size={22} />, 'Virtual'],
                 ['perfil', <Users size={22} />, 'Perfil'],
               ] as [Tab, React.ReactNode, string][]).map(([id, icon, label]) => (
                 <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>
@@ -1073,7 +1350,7 @@ export default function App() {
               </p>
               <button
                 className="btn btn-neon full"
-                onClick={() => { setChatWith(matchPopup); setMatchPopup(null); setTab('chats'); }}
+                onClick={() => { setChatWith(matchPopup); setMatchPopup(null); }}
               >
                 <MessageCircle size={18} /> Abrir chat
               </button>
@@ -1111,6 +1388,83 @@ export default function App() {
                   onKeyDown={(e) => { if (e.key === 'Enter') void sendMsg(); }}
                 />
                 <button className="iconbtn" style={{ background: 'var(--lila)', color: '#12051f' }} aria-label="Enviar" onClick={() => void sendMsg()}>
+                  <Send size={18} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Pago SPEI (desde Perfil) ------------- */}
+        <AnimatePresence>
+          {pagoOpen && user && myDoc && (
+            <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
+              <div className="topbar">
+                <button className="iconbtn" aria-label="Salir" onClick={() => setPagoOpen(false)}><ChevronLeft size={20} /></button>
+                <span className="caps" style={{ fontSize: 16 }}>Pago SPEI</span>
+                <span style={{ width: 44 }} />
+              </div>
+              <div className="body">
+                <PayTab
+                  myDoc={myDoc}
+                  orders={orders}
+                  pricing={pricing}
+                  bank={bankCfg}
+                  onBuy={createSubscriptionOrder}
+                  onOpenOrder={(o) => setOrderSheet(o)}
+                  onToast={notify}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ---------------------- Foro público -------------------------- */}
+        <AnimatePresence>
+          {foroOpen && user && myDoc && (
+            <motion.div className="overlay" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
+              <div className="topbar">
+                <button className="iconbtn" aria-label="Salir" onClick={() => setForoOpen(false)}><ChevronLeft size={20} /></button>
+                <span className="caps" style={{ fontSize: 16 }}>Foro público</span>
+                <span style={{ width: 44 }} />
+              </div>
+              <div className="body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="h1" style={{ fontSize: 22 }}>Preguntas y respuestas</div>
+                <p className="sub" style={{ marginBottom: 4 }}>Público para toda la comunidad verificada. Sin datos personales ni ubicaciones.</p>
+                {forum.length === 0 && (
+                  <div className="card" style={{ textAlign: 'center' }}>
+                    <MessageCircle size={28} color="var(--lila)" />
+                    <p className="muted" style={{ margin: '10px 0 0' }}>Aún no hay preguntas. Sé quien abra la conversación.</p>
+                  </div>
+                )}
+                {forum.map((q) => (
+                  <div key={q.id} className="card" style={{ padding: 14, background: q.status === 'respondida' ? 'var(--s2)' : 'var(--s3)', boxShadow: q.status === 'respondida' ? 'inset 0 0 0 1px var(--line)' : 'inset 0 0 0 1px var(--lila), var(--glow)' }}>
+                    <div className="row between">
+                      <span className="caps" style={{ fontSize: 15 }}>{q.userName}</span>
+                      <span className="tiny">{ago(q.createdAt)}</span>
+                    </div>
+                    <p className="small" style={{ margin: '6px 0 0' }}>{q.question}</p>
+                    {q.answer ? (
+                      <div className="card" style={{ marginTop: 10, padding: 12, background: 'var(--s1)' }}>
+                        <div className="tiny" style={{ color: 'var(--ok)', marginBottom: 4 }}><BadgeCheck size={13} /> Respuesta de administración</div>
+                        <span className="small">{q.answer}</span>
+                      </div>
+                    ) : (
+                      <div className="row" style={{ gap: 6, marginTop: 8 }}><Clock size={13} color="var(--warn)" /><span className="tiny">Esperando respuesta de administración.</span></div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="composer">
+                <input
+                  className="field" placeholder="Haz una pregunta pública…" value={foroDraft}
+                  onChange={(e) => setForoDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && foroDraft.trim()) { void askQuestion(foroDraft); setForoDraft(''); } }}
+                />
+                <button
+                  className="iconbtn" style={{ background: 'var(--lila)', color: '#12051f' }} aria-label="Preguntar"
+                  onClick={() => { if (foroDraft.trim()) { void askQuestion(foroDraft); setForoDraft(''); } }}
+                >
                   <Send size={18} />
                 </button>
               </div>
@@ -1185,6 +1539,11 @@ export default function App() {
               </div>
             </motion.div>
           )}
+          {sheet === 'propuesta' && (
+            <motion.div key="sheet-propuesta" className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 28, stiffness: 300 }}>
+              <ProposalSheet onClose={() => setSheet(null)} onSubmit={createProposal} onToast={notify} />
+            </motion.div>
+          )}
           {sheet === 'reportar' && chatWith && user && myDoc && (
             <ReportSheet key="sheet-reportar"
               peer={chatWith}
@@ -1226,10 +1585,13 @@ export default function App() {
 // PESTAÑA MATCH
 // ============================================================================
 
-function MatchTab({ deck, vip, likesToday, onAct }: {
+function MatchTab({ deck, vip, likesToday, onAct, matches, allUsers, myUid, onOpenChat }: {
   deck: UserDoc[]; vip: boolean; likesToday: number;
   onAct: (target: UserDoc, action: 'like' | 'superlike' | 'pass') => Promise<void>;
+  matches: MatchEntry[]; allUsers: UserDoc[]; myUid: string;
+  onOpenChat: (peer: UserDoc) => void;
 }) {
+  const [seg, setSeg] = useState<'descubre' | 'mensajes'>('descubre');
   const [removed, setRemoved] = useState<string[]>([]);
   const cards = deck.filter((p) => !removed.includes(p.uid));
   const top = cards.slice(-3);
@@ -1240,16 +1602,44 @@ function MatchTab({ deck, vip, likesToday, onAct }: {
     await onAct(p, action);
   };
 
-  if (cards.length === 0) {
+  const chatRows = matches
+    .map((m) => {
+      const peerUid = m.users.find((u) => u !== myUid);
+      const peer = allUsers.find((u) => u.uid === peerUid);
+      return peer ? { m, peer } : null;
+    })
+    .filter((x): x is { m: MatchEntry; peer: UserDoc } => !!x)
+    .sort((a, b) => (b.m.lastTs ?? b.m.createdAt) - (a.m.lastTs ?? a.m.createdAt));
+
+  if (seg === 'mensajes') {
     return (
       <>
-        <div className="h1">Descubre</div>
-        <p className="sub">{vip ? 'Likes ilimitados' : `Te quedan ${Math.max(0, FREE_DAILY_LIKES - likesToday)} likes de hoy`}</p>
-        <div className="card" style={{ textAlign: 'center', marginTop: 30 }}>
-          <Users size={30} color="var(--lila)" />
-          <p className="muted" style={{ margin: '10px 0 0' }}>
-            Aún no hay perfiles para mostrar. La comunidad crece con personas reales: invita a quienes compartan esta vibra y vuelve pronto.
-          </p>
+        <div className="seg" style={{ marginBottom: 16 }}>
+          <button onClick={() => setSeg('descubre')}>Descubre</button>
+          <button className="on">Mensajes</button>
+        </div>
+        <p className="sub">Los mensajes se abren solo con interés mutuo.</p>
+        {chatRows.length === 0 && (
+          <div className="card" style={{ textAlign: 'center', marginTop: 20 }}>
+            <MessageCircle size={28} color="var(--lila)" />
+            <p className="muted" style={{ margin: '10px 0 0' }}>
+              Aún no hay matches. Explora en Descubre y da like a quien te intriga.
+            </p>
+          </div>
+        )}
+        <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+          {chatRows.map(({ m, peer }) => (
+            <button key={m.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpenChat(peer)}>
+              <Avatar doc={peer} size={46} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="caps" style={{ display: 'block', fontSize: 16 }}>{peer.alias}</span>
+                <span className="tiny" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {m.lastMessage || 'Di hola'}
+                </span>
+              </span>
+              <span className="tiny">{ago(m.lastTs ?? m.createdAt)}</span>
+            </button>
+          ))}
         </div>
       </>
     );
@@ -1257,34 +1647,52 @@ function MatchTab({ deck, vip, likesToday, onAct }: {
 
   return (
     <>
-      <div className="row between">
-        <div>
-          <div className="h1">Descubre</div>
-          <p className="sub" style={{ marginBottom: 0 }}>{vip ? 'Likes ilimitados · Ultra Plus' : `Te quedan ${Math.max(0, FREE_DAILY_LIKES - likesToday)} likes de hoy`}</p>
-        </div>
+      <div className="seg" style={{ marginBottom: 16 }}>
+        <button className="on">Descubre</button>
+        <button onClick={() => setSeg('mensajes')}>Mensajes</button>
       </div>
-      <div className="deck">
-        <AnimatePresence>
-          {rest.map((p) => (
-            <DeckCard key={p.uid} p={p} onFly={fly} behind />
-          ))}
-          {top.map((p, i) => (
-            <DeckCard key={p.uid} p={p} onFly={fly} top={i === top.length - 1} />
-          ))}
-        </AnimatePresence>
-      </div>
-      {top.length > 0 && (
-        <div className="actions">
-          <button className="round bad" aria-label="Pasar" onClick={() => void fly(top[top.length - 1], 'pass')}>
-            <X size={26} />
-          </button>
-          <button className="round star" aria-label="Superlike" onClick={() => void fly(top[top.length - 1], 'superlike')}>
-            <Star size={24} fill="currentColor" />
-          </button>
-          <button className="round big" aria-label="Me gusta" onClick={() => void fly(top[top.length - 1], 'like')}>
-            <Heart size={32} fill="currentColor" />
-          </button>
-        </div>
+      {cards.length === 0 ? (
+        <>
+          <p className="sub">{vip ? 'Likes ilimitados' : `Te quedan ${Math.max(0, FREE_DAILY_LIKES - likesToday)} likes de hoy`}</p>
+          <div className="card" style={{ textAlign: 'center', marginTop: 30 }}>
+            <Users size={30} color="var(--lila)" />
+            <p className="muted" style={{ margin: '10px 0 0' }}>
+              Aún no hay perfiles para mostrar. La comunidad crece con personas reales: invita a quienes compartan esta vibra y vuelve pronto.
+            </p>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="row between">
+            <div>
+              <div className="h1">Descubre</div>
+              <p className="sub" style={{ marginBottom: 0 }}>{vip ? 'Likes ilimitados · Ultra Plus' : `Te quedan ${Math.max(0, FREE_DAILY_LIKES - likesToday)} likes de hoy`}</p>
+            </div>
+          </div>
+          <div className="deck">
+            <AnimatePresence>
+              {rest.map((p) => (
+                <DeckCard key={p.uid} p={p} onFly={fly} behind />
+              ))}
+              {top.map((p, i) => (
+                <DeckCard key={p.uid} p={p} onFly={fly} top={i === top.length - 1} />
+              ))}
+            </AnimatePresence>
+          </div>
+          {top.length > 0 && (
+            <div className="actions">
+              <button className="round bad" aria-label="Pasar" onClick={() => void fly(top[top.length - 1], 'pass')}>
+                <X size={26} />
+              </button>
+              <button className="round star" aria-label="Superlike" onClick={() => void fly(top[top.length - 1], 'superlike')}>
+                <Star size={24} fill="currentColor" />
+              </button>
+              <button className="round big" aria-label="Me gusta" onClick={() => void fly(top[top.length - 1], 'like')}>
+                <Heart size={32} fill="currentColor" />
+              </button>
+            </div>
+          )}
+        </>
       )}
     </>
   );
@@ -1338,46 +1746,341 @@ function DeckCard({ p, onFly, top, behind }: {
 }
 
 // ============================================================================
-// PESTAÑA CHATS
+// PESTAÑA PROPUESTAS
 // ============================================================================
 
-function ChatsTab({ matches, allUsers, myUid, onOpen }: {
-  matches: MatchEntry[]; allUsers: UserDoc[]; myUid: string;
-  onOpen: (peer: UserDoc) => void;
+function PropuestasTab({ myUid, proposals, onApply, onToast, onOpenNew }: {
+  myUid: string; proposals: ProposalDoc[];
+  onApply: (p: ProposalDoc) => Promise<void>;
+  onToast: (s: string) => void;
+  onOpenNew: () => void;
 }) {
-  const rows = matches
-    .map((m) => {
-      const peerUid = m.users.find((u) => u !== myUid);
-      const peer = allUsers.find((u) => u.uid === peerUid);
-      return peer ? { m, peer } : null;
-    })
-    .filter((x): x is { m: MatchEntry; peer: UserDoc } => !!x)
-    .sort((a, b) => (b.m.lastTs ?? b.m.createdAt) - (a.m.lastTs ?? a.m.createdAt));
+  const pub = proposals.filter((p) => p.status === 'publicada').sort((a, b) => b.createdAt - a.createdAt);
+  const mias = proposals.filter((p) => p.authorUid === myUid && p.status !== 'publicada').sort((a, b) => b.createdAt - a.createdAt);
 
   return (
     <>
-      <div className="h1">Chats</div>
-      <p className="sub">Los mensajes se abren solo con interés mutuo.</p>
-      {rows.length === 0 && (
-        <div className="card" style={{ textAlign: 'center', marginTop: 20 }}>
-          <MessageCircle size={28} color="var(--lila)" />
-          <p className="muted" style={{ margin: '10px 0 0' }}>Aún no hay matches. Explora y da like a quien te intriga.</p>
+      <div className="row between">
+        <div>
+          <div className="h1">Propuestas</div>
+          <p className="sub" style={{ marginBottom: 0 }}>Planes con reglas claras.</p>
+        </div>
+        <button className="btn btn-neon btn-sm" onClick={onOpenNew}><Plus size={16} /> Publicar</button>
+      </div>
+
+      {mias.length > 0 && (
+        <div className="stack" style={{ gap: 8, marginTop: 14 }}>
+          {mias.map((p) => (
+            <div key={p.id} className="card" style={{ padding: 12 }}>
+              <div className="row between">
+                <span className="caps small">{p.title}</span>
+                <span className={'tag ' + (p.status === 'revision' ? 'warn' : 'bad')}>
+                  {p.status === 'revision' ? 'En revisión' : 'Rechazada'}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       )}
-      <div className="stack" style={{ gap: 8 }}>
-        {rows.map(({ m, peer }) => (
-          <button key={m.id} className="card row" style={{ textAlign: 'left', gap: 12, padding: 14 }} onClick={() => onOpen(peer)}>
-            <Avatar doc={peer} size={46} />
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span className="caps" style={{ display: 'block', fontSize: 16 }}>{peer.alias}</span>
-              <span className="tiny" style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {m.lastMessage || 'Say hello'}
-              </span>
-            </span>
-            <span className="tiny">{ago(m.lastTs ?? m.createdAt)}</span>
-          </button>
+
+      {pub.length === 0 && (
+        <div className="card" style={{ textAlign: 'center', marginTop: 16 }}>
+          <Sparkles size={30} color="var(--lila)" />
+          <p className="muted" style={{ margin: '10px 0 0' }}>
+            Aún no hay propuestas publicadas. La primera puede ser tuya: publica un plan con reglas claras y administración lo revisará.
+          </p>
+        </div>
+      )}
+
+      <div className="stack" style={{ gap: 10, marginTop: 12 }}>
+        {pub.map((p) => {
+          const applied = (p.applies ?? []).includes(myUid);
+          const mine = p.authorUid === myUid;
+          return (
+            <div key={p.id} className="card" style={{ padding: 14 }}>
+              <div className="row between">
+                <span className="tag">{p.cat}</span>
+                <span className="tiny">{ago(p.createdAt)}</span>
+              </div>
+              <div className="caps" style={{ fontSize: 17, marginTop: 8 }}>
+                {p.title}{mine && <span className="tiny" style={{ color: 'var(--lila)' }}> (tuya)</span>}
+              </div>
+              <p className="small" style={{ margin: '6px 0 0' }}>{p.body}</p>
+              {p.rules && (
+                <>
+                  <div className="label" style={{ marginTop: 10 }}>Reglas</div>
+                  <p className="small muted" style={{ margin: '4px 0 0' }}>{p.rules}</p>
+                </>
+              )}
+              <div className="row between" style={{ marginTop: 12 }}>
+                <span className="tiny">De {p.authorAlias} · {(p.applies ?? []).length} aplicación(es)</span>
+                {mine ? (
+                  <span className="tag ok">Tuya</span>
+                ) : applied ? (
+                  <span className="tag ok"><BadgeCheck size={12} /> Aplicaste</span>
+                ) : (
+                  <button className="btn btn-neon btn-sm" onClick={() => void onApply(p)}>Aplicar</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function ProposalSheet({ onClose, onSubmit, onToast }: {
+  onClose: () => void;
+  onSubmit: (f: { cat: string; title: string; body: string; rules: string }) => Promise<boolean>;
+  onToast: (s: string) => void;
+}) {
+  const [cat, setCat] = useState('Encuentro');
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [rules, setRules] = useState('');
+  const [busy, setBusy] = useState(false);
+  const CATS = ['Encuentro', 'Trío', 'Intercambio', 'Fiesta', 'Viaje', 'Otro'];
+
+  const send = async () => {
+    if (!title.trim() || !body.trim()) { onToast('Completa el título y la descripción.'); return; }
+    setBusy(true);
+    const ok = await onSubmit({ cat, title: title.trim(), body: body.trim(), rules: rules.trim() });
+    setBusy(false);
+    if (ok) onClose();
+  };
+
+  return (
+    <>
+      <div className="grab" />
+      <div className="caps" style={{ fontSize: 22 }}>Nueva propuesta</div>
+      <p className="muted small" style={{ margin: '4px 0 12px' }}>La revisa administración antes de publicarse.</p>
+      <div className="chips" style={{ marginBottom: 12 }}>
+        {CATS.map((c) => (
+          <button key={c} className={'chip' + (cat === c ? ' sel' : '')} onClick={() => setCat(c)}>{c}</button>
         ))}
       </div>
+      <input className="field" placeholder="Título (60 caracteres)" value={title} maxLength={60} onChange={(e) => setTitle(e.target.value)} />
+      <textarea className="field" style={{ marginTop: 8 }} placeholder="Describe el plan: quiénes participan y qué buscan (600 caracteres)" value={body} maxLength={600} onChange={(e) => setBody(e.target.value)} />
+      <textarea className="field" style={{ marginTop: 8 }} placeholder="Reglas: límites, consentimiento, condiciones (400 caracteres)" value={rules} maxLength={400} onChange={(e) => setRules(e.target.value)} />
+      <button className="btn btn-neon full" style={{ marginTop: 12 }} disabled={busy} onClick={() => void send()}>
+        {busy ? <Loader2 size={18} className="spin" /> : <Send size={18} />} Enviar a revisión
+      </button>
+    </>
+  );
+}
+
+// ============================================================================
+// PESTAÑA VIRTUAL (CREADORAS)
+// ============================================================================
+
+function VirtualTab({ myDoc, creators, posts, mySubs, onToast, onSubscribe, onRegister, onUpload }: {
+  myDoc: UserDoc;
+  creators: CreatorDoc[];
+  posts: CreatorPostDoc[];
+  mySubs: CreatorSubDoc[];
+  onToast: (s: string) => void;
+  onSubscribe: (c: CreatorDoc) => Promise<void>;
+  onRegister: (f: { name: string; handle: string; bio: string; price: number }) => Promise<boolean>;
+  onUpload: (creator: CreatorDoc, image: string, caption: string, premium: boolean, price: number) => Promise<boolean>;
+}) {
+  const [seg, setSeg] = useState<'creadoras' | 'subir'>('creadoras');
+  const [busy, setBusy] = useState(false);
+  const activas = creators.filter((c) => c.status === 'activa');
+  const myCreator = creators.find((c) => c.userUid === myDoc.uid);
+  const myPosts = myCreator ? posts.filter((p) => p.creatorId === myCreator.id).sort((a, b) => b.createdAt - a.createdAt) : [];
+
+  // Estado del registro de creadora.
+  const [fName, setFName] = useState('');
+  const [fHandle, setFHandle] = useState('');
+  const [fBio, setFBio] = useState('');
+  const [fPrice, setFPrice] = useState(0);
+  // Estado de la publicación de contenido.
+  const [image, setImage] = useState<string | null>(null);
+  const [caption, setCaption] = useState('');
+  const [premium, setPremium] = useState(false);
+  const [postPrice, setPostPrice] = useState(0);
+
+  const onImage = async (f: File) => {
+    try { setImage(await compressImage(f)); } catch { onToast('No fue posible procesar la imagen.'); }
+  };
+
+  const sendRegister = async () => {
+    if (!fName.trim() || !fHandle.trim()) { onToast('Completa el nombre y el usuario.'); return; }
+    setBusy(true);
+    const ok = await onRegister({ name: fName, handle: fHandle, bio: fBio, price: fPrice });
+    setBusy(false);
+    if (ok) { setFName(''); setFHandle(''); setFBio(''); setFPrice(0); }
+  };
+
+  const sendPost = async () => {
+    if (!myCreator) return;
+    if (!image) { onToast('Elige una imagen para publicar.'); return; }
+    if (!caption.trim()) { onToast('Agrega una descripción.'); return; }
+    setBusy(true);
+    const ok = await onUpload(myCreator, image, caption.trim(), premium, postPrice);
+    setBusy(false);
+    if (ok) { setImage(null); setCaption(''); setPremium(false); setPostPrice(0); }
+  };
+
+  if (seg === 'subir') {
+    return (
+      <>
+        <div className="seg" style={{ marginBottom: 16 }}>
+          <button onClick={() => setSeg('creadoras')}>Creadoras</button>
+          <button className="on">Subir</button>
+        </div>
+        {!myCreator || myCreator.status === 'rechazada' ? (
+          <>
+            {myCreator?.status === 'rechazada' && (
+              <p className="small" style={{ color: 'var(--bad)' }}>Tu registro anterior fue rechazado. Puedes enviar uno nuevo.</p>
+            )}
+            <div className="card">
+              <div className="label" style={{ marginBottom: 8 }}>Registro de creadora</div>
+              <p className="muted small" style={{ margin: '0 0 12px' }}>
+                Requiere INE aprobada. El precio es tu suscripción mensual; la plataforma suma 10% de servicio más IVA al cobro final.
+              </p>
+              <div className="stack" style={{ gap: 8 }}>
+                <input className="field" placeholder="Nombre público" value={fName} maxLength={40} onChange={(e) => setFName(e.target.value)} />
+                <input className="field" placeholder="Usuario (ej. luna)" value={fHandle} maxLength={24} onChange={(e) => setFHandle(e.target.value)} />
+                <textarea className="field" placeholder="Descripción de tu contenido (300 caracteres)" value={fBio} maxLength={300} onChange={(e) => setFBio(e.target.value)} />
+                <input className="field" inputMode="numeric" placeholder="Suscripción mensual (MXN)" value={fPrice || ''} onChange={(e) => setFPrice(Number(e.target.value.replace(/\D/g, '').slice(0, 6)))} />
+                <button className="btn btn-neon full" disabled={busy} onClick={() => void sendRegister()}>
+                  {busy ? <Loader2 size={18} className="spin" /> : <Star size={18} />} Enviar registro
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="card">
+              <div className="row between">
+                <span className="caps" style={{ fontSize: 16 }}>{myCreator.name}</span>
+                <span className={'tag ' + (myCreator.status === 'activa' ? 'ok' : 'warn')}>
+                  {myCreator.status === 'activa' ? 'Activa' : 'En revisión'}
+                </span>
+              </div>
+              <p className="tiny" style={{ margin: '4px 0 0' }}>@{myCreator.handle} · Suscripción ${myCreator.price}/mes</p>
+            </div>
+            {myCreator.status === 'activa' && (
+              <div className="card" style={{ marginTop: 12 }}>
+                <div className="label" style={{ marginBottom: 8 }}>Publicar contenido</div>
+                {image ? (
+                  <div style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+                    <img src={image} alt="Vista previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button className="iconbtn" aria-label="Quitar imagen" style={{ position: 'absolute', top: 6, right: 6, width: 32, height: 32 }} onClick={() => setImage(null)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ) : (
+                  <FileButton className="btn btn-dark btn-sm full" style={{ aspectRatio: '3/4', borderRadius: 12 }} onFiles={(f) => void onImage(f)}>
+                    <div style={{ display: 'grid', placeItems: 'center', gap: 4 }}>
+                      <ImagePlus size={22} color="var(--lila)" />
+                      <span className="tiny">Elegir imagen</span>
+                    </div>
+                  </FileButton>
+                )}
+                <div className="stack" style={{ gap: 8, marginTop: 10 }}>
+                  <input className="field" placeholder="Descripción (200 caracteres)" value={caption} maxLength={200} onChange={(e) => setCaption(e.target.value)} />
+                  <Toggle on={premium} onClick={() => setPremium(!premium)} label="Contenido premium" hint="Solo visible para tus suscriptores." />
+                  {premium && (
+                    <input className="field" inputMode="numeric" placeholder="Precio adicional (MXN, opcional)" value={postPrice || ''} onChange={(e) => setPostPrice(Number(e.target.value.replace(/\D/g, '').slice(0, 6)))} />
+                  )}
+                  <button className="btn btn-neon full" disabled={busy} onClick={() => void sendPost()}>
+                    {busy ? <Loader2 size={18} className="spin" /> : <Upload size={18} />} Enviar a moderación
+                  </button>
+                </div>
+              </div>
+            )}
+            {myPosts.length > 0 && (
+              <>
+                <div className="row between" style={{ margin: '16px 0 8px' }}>
+                  <span className="label">Mis publicaciones</span>
+                  <span className="tiny">{myPosts.length}</span>
+                </div>
+                <div className="stack" style={{ gap: 8 }}>
+                  {myPosts.map((p) => (
+                    <div key={p.id} className="card" style={{ padding: 12 }}>
+                      <div className="row between">
+                        <span className="tiny" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.caption}</span>
+                        <span className={'tag ' + (p.status === 'publicado' ? 'ok' : p.status === 'revision' ? 'warn' : 'bad')}>
+                          {p.status === 'publicado' ? 'Publicado' : p.status === 'revision' ? 'En revisión' : 'Rechazado'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="seg" style={{ marginBottom: 16 }}>
+        <button className="on">Creadoras</button>
+        <button onClick={() => setSeg('subir')}>Subir</button>
+      </div>
+      {activas.length === 0 && (
+        <div className="card" style={{ textAlign: 'center' }}>
+          <Star size={30} color="var(--lila)" />
+          <p className="muted" style={{ margin: '10px 0 0' }}>
+            Aún no hay creadoras verificadas. Si deseas ser creadora, regístrate en el segmento Subir.
+          </p>
+        </div>
+      )}
+      {activas.map((c) => {
+        const cPosts = posts.filter((p) => p.creatorId === c.id && p.status === 'publicado').sort((a, b) => b.createdAt - a.createdAt);
+        const sub = mySubs.find((s) => s.creatorId === c.id && s.until > Date.now());
+        return (
+          <div key={c.id} className="card" style={{ padding: 14, marginTop: 12 }}>
+            <div className="row" style={{ gap: 12 }}>
+              <div
+                className="caps"
+                style={{ width: 52, height: 52, borderRadius: 14, background: `hsl(${hueFrom(c.id)} 45% 22%)`, display: 'grid', placeItems: 'center', flexShrink: 0 }}
+              >
+                <span style={{ fontSize: 22, color: 'var(--lila)' }}>{(c.name || '?').slice(0, 1).toUpperCase()}</span>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row" style={{ gap: 6 }}>
+                  <span className="caps" style={{ fontSize: 17 }}>{c.name}</span>
+                  {sub && <span className="tag ok"><BadgeCheck size={12} /> Suscrito</span>}
+                </div>
+                <div className="tiny">@{c.handle} · Suscripción ${c.price}/mes</div>
+                {c.bio && <p className="small muted" style={{ margin: '6px 0 0' }}>{c.bio}</p>}
+              </div>
+            </div>
+            <button className="btn btn-neon btn-sm full" style={{ marginTop: 12 }} disabled={busy} onClick={() => void onSubscribe(c)}>
+              {sub ? 'Suscripción activa' : 'Suscribirse por SPEI'}
+            </button>
+            {cPosts.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 6, marginTop: 12 }}>
+                {cPosts.map((p) => {
+                  const locked = p.premium && !sub;
+                  return (
+                    <div key={p.id} style={{ position: 'relative', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000' }}>
+                      <img
+                        src={p.image} alt={p.caption}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', filter: locked ? 'blur(16px) brightness(.55)' : undefined }}
+                      />
+                      {locked && (
+                        <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+                          <span className="tiny" style={{ display: 'flex', gap: 4, alignItems: 'center', color: 'var(--soft)' }}>
+                            <Lock size={13} /> Premium
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -1690,6 +2393,7 @@ function ProfileTab(props: {
   onOpenIne: () => void;
   onOpenEdit: () => void;
   onGoPago: () => void;
+  onOpenForo: () => void;
   onOpenAvisos: () => void;
   onOpenAdmin: () => void;
   onToast: (s: string) => void;
@@ -1765,7 +2469,7 @@ function ProfileTab(props: {
           <IdentityTag status={myDoc.identityStatus} />
         </div>
         <p className="muted small" style={{ margin: '8px 0 12px' }}>
-          Requerida para el sello verificado y para compras. Solo la ve administración.
+          Obligatoria para acceder a la plataforma. Solo la ve administración.
         </p>
         <button className="btn btn-dark full" onClick={props.onOpenIne}>
           <ShieldCheck size={18} /> {myDoc.identityStatus === 'aprobada' ? 'Volver a validar' : 'Subir mi INE'}
@@ -1776,6 +2480,9 @@ function ProfileTab(props: {
         <button className="btn btn-dark btn-sm" onClick={props.onGoPago}><Banknote size={16} /> {vipLabel(myDoc)}</button>
         <button className="btn btn-dark btn-sm" onClick={props.onOpenAvisos}><Bell size={16} /> Avisos</button>
       </div>
+      <button className="btn btn-dark btn-sm full" style={{ marginTop: 8 }} onClick={props.onOpenForo}>
+        <MessageCircle size={16} /> Foro público
+      </button>
 
       {props.isAdmin && (
         <button
@@ -1864,12 +2571,13 @@ function ReportSheet({ peer, myDoc, onClose, onToast }: {
 // PANEL ADMIN (alto nivel)
 // ============================================================================
 
-type AdminSection = 'resumen' | 'ine' | 'pagos' | 'usuarios' | 'eventos' | 'banco';
+type AdminSection = 'resumen' | 'ine' | 'ia' | 'moderacion' | 'foro' | 'pagos' | 'usuarios' | 'eventos' | 'banco';
 
-function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
+function AdminPanel({ onClose, onToast, onRefresh, myEmail, events, allUsers }: {
   onClose: () => void;
   onToast: (s: string) => void;
   onRefresh: () => Promise<void>;
+  myEmail: string;
   events: EventDoc[];
   allUsers: UserDoc[];
 }) {
@@ -1877,25 +2585,53 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
   const [busy, setBusy] = useState(false);
   const [ineRecords, setIneRecords] = useState<IneRecord[]>([]);
   const [orders, setOrders] = useState<SpeiOrder[]>([]);
+  const [tickets, setTickets] = useState<TicketDoc[]>([]);
+  const [proposals, setProposals] = useState<ProposalDoc[]>([]);
+  const [creators, setCreators] = useState<CreatorDoc[]>([]);
+  const [creatorPosts, setCreatorPosts] = useState<CreatorPostDoc[]>([]);
+  const [forumQuestions, setForumQuestions] = useState<ForumDoc[]>([]);
+  const [forumAnswers, setForumAnswers] = useState<Map<string, string>>(new Map());
   const [cfg, setCfg] = useState<SpeiBankConfig>(getSpeiConfig());
   const [imgView, setImgView] = useState<string | null>(null);
   const [evForm, setEvForm] = useState({ title: '', theme: '', date: '', time: '', zone: '', organizer: '', cap: 40, price: 0, reqs: '' });
 
   const loadAdminData = useCallback(async () => {
-    const [records, allOrders, remoteCfg] = await Promise.all([
+    const [records, allOrders, remoteCfg, tk, pr, cr, cp, fq] = await Promise.all([
       fetchAllRemoteIneRecords(),
       fetchAllRemoteSpeiOrders(),
       fetchRemoteSpeiConfig(),
+      docAll<TicketDoc>('support_tickets'),
+      docAll<ProposalDoc>('proposals'),
+      docAll<CreatorDoc>('creators'),
+      docAll<CreatorPostDoc>('creator_posts'),
+      docAll<ForumDoc>('forum'),
     ]);
     setIneRecords(records.sort((a, b) => b.createdAt - a.createdAt));
     setOrders(allOrders);
     if (remoteCfg) setCfg(remoteCfg);
+    setTickets(tk.sort((a, b) => b.createdAt - a.createdAt));
+    setProposals(pr.sort((a, b) => b.createdAt - a.createdAt));
+    setCreators(cr);
+    setCreatorPosts(cp.sort((a, b) => b.createdAt - a.createdAt));
+    setForumQuestions(fq.sort((a, b) => b.createdAt - a.createdAt));
   }, []);
 
   useEffect(() => { void loadAdminData(); }, [loadAdminData]);
 
   const pendingIne = ineRecords.filter((r) => ineRecordVerdict(r) === 'pendiente');
   const pendingOrders = orders.filter((o) => o.status === 'pendiente' || o.status === 'verificado');
+  const openTickets = tickets.filter((t) => t.status !== 'resuelto');
+  const pendingProposals = proposals.filter((p) => p.status === 'revision');
+  const pendingCreators = creators.filter((c) => c.status === 'pendiente');
+  const pendingPosts = creatorPosts.filter((p) => p.status === 'revision');
+  const openQuestions = forumQuestions.filter((q) => q.status !== 'respondida');
+
+  // Resolución del denunciado a partir del asunto del reporte de conversación.
+  const targetOf = (t: TicketDoc): UserDoc | null => {
+    const m = /^Reporte de conversación: (.+)$/.exec(t.subject || '');
+    if (!m) return null;
+    return allUsers.find((u) => (u.alias || '') === m[1].trim()) ?? null;
+  };
 
   const verdict = async (rec: IneRecord, v: 'aprobada' | 'rechazada' | 'baneada') => {
     setBusy(true);
@@ -1950,6 +2686,26 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
       await docSet('notifications', nid2, {
         id: nid2, userUid: o.userUid, kind: 'pase',
         title: 'Entrada confirmada', body: 'Tu pago fue aprobado. Tu pase VIP para "' + pass.eventTitle + '" ya está activo.',
+        ts: now, read: false,
+      } as AppNotification);
+    }
+    // Suscripción de creadora: idempotente — jamás se otorga dos veces el mismo mes.
+    if (o.kind === 'creadora' && o.userUid) {
+      const subId = o.userUid + '_' + o.itemRef;
+      const existing = await docGet<CreatorSubDoc>('creator_subscriptions', subId);
+      if (existing && existing.until > now) {
+        setBusy(false);
+        onToast('Esta suscripción ya estaba activa. Sin cambios.');
+        return;
+      }
+      await docSet('creator_subscriptions', subId, {
+        id: subId, userUid: o.userUid, creatorId: o.itemRef,
+        until: now + 30 * 24 * 60 * 60 * 1000, createdAt: now,
+      } as CreatorSubDoc);
+      const nid3 = notifId(o.userUid);
+      await docSet('notifications', nid3, {
+        id: nid3, userUid: o.userUid, kind: 'sistema',
+        title: 'Suscripción activa', body: 'Tu pago de "' + o.label + '" fue confirmado. Ya tienes acceso al contenido premium de la creadora.',
         ts: now, read: false,
       } as AppNotification);
     }
@@ -2019,6 +2775,130 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
     onToast(n > 0 ? n + ' expedientes vencidos depurados.' : 'No hay expedientes vencidos.');
   };
 
+  // --------------------- Moderación asistida por IA --------------------------
+  const resolveTicket = async (t: TicketDoc) => {
+    setBusy(true);
+    await docUpdate('support_tickets', t.id, { status: 'resuelto' } as Partial<TicketDoc>);
+    setBusy(false);
+    await loadAdminData();
+    onToast('Reporte marcado como resuelto.');
+  };
+
+  const suspendTarget = async (u: UserDoc) => {
+    setBusy(true);
+    const now = Date.now();
+    await docUpdate('users', u.uid, { status: 'suspendido' });
+    const nid = notifId(u.uid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: u.uid, kind: 'sistema',
+      title: 'Cuenta suspendida',
+      body: 'Tu cuenta fue suspendida por administración tras revisar un reporte. Contacta a soporte si consideras que fue un error.',
+      ts: now, read: false,
+    } as AppNotification);
+    setBusy(false);
+    await loadAdminData();
+    await onRefresh();
+    onToast('Cuenta suspendida y notificada.');
+  };
+
+  const moderateCreator = async (c: CreatorDoc, ok: boolean) => {
+    setBusy(true);
+    const now = Date.now();
+    await docUpdate('creators', c.id, { status: ok ? 'activa' : 'rechazada' } as Partial<CreatorDoc>);
+    const nid = notifId(c.userUid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: c.userUid, kind: 'sistema',
+      title: ok ? 'Registro de creadora aprobado' : 'Registro de creadora rechazado',
+      body: ok
+        ? 'Tu perfil de creadora ya está activo. Puedes publicar contenido desde la pestaña Virtual.'
+        : 'Tu registro como creadora no fue aprobado esta vez.',
+      ts: now, read: false,
+    } as AppNotification);
+    setBusy(false);
+    await loadAdminData();
+    await onRefresh();
+    onToast(ok ? 'Creadora aprobada y notificada.' : 'Registro rechazado y notificado.');
+  };
+
+  const moderateProposal = async (p: ProposalDoc, ok: boolean) => {
+    setBusy(true);
+    const now = Date.now();
+    await docUpdate('proposals', p.id, { status: ok ? 'publicada' : 'rechazada' } as Partial<ProposalDoc>);
+    const nid = notifId(p.authorUid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: p.authorUid, kind: 'sistema',
+      title: ok ? 'Propuesta publicada' : 'Propuesta rechazada',
+      body: ok
+        ? 'Tu propuesta "' + p.title + '" ya está visible en la pestaña Propuestas.'
+        : 'Tu propuesta "' + p.title + '" no cumplió las normas de la comunidad.',
+      ts: now, read: false,
+    } as AppNotification);
+    setBusy(false);
+    await loadAdminData();
+    await onRefresh();
+    onToast(ok ? 'Propuesta publicada y notificada.' : 'Propuesta rechazada y notificada.');
+  };
+
+  const moderatePost = async (p: CreatorPostDoc, ok: boolean) => {
+    setBusy(true);
+    const now = Date.now();
+    const creator = creators.find((c) => c.id === p.creatorId);
+    await docUpdate('creator_posts', p.id, { status: ok ? 'publicado' : 'rechazado' } as Partial<CreatorPostDoc>);
+    if (creator) {
+      const nid = notifId(creator.userUid);
+      await docSet('notifications', nid, {
+        id: nid, userUid: creator.userUid, kind: 'sistema',
+        title: ok ? 'Contenido publicado' : 'Contenido rechazado',
+        body: ok
+          ? 'Tu publicación "' + p.caption + '" ya está visible para la comunidad.'
+          : 'Tu publicación fue rechazada por no cumplir las normas.',
+        ts: now, read: false,
+      } as AppNotification);
+    }
+    setBusy(false);
+    await loadAdminData();
+    onToast(ok ? 'Contenido publicado.' : 'Contenido rechazado.');
+  };
+
+  const answerForum = async (q: ForumDoc, answer: string) => {
+    if (!answer.trim()) { onToast('Escribe la respuesta antes de publicarla.'); return; }
+    setBusy(true);
+    const now = Date.now();
+    await docUpdate('forum', q.id, { answer: answer.trim(), status: 'respondida', answeredAt: now } as Partial<ForumDoc>);
+    const nid = notifId(q.userUid);
+    await docSet('notifications', nid, {
+      id: nid, userUid: q.userUid, kind: 'sistema',
+      title: 'Respuesta en el foro',
+      body: 'Administración respondió tu pregunta pública: "' + q.question.slice(0, 60) + '…"',
+      ts: now, read: false,
+    } as AppNotification);
+    setForumAnswers((m) => { const n = new Map(m); n.set(q.id, ''); return n; });
+    setBusy(false);
+    await loadAdminData();
+    onToast('Respuesta publicada en el foro.');
+  };
+
+  const deleteForumQuestion = async (q: ForumDoc) => {
+    setBusy(true);
+    await docDelete('forum', q.id);
+    setBusy(false);
+    await loadAdminData();
+    onToast('Pregunta eliminada del foro.');
+  };
+
+  const audit = auditProcesses({
+    clabe: cfg.clabe,
+    bank: cfg.bank,
+    pendingIne: pendingIne.length,
+    pendingOrders: pendingOrders.length,
+    openTickets: openTickets.length,
+    pendingProposals: pendingProposals.length,
+    pendingCreators: pendingCreators.length,
+    pendingPosts: pendingPosts.length,
+    openQuestions: openQuestions.length,
+    fullEvents: events.filter((e) => (e.sold ?? 0) >= (e.cap ?? 0)).length,
+  });
+
   return (
     <motion.div className="overlay" style={{ zIndex: 50 }} initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 26, stiffness: 260 }}>
       <div className="topbar">
@@ -2027,8 +2907,13 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
         <button className="iconbtn" aria-label="Recargar" onClick={() => { void loadAdminData(); void onRefresh(); }}><RefreshCw size={16} /></button>
       </div>
       <div className="body">
+        <div className="seg" style={{ marginBottom: 8 }}>
+          {([['resumen', 'Resumen'], ['ine', 'INE'], ['ia', 'IA'], ['moderacion', 'Moderación'], ['foro', 'Foro']] as [AdminSection, string][]).map(([id, label]) => (
+            <button key={id} className={section === id ? 'on' : ''} onClick={() => setSection(id)}>{label}</button>
+          ))}
+        </div>
         <div className="seg" style={{ marginBottom: 16 }}>
-          {([['resumen', 'Resumen'], ['ine', 'INE'], ['pagos', 'Pagos'], ['usuarios', 'Usuarios'], ['eventos', 'Eventos'], ['banco', 'Banco']] as [AdminSection, string][]).map(([id, label]) => (
+          {([['pagos', 'Pagos'], ['usuarios', 'Usuarios'], ['eventos', 'Eventos'], ['banco', 'Banco']] as [AdminSection, string][]).map(([id, label]) => (
             <button key={id} className={section === id ? 'on' : ''} onClick={() => setSection(id)}>{label}</button>
           ))}
         </div>
@@ -2042,6 +2927,16 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
               <div className="kpi"><div className="tiny">INE pendientes</div><div className="v">{pendingIne.length}</div></div>
               <div className="kpi"><div className="tiny">Pagos por validar</div><div className="v">{pendingOrders.length}</div></div>
               <div className="kpi"><div className="tiny">Eventos activos</div><div className="v">{events.length}</div></div>
+            </div>
+            <div className="grid2" style={{ gap: 8, marginTop: 8 }}>
+              <div className="kpi"><div className="tiny">Reportes abiertos</div><div className="v">{openTickets.length}</div></div>
+              <div className="kpi"><div className="tiny">Propuestas por revisar</div><div className="v">{pendingProposals.length}</div></div>
+              <div className="kpi"><div className="tiny">Creadoras por aprobar</div><div className="v">{pendingCreators.length + pendingPosts.length}</div></div>
+              <div className="kpi"><div className="tiny">Preguntas del foro</div><div className="v">{openQuestions.length}</div></div>
+            </div>
+            <div className="row between" style={{ margin: '10px 0 0' }}>
+              <span className="tiny">Sesión: {myEmail}</span>
+              <span className="tiny">{audit.filter((c) => c.ok).length}/{audit.length} procesos en orden</span>
             </div>
             <div className="card" style={{ marginTop: 14 }}>
               <div className="label" style={{ marginBottom: 8 }}>Retención legal</div>
@@ -2203,6 +3098,219 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
           </>
         )}
 
+        {section === 'ia' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>IA de moderación</div>
+            <p className="sub">El motor analiza reportes y denuncias; la decisión final siempre es tuya.</p>
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="label" style={{ marginBottom: 8 }}>Auditoría de procesos</div>
+              <div className="stack" style={{ gap: 8 }}>
+                {audit.map((c) => (
+                  <div key={c.label} className="row" style={{ gap: 8, alignItems: 'flex-start' }}>
+                    {c.ok ? <BadgeCheck size={16} color="var(--ok)" style={{ flexShrink: 0, marginTop: 2 }} /> : <X size={16} color="var(--bad)" style={{ flexShrink: 0, marginTop: 2 }} />}
+                    <div style={{ minWidth: 0 }}>
+                      <span className="small">{c.label}</span>
+                      <span className="tiny" style={{ display: 'block' }}>{c.detail}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="row between" style={{ margin: '16px 0 4px' }}>
+              <span className="label">Reportes y denuncias</span>
+              <span className="tiny">{openTickets.length} abierto(s)</span>
+            </div>
+            <div className="stack" style={{ gap: 12 }}>
+              {openTickets.length === 0 && (
+                <div className="card"><p className="muted small">Sin reportes abiertos. La comunidad está en calma.</p></div>
+              )}
+              {openTickets.map((t) => {
+                const rep: ModerationReport = analyzeReport(t.message, {
+                  subject: t.subject,
+                  reporterReports: openTickets.filter((x) => x.userUid === t.userUid).length,
+                });
+                const target = targetOf(t);
+                return (
+                  <div key={t.id} className="card" style={{ padding: 14 }}>
+                    <div className="row between">
+                      <span className="caps" style={{ fontSize: 15 }}>{t.subject}</span>
+                      <span className={'tag ' + (rep.urgency === 'crítica' || rep.urgency === 'alta' ? 'bad' : rep.urgency === 'media' ? 'warn' : 'ok')}>
+                        {rep.urgency} · {rep.score}/100
+                      </span>
+                    </div>
+                    <div className="tiny" style={{ marginTop: 2 }}>Denuncia de {t.userName} · hace {ago(t.createdAt)}</div>
+                    <p className="small muted" style={{ margin: '8px 0 0' }}>{t.message}</p>
+                    <div className="card" style={{ marginTop: 10, padding: 12, background: 'var(--s1)' }}>
+                      <div className="tiny" style={{ color: 'var(--lila)', marginBottom: 4 }}>Dictamen del motor</div>
+                      <div className="tiny"><b>Categoría:</b> {rep.category} · <b>Acción sugerida:</b> {rep.recommended}</div>
+                      {rep.signals.length > 0 && (
+                        <div className="row wrap" style={{ gap: 6, marginTop: 8 }}>
+                          {rep.signals.map((s) => (
+                            <span key={s.code} className="tag warn">{s.label}</span>
+                          ))}
+                        </div>
+                      )}
+                      <p className="tiny muted" style={{ margin: '8px 0 0' }}>{rep.summary}</p>
+                    </div>
+                    {target && (
+                      <div className="card" style={{ marginTop: 10, padding: 12, background: 'var(--s1)' }}>
+                        <div className="tiny" style={{ color: 'var(--lila)', marginBottom: 4 }}>Perfil denunciado: {target.alias}</div>
+                        {(() => {
+                          const scan = scanProfile({
+                            alias: target.alias, age: target.age, bio: target.bio,
+                            photosCount: (target.photos ?? []).length,
+                            identityStatus: target.identityStatus,
+                            openReports: openTickets.filter((x) => targetOf(x)?.uid === target.uid).length,
+                            suspendedBefore: target.status === 'suspendido',
+                          });
+                          return (
+                            <>
+                              <span className={'tag ' + (scan.risk === 'alto' ? 'bad' : scan.risk === 'medio' ? 'warn' : 'ok')}>Riesgo {scan.risk} · {scan.score}/100</span>
+                              <div className="stack" style={{ gap: 4, marginTop: 8 }}>
+                                {scan.findings.map((f) => <span key={f} className="tiny">· {f}</span>)}
+                              </div>
+                              <p className="tiny muted" style={{ margin: '8px 0 0' }}>{scan.recommendation}</p>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    <div className="grid2" style={{ marginTop: 12 }}>
+                      <button className="btn btn-bad btn-sm" disabled={busy || !target || target.status === 'suspendido'} onClick={() => target && void suspendTarget(target)}>
+                        <Ban size={15} /> {target?.status === 'suspendido' ? 'Ya suspendido' : 'Suspender denunciado'}
+                      </button>
+                      <button className="btn btn-dark btn-sm" disabled={busy} onClick={() => void resolveTicket(t)}>
+                        <BadgeCheck size={15} /> Resolver
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {section === 'moderacion' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Moderación de contenido</div>
+            <p className="sub">Creadoras, propuestas y publicaciones esperan tu veredicto.</p>
+
+            <div className="row between" style={{ margin: '12px 0 4px' }}>
+              <span className="label">Registros de creadoras</span>
+              <span className="tiny">{pendingCreators.length} pendiente(s)</span>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              {pendingCreators.length === 0 && <div className="card"><p className="muted small">Sin registros pendientes.</p></div>}
+              {pendingCreators.map((c) => (
+                <div key={c.id} className="card" style={{ padding: 14 }}>
+                  <div className="row between">
+                    <span className="caps" style={{ fontSize: 16 }}>{c.name} <span className="tiny">@{c.handle}</span></span>
+                    <span className="tag warn">{money(c.price)}/mes</span>
+                  </div>
+                  {c.bio && <p className="small muted" style={{ margin: '6px 0 0' }}>{c.bio}</p>}
+                  <div className="grid2" style={{ marginTop: 12 }}>
+                    <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void moderateCreator(c, true)}><UserCheck size={15} /> Aprobar</button>
+                    <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void moderateCreator(c, false)}><UserX size={15} /> Rechazar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="row between" style={{ margin: '16px 0 4px' }}>
+              <span className="label">Propuestas en revisión</span>
+              <span className="tiny">{pendingProposals.length} pendiente(s)</span>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              {pendingProposals.length === 0 && <div className="card"><p className="muted small">Sin propuestas pendientes.</p></div>}
+              {pendingProposals.map((p) => (
+                <div key={p.id} className="card" style={{ padding: 14 }}>
+                  <div className="row between">
+                    <span className="tag">{p.cat}</span>
+                    <span className="tiny">De {p.authorAlias} · hace {ago(p.createdAt)}</span>
+                  </div>
+                  <div className="caps" style={{ fontSize: 16, marginTop: 8 }}>{p.title}</div>
+                  <p className="small" style={{ margin: '6px 0 0' }}>{p.body}</p>
+                  {p.rules && <p className="small muted" style={{ margin: '6px 0 0' }}><b>Reglas:</b> {p.rules}</p>}
+                  <div className="grid2" style={{ marginTop: 12 }}>
+                    <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void moderateProposal(p, true)}><BadgeCheck size={15} /> Publicar</button>
+                    <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void moderateProposal(p, false)}><X size={15} /> Rechazar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="row between" style={{ margin: '16px 0 4px' }}>
+              <span className="label">Contenido en revisión</span>
+              <span className="tiny">{pendingPosts.length} pendiente(s)</span>
+            </div>
+            <div className="stack" style={{ gap: 10 }}>
+              {pendingPosts.length === 0 && <div className="card"><p className="muted small">Sin publicaciones pendientes.</p></div>}
+              {pendingPosts.map((p) => (
+                <div key={p.id} className="card" style={{ padding: 14 }}>
+                  <div className="row between">
+                    <span className="caps" style={{ fontSize: 16 }}>{p.creatorName}</span>
+                    {p.premium ? <span className="tag warn">Premium</span> : <span className="tag ok">Público</span>}
+                  </div>
+                  <div className="tiny" style={{ marginTop: 2 }}>{p.caption}</div>
+                  <button
+                    style={{ width: '100%', aspectRatio: '3/4', borderRadius: 12, overflow: 'hidden', background: '#000', marginTop: 10, padding: 0, border: 'none' }}
+                    onClick={() => setImgView(p.image)}
+                  >
+                    <img src={p.image} alt={p.caption} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </button>
+                  <div className="grid2" style={{ marginTop: 12 }}>
+                    <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void moderatePost(p, true)}><BadgeCheck size={15} /> Publicar</button>
+                    <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void moderatePost(p, false)}><X size={15} /> Rechazar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {section === 'foro' && (
+          <>
+            <div className="h1" style={{ fontSize: 22 }}>Foro público</div>
+            <p className="sub">Responde las preguntas de la comunidad verificada.</p>
+            <div className="stack" style={{ gap: 12, marginTop: 12 }}>
+              {forumQuestions.length === 0 && <div className="card"><p className="muted small">Aún no hay preguntas en el foro.</p></div>}
+              {forumQuestions.map((q) => {
+                const draft = forumAnswers.get(q.id) ?? '';
+                return (
+                  <div key={q.id} className="card" style={{ padding: 14 }}>
+                    <div className="row between">
+                      <span className="caps" style={{ fontSize: 15 }}>{q.userName}</span>
+                      <span className="tiny">{ago(q.createdAt)}</span>
+                    </div>
+                    <p className="small" style={{ margin: '6px 0 0' }}>{q.question}</p>
+                    {q.answer ? (
+                      <div className="card" style={{ marginTop: 10, padding: 12, background: 'var(--s1)' }}>
+                        <div className="tiny" style={{ color: 'var(--ok)', marginBottom: 4 }}>Tu respuesta</div>
+                        <span className="small">{q.answer}</span>
+                      </div>
+                    ) : (
+                      <span className="tag warn" style={{ display: 'inline-block', marginTop: 8 }}>Sin responder</span>
+                    )}
+                    <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+                      <input
+                        className="field" placeholder="Escribe la respuesta oficial…"
+                        value={draft}
+                        onChange={(e) => setForumAnswers((m) => { const n = new Map(m); n.set(q.id, e.target.value.slice(0, 400)); return n; })}
+                      />
+                      <div className="grid2" style={{ gap: 8 }}>
+                        <button className="btn btn-neon btn-sm" disabled={busy} onClick={() => void answerForum(q, draft)}><Send size={15} /> Responder</button>
+                        <button className="btn btn-bad btn-sm" disabled={busy} onClick={() => void deleteForumQuestion(q)}><Trash2 size={15} /> Eliminar</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
         {section === 'banco' && (
           <>
             <div className="h1" style={{ fontSize: 22 }}>Cuenta bancaria SPEI</div>
@@ -2228,5 +3336,6 @@ function AdminPanel({ onClose, onToast, onRefresh, events, allUsers }: {
     </motion.div>
   );
 }
+
 
 
