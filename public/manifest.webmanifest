@@ -1,22 +1,32 @@
 {
+  "id": "/",
   "name": "AppSwinguer Ultra Plus",
   "short_name": "AppSwinguer",
-  "description": "Conexiones exclusivas, parejas liberales, swinger, fiestas privadas y eventos para adultos en San Luis Potosi, Mexico y USA.",
-  "id": "/",
+  "description": "Conexiones exclusivas para parejas y singles: eventos, fiestas privadas y comunidad liberal con verificación obligatoria.",
+  "lang": "es",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#050307",
-  "theme_color": "#050307",
-  "lang": "es",
-  "categories": ["social", "lifestyle", "events"],
+  "background_color": "#0d0518",
+  "theme_color": "#150a26",
+  "categories": [
+    "social",
+    "lifestyle"
+  ],
   "icons": [
     {
       "src": "/icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
     }
   ]
 }

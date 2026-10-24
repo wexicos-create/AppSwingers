@@ -1,17 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="AppSwinguer">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1A0F2B"/>
-      <stop offset="0.55" stop-color="#2D1B4E"/>
-      <stop offset="1" stop-color="#0B0614"/>
-    </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FF2D75"/>
-      <stop offset="1" stop-color="#8A2BE2"/>
+    <radialGradient id="fondo" cx="50%" cy="36%" r="75%">
+      <stop offset="0%" stop-color="#2b1250"/>
+      <stop offset="100%" stop-color="#0d0518"/>
+    </radialGradient>
+    <linearGradient id="flama" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="55%" stop-color="#ec4899"/>
+      <stop offset="100%" stop-color="#fb7185"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
-  <rect x="24" y="24" width="464" height="464" rx="92" fill="none" stroke="url(#accent)" stroke-opacity="0.55" stroke-width="8"/>
-  <path d="M256 96c-88 0-160 72-160 160s72 160 160 160 160-72 160-160-72-160-160-160zm0 40c28 0 50 22 50 50s-22 50-50 50-50-22-50-50 22-50 50-50z" fill="url(#accent)"/>
-  <text x="256" y="332" font-family="Arial, Helvetica, sans-serif" font-size="132" font-weight="900" fill="#F5EEFF" text-anchor="middle" letter-spacing="6">AS</text>
+  <rect width="512" height="512" rx="112" fill="url(#fondo)"/>
+  <path d="M256 92c36 64 100 92 100 176 0 64-45 112-100 112s-100-48-100-112c0-44 23-73 46-100 4 27 17 42 35 54-6-48 12-96 19-130z" fill="url(#flama)"/>
+  <path d="M184 266c23-17 50-16 72 9 22-25 49-26 72-9 4 36-15 60-72 60s-76-24-72-60z" fill="#0d0518" opacity="0.94"/>
+  <circle cx="220" cy="280" r="7" fill="#ec4899"/>
+  <circle cx="292" cy="280" r="7" fill="#ec4899"/>
+  <circle cx="256" cy="308" r="3.5" fill="#ec4899"/>
 </svg>
